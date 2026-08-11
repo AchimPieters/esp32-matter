@@ -21,24 +21,30 @@ open tools/product-wizard/index.html
   `localStorage`, nothing is sent anywhere).
 - **Create a new product → Setup your product** — name your product and
   hit **Start**.
-- **Wizard shell** — the step indicator (`Get Started → Select Module →
-  Configure Device → Test Product → Customise & Review → Generate
-  Firmware`) renders, but only the first step is wired up. The rest are
-  intentionally stubbed ("Coming soon") — this is scaffolding to build on,
-  not a finished wizard.
+- **Get Started (step 1)** — pick a device type. Only "On/Off Light" exists
+  today (matches `firmware/light/`), so it's auto-selected; the card list
+  is ready for more types once they're added.
+- **Select Module (step 2)** — pick a target chip (ESP32 / C3 / C6 / S3 /
+  H2), mirroring what `tools/dev.sh` + `idf.py set-target` actually
+  support. Connectivity badges (Wi-Fi/BLE/Thread) reflect each chip's real
+  radios — e.g. ESP32-H2 has no Wi-Fi.
+- **Steps 3–6** (`Configure Device`, `Test Product`, `Customise & Review`,
+  `Generate Firmware`) are intentionally stubbed ("Coming soon") — the
+  stepper and Back/Next navigation already work, selections made so far
+  are shown, just no content yet.
 
 ## Next steps (not yet built)
 
-1. **Select Module** — pick a target chip (ESP32 / C3 / C6 / S3 / H2),
-   mirroring `tools/dev.sh`'s supported targets.
-2. **Configure Device** — pick a device type from `firmware/` (currently
-   just the on/off light) and its GPIO/driver options, writing out a
-   `sdkconfig.defaults` diff or similar.
-3. **Test Product** — likely out of scope for a static page (needs
+1. **Configure Device** — GPIO/driver options for the chosen device type +
+   module (e.g. LED GPIO pin, PWM frequency), writing out a
+   `sdkconfig.defaults` diff or similar. The screenshots this UI is
+   modelled on show a graphical pinout view — worth revisiting once this
+   step has real content.
+2. **Test Product** — likely out of scope for a static page (needs
    WebSerial/USB access); may link out to the flashing instructions in
    `docs/getting-started.md` instead.
-4. **Customise & Review** — summary screen before generating.
-5. **Generate Firmware** — replaces "Place Order" from the reference UI;
+3. **Customise & Review** — summary screen before generating.
+4. **Generate Firmware** — replaces "Place Order" from the reference UI;
    this is open-source and local, so the end state is a generated
    config/command to run through the Docker build, not a purchase.
 

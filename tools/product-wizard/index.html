@@ -292,6 +292,94 @@
     justify-content: space-between;
     margin-top: 24px;
   }
+
+  /* ---------- Wizard step content (Get Started / Select Module) ---------- */
+
+  .step-panel {
+    background: var(--card-bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 32px;
+  }
+
+  .step-panel h2 {
+    margin: 0 0 4px;
+    font-size: 19px;
+  }
+
+  .step-panel > p.step-hint {
+    margin: 0 0 24px;
+    color: var(--text-muted);
+    font-size: 13px;
+  }
+
+  .option-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    gap: 14px;
+  }
+
+  .option-card {
+    display: block;
+    width: 100%;
+    text-align: left;
+    font-family: inherit;
+    background: var(--card-bg);
+    border: 1.5px solid var(--border);
+    border-radius: var(--radius);
+    padding: 16px;
+    cursor: pointer;
+  }
+
+  .option-card:hover { border-color: var(--blue); }
+
+  .option-card.selected {
+    border-color: var(--blue);
+    background: #f5f8ff;
+  }
+
+  .option-card h3 {
+    margin: 0 0 4px;
+    font-size: 14px;
+  }
+
+  .option-card .desc {
+    font-size: 12px;
+    color: var(--text-muted);
+    margin: 0 0 10px;
+    min-height: 32px;
+  }
+
+  .badge-row {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+  }
+
+  .conn-badge {
+    font-size: 11px;
+    font-weight: 600;
+    padding: 2px 8px;
+    border-radius: 999px;
+    background: #eef1f6;
+    color: var(--text-muted);
+  }
+
+  .conn-badge.wifi { background: #e6f4ff; color: #0b6bcb; }
+  .conn-badge.ble { background: #eef0ff; color: #4338ca; }
+  .conn-badge.thread { background: #e9f9ee; color: #1a7f37; }
+
+  .option-card.selected .conn-badge {
+    background: #ffffff;
+  }
+
+  .note-box {
+    margin-top: 20px;
+    font-size: 12px;
+    color: var(--text-muted);
+    border-top: 1px solid var(--border);
+    padding-top: 14px;
+  }
 </style>
 </head>
 <body>
@@ -321,6 +409,52 @@ const WIZARD_STEPS = [
   "Test Product",
   "Customise & Review",
   "Generate Firmware",
+];
+
+/* Device types this repo actually has firmware for (see firmware/).
+ * Only one today — copy firmware/light/ to add more, per CLAUDE.md. */
+const DEVICE_TYPES = [
+  {
+    id: "light",
+    name: "On/Off Light",
+    desc: "Matter dimmable-capable on/off light. Reference device in firmware/light/.",
+  },
+];
+
+/* Chips this repo's Docker dev flow (tools/dev.sh) targets via
+ * `idf.py set-target <chip>`. Connectivity reflects the actual radios on
+ * each chip, not marketing copy — ESP32-H2 has no Wi-Fi, for example. */
+const MODULES = [
+  {
+    id: "esp32",
+    name: "ESP32 (WROOM-32)",
+    desc: "Classic dual-core ESP32 — the default target for this repo.",
+    conn: ["wifi", "ble"],
+  },
+  {
+    id: "esp32c3",
+    name: "ESP32-C3",
+    desc: "Single-core RISC-V, compact and low-cost.",
+    conn: ["wifi", "ble"],
+  },
+  {
+    id: "esp32c6",
+    name: "ESP32-C6",
+    desc: "Wi-Fi 6 plus 802.15.4 — can run Matter over Thread.",
+    conn: ["wifi", "ble", "thread"],
+  },
+  {
+    id: "esp32s3",
+    name: "ESP32-S3",
+    desc: "Dual-core with more RAM/flash headroom.",
+    conn: ["wifi", "ble"],
+  },
+  {
+    id: "esp32h2",
+    name: "ESP32-H2",
+    desc: "802.15.4 (Thread/Zigbee) only — no Wi-Fi. Needs a Thread border router.",
+    conn: ["ble", "thread"],
+  },
 ];
 
 const state = {
@@ -362,7 +496,9 @@ function renderDashboard() {
       (p) => `
       <div class="product-card" data-open-product="${p.id}">
         <h3>${escapeHtml(p.name)}</h3>
-        <div class="meta">Step: ${WIZARD_STEPS[p.step]} · Created ${formatDate(p.createdAt)}</div>
+        <div class="meta">
+          ${moduleName(p.target) !== "—" ? escapeHtml(moduleName(p.target)) + " · " : ""}Step: ${WIZARD_STEPS[p.step]}
+        </div>
       </div>`
     )
     .join("");
@@ -403,7 +539,9 @@ function renderSetup() {
   `;
 }
 
-/* ---------- Wizard shell (step 1 functional-ish, rest stubbed) ---------- */
+/* ---------- Wizard shell ---------- */
+
+const CONN_LABELS = { wifi: "Wi-Fi", ble: "BLE", thread: "Thread" };
 
 function renderWizard() {
   const p = state.currentProduct;
@@ -414,22 +552,101 @@ function renderWizard() {
     return `<div class="step ${cls}"><span class="dot">${marker}</span>${escapeHtml(label)}</div>${sep}`;
   }).join("");
 
+  let content;
+  if (p.step === 0) content = renderGetStarted(p);
+  else if (p.step === 1) content = renderSelectModule(p);
+  else content = renderStubStep(p);
+
+  return `<div class="stepper">${stepsHtml}</div>${content}`;
+}
+
+function renderGetStarted(p) {
+  // Auto-select the only device type there is today — future types will
+  // require an explicit click once DEVICE_TYPES has more than one entry.
+  if (!p.deviceType && DEVICE_TYPES.length === 1) p.deviceType = DEVICE_TYPES[0].id;
+
+  const cards = DEVICE_TYPES.map((d) => {
+    const selected = p.deviceType === d.id;
+    return `
+      <button class="option-card ${selected ? "selected" : ""}" data-select-device-type="${d.id}">
+        <h3>${escapeHtml(d.name)}</h3>
+        <p class="desc">${escapeHtml(d.desc)}</p>
+      </button>`;
+  }).join("");
+
   return `
-    <div class="stepper">${stepsHtml}</div>
-    <div class="wizard-panel">
-      <span class="badge-soon">Coming soon</span>
-      <h2>${escapeHtml(p.name)}</h2>
-      <p>
-        Product created. The next step — <strong>${escapeHtml(WIZARD_STEPS[p.step + 1] || "")}</strong> —
-        isn't wired up yet. This is where device type, ESP32 module, GPIO/driver
-        configuration, and firmware generation will plug in.
+    <div class="step-panel">
+      <h2>Choose your device</h2>
+      <p class="step-hint">What kind of Matter device is "${escapeHtml(p.name)}"?</p>
+      <div class="option-grid">${cards}</div>
+      <p class="note-box">
+        Only the On/Off Light is implemented so far. Adding a switch or
+        temperature sensor is an open next step — see CLAUDE.md.
       </p>
-      <div class="wizard-footer">
-        <button class="secondary" id="wizard-back-btn">&larr; Back to dashboard</button>
-        <button class="primary" disabled>Next step &rarr;</button>
-      </div>
+      ${renderWizardFooter(p, !!p.deviceType)}
     </div>
   `;
+}
+
+function renderSelectModule(p) {
+  const cards = MODULES.map((m) => {
+    const selected = p.target === m.id;
+    const badges = m.conn
+      .map((c) => `<span class="conn-badge ${c}">${CONN_LABELS[c]}</span>`)
+      .join("");
+    return `
+      <button class="option-card ${selected ? "selected" : ""}" data-select-module="${m.id}">
+        <h3>${escapeHtml(m.name)}</h3>
+        <p class="desc">${escapeHtml(m.desc)}</p>
+        <div class="badge-row">${badges}</div>
+      </button>`;
+  }).join("");
+
+  return `
+    <div class="step-panel">
+      <h2>Choose an ESP module</h2>
+      <p class="step-hint">Which chip will "${escapeHtml(p.name)}" run on? This maps to <code>idf.py set-target</code>.</p>
+      <div class="option-grid">${cards}</div>
+      ${renderWizardFooter(p, !!p.target)}
+    </div>
+  `;
+}
+
+function renderStubStep(p) {
+  return `
+    <div class="wizard-panel">
+      <span class="badge-soon">Coming soon</span>
+      <h2>${escapeHtml(WIZARD_STEPS[p.step])}</h2>
+      <p>
+        Not wired up yet. So far: device type
+        <strong>${escapeHtml(deviceTypeName(p.deviceType))}</strong> on
+        <strong>${escapeHtml(moduleName(p.target))}</strong>.
+      </p>
+      ${renderWizardFooter(p, false)}
+    </div>
+  `;
+}
+
+function renderWizardFooter(p, canProceed) {
+  const backLabel = p.step === 0 ? "&larr; Back to dashboard" : "&larr; Back";
+  const isLastStep = p.step === WIZARD_STEPS.length - 1;
+  const nextLabel = isLastStep ? "Done" : "Next step &rarr;";
+  return `
+    <div class="wizard-footer">
+      <button class="secondary" id="wizard-back-btn">${backLabel}</button>
+      <button class="primary" id="wizard-next-btn" ${canProceed ? "" : "disabled"}>${nextLabel}</button>
+    </div>
+  `;
+}
+
+function deviceTypeName(id) {
+  const d = DEVICE_TYPES.find((x) => x.id === id);
+  return d ? d.name : "—";
+}
+
+function moduleName(id) {
+  const m = MODULES.find((x) => x.id === id);
+  return m ? m.name : "—";
 }
 
 /* ---------- Events ---------- */
@@ -476,6 +693,8 @@ function bindEvents() {
         name,
         createdAt: new Date().toISOString(),
         step: 0,
+        deviceType: null,
+        target: null,
       };
       state.products.push(product);
       state.currentProduct = product;
@@ -484,8 +703,49 @@ function bindEvents() {
     });
   }
 
+  document.querySelectorAll("[data-select-device-type]").forEach((el) => {
+    el.addEventListener("click", () => {
+      state.currentProduct.deviceType = el.getAttribute("data-select-device-type");
+      saveProducts();
+      render();
+    });
+  });
+
+  document.querySelectorAll("[data-select-module]").forEach((el) => {
+    el.addEventListener("click", () => {
+      state.currentProduct.target = el.getAttribute("data-select-module");
+      saveProducts();
+      render();
+    });
+  });
+
   const backBtn = document.getElementById("wizard-back-btn");
-  if (backBtn) backBtn.addEventListener("click", () => goTo("dashboard"));
+  if (backBtn) {
+    backBtn.addEventListener("click", () => {
+      const p = state.currentProduct;
+      if (p.step === 0) {
+        goTo("dashboard");
+      } else {
+        p.step -= 1;
+        saveProducts();
+        render();
+      }
+    });
+  }
+
+  const nextBtn = document.getElementById("wizard-next-btn");
+  if (nextBtn) {
+    nextBtn.addEventListener("click", () => {
+      const p = state.currentProduct;
+      if (p.step < WIZARD_STEPS.length - 1) {
+        p.step += 1;
+        saveProducts();
+        render();
+      } else {
+        goTo("dashboard");
+      }
+    });
+  }
 }
 
 function escapeHtml(str) {
