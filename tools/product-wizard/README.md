@@ -18,7 +18,8 @@ open tools/product-wizard/index.html
 ## What's implemented
 
 - **Dashboard** — lists products you've created (stored in the browser's
-  `localStorage`, nothing is sent anywhere).
+  `localStorage`, nothing is sent anywhere), each with a **&times;** button
+  to delete it (with a confirmation prompt) without opening it.
 - **Create a new product → Setup your product** — name your product and
   hit **Start**.
 - **Get Started (step 1)** — pick a device type. Only "On/Off Light" exists
