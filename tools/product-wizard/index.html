@@ -1,0 +1,506 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>esp32-matter — Product Wizard</title>
+<style>
+  :root {
+    --blue: #2563eb;
+    --blue-dark: #1d4ed8;
+    --border: #e2e6ec;
+    --bg: #f6f7f9;
+    --text: #1f2430;
+    --text-muted: #6b7280;
+    --card-bg: #ffffff;
+    --radius: 10px;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+  }
+
+  header.topbar {
+    background: var(--card-bg);
+    border-bottom: 1px solid var(--border);
+    padding: 16px 32px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  header.topbar .logo {
+    font-weight: 700;
+    font-size: 16px;
+  }
+
+  header.topbar .logo span {
+    color: var(--blue);
+  }
+
+  header.topbar .tagline {
+    color: var(--text-muted);
+    font-size: 13px;
+    margin-left: 4px;
+  }
+
+  main {
+    max-width: 1100px;
+    margin: 0 auto;
+    padding: 40px 24px 80px;
+  }
+
+  /* ---------- Dashboard ---------- */
+
+  .dashboard-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-end;
+    margin-bottom: 28px;
+  }
+
+  .dashboard-head h1 {
+    font-size: 24px;
+    margin: 0 0 6px;
+  }
+
+  .dashboard-head p {
+    margin: 0;
+    color: var(--text-muted);
+    font-size: 14px;
+  }
+
+  button.primary {
+    background: var(--blue);
+    color: #fff;
+    border: none;
+    padding: 12px 20px;
+    border-radius: 8px;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  button.primary:hover { background: var(--blue-dark); }
+
+  button.primary:disabled {
+    background: #b9c2d0;
+    cursor: not-allowed;
+  }
+
+  button.secondary {
+    background: #fff;
+    color: var(--blue);
+    border: 1px solid var(--blue);
+    padding: 12px 20px;
+    border-radius: 8px;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+
+  button.secondary:hover { background: #eef3ff; }
+
+  button.link {
+    background: none;
+    border: none;
+    color: var(--blue);
+    font-weight: 600;
+    font-size: 14px;
+    cursor: pointer;
+    padding: 0;
+  }
+
+  .product-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    gap: 16px;
+  }
+
+  .product-card {
+    background: var(--card-bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 18px;
+    cursor: pointer;
+  }
+
+  .product-card:hover { border-color: var(--blue); }
+
+  .product-card h3 {
+    margin: 0 0 4px;
+    font-size: 15px;
+  }
+
+  .product-card .meta {
+    font-size: 12px;
+    color: var(--text-muted);
+  }
+
+  .empty-state {
+    border: 1px dashed var(--border);
+    border-radius: var(--radius);
+    padding: 48px 24px;
+    text-align: center;
+    color: var(--text-muted);
+  }
+
+  /* ---------- Setup screen ---------- */
+
+  .setup-wrap {
+    max-width: 480px;
+    margin: 60px auto;
+    background: var(--card-bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 36px;
+  }
+
+  .setup-wrap h2 {
+    margin: 0 0 6px;
+    font-size: 20px;
+  }
+
+  .setup-wrap p.hint {
+    margin: 0 0 24px;
+    color: var(--text-muted);
+    font-size: 13px;
+  }
+
+  label.field-label {
+    display: block;
+    font-size: 13px;
+    font-weight: 600;
+    margin-bottom: 6px;
+  }
+
+  input[type="text"] {
+    width: 100%;
+    padding: 11px 12px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    font-size: 14px;
+    margin-bottom: 8px;
+  }
+
+  input[type="text"]:focus {
+    outline: none;
+    border-color: var(--blue);
+    box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15);
+  }
+
+  .field-error {
+    color: #c0392b;
+    font-size: 12px;
+    min-height: 16px;
+    margin-bottom: 16px;
+  }
+
+  .setup-actions {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-top: 8px;
+  }
+
+  /* ---------- Wizard stepper ---------- */
+
+  .stepper {
+    display: flex;
+    align-items: center;
+    background: var(--card-bg);
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    padding: 12px 24px;
+    margin-bottom: 28px;
+    overflow-x: auto;
+    gap: 4px;
+  }
+
+  .step {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    white-space: nowrap;
+    color: var(--text-muted);
+    font-size: 13px;
+    font-weight: 600;
+  }
+
+  .step .dot {
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    background: #d7dce3;
+    color: #fff;
+    font-size: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+  }
+
+  .step.done .dot { background: var(--blue); }
+  .step.active .dot { background: var(--blue); }
+  .step.active { color: var(--blue); }
+
+  .step-sep {
+    color: #c6cbd4;
+    margin: 0 6px;
+  }
+
+  .wizard-panel {
+    background: var(--card-bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 40px;
+    text-align: center;
+  }
+
+  .wizard-panel h2 {
+    margin: 0 0 8px;
+  }
+
+  .wizard-panel p {
+    color: var(--text-muted);
+    font-size: 14px;
+    max-width: 460px;
+    margin: 0 auto 24px;
+  }
+
+  .badge-soon {
+    display: inline-block;
+    background: #eef3ff;
+    color: var(--blue);
+    font-size: 12px;
+    font-weight: 700;
+    padding: 3px 10px;
+    border-radius: 999px;
+    margin-bottom: 16px;
+  }
+
+  .wizard-footer {
+    display: flex;
+    justify-content: space-between;
+    margin-top: 24px;
+  }
+</style>
+</head>
+<body>
+
+<header class="topbar">
+  <div class="logo">esp32-<span>matter</span></div>
+  <div class="tagline">Product Wizard — local, offline, no cloud</div>
+</header>
+
+<main id="app"></main>
+
+<script>
+/*
+ * Plain client-side state machine, no build step, no external dependencies.
+ * Product data lives only in the browser's localStorage — nothing is sent
+ * anywhere. This is the first two screens of the wizard (dashboard + setup);
+ * later steps (Select Module, Configure Device, ...) are stubbed on purpose
+ * so they can be filled in incrementally.
+ */
+
+const STORAGE_KEY = "esp32matter.products";
+
+const WIZARD_STEPS = [
+  "Get Started",
+  "Select Module",
+  "Configure Device",
+  "Test Product",
+  "Customise & Review",
+  "Generate Firmware",
+];
+
+const state = {
+  screen: "dashboard", // "dashboard" | "setup" | "wizard"
+  products: loadProducts(),
+  currentProduct: null,
+};
+
+function loadProducts() {
+  try {
+    return JSON.parse(localStorage.getItem(STORAGE_KEY)) || [];
+  } catch (e) {
+    return [];
+  }
+}
+
+function saveProducts() {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(state.products));
+}
+
+function goTo(screen) {
+  state.screen = screen;
+  render();
+}
+
+function render() {
+  const app = document.getElementById("app");
+  if (state.screen === "dashboard") app.innerHTML = renderDashboard();
+  else if (state.screen === "setup") app.innerHTML = renderSetup();
+  else if (state.screen === "wizard") app.innerHTML = renderWizard();
+  bindEvents();
+}
+
+/* ---------- Dashboard ---------- */
+
+function renderDashboard() {
+  const cards = state.products
+    .map(
+      (p) => `
+      <div class="product-card" data-open-product="${p.id}">
+        <h3>${escapeHtml(p.name)}</h3>
+        <div class="meta">Step: ${WIZARD_STEPS[p.step]} · Created ${formatDate(p.createdAt)}</div>
+      </div>`
+    )
+    .join("");
+
+  const grid = state.products.length
+    ? `<div class="product-grid">${cards}</div>`
+    : `<div class="empty-state">No products yet. Create your first one to get started.</div>`;
+
+  return `
+    <div class="dashboard-head">
+      <div>
+        <h1>Your products</h1>
+        <p>Configure Matter devices for the esp32-matter toolkit — everything stays on this machine.</p>
+      </div>
+      <button class="primary" id="create-product-btn">+ Create a new product</button>
+    </div>
+    ${grid}
+  `;
+}
+
+/* ---------- Setup your product ---------- */
+
+function renderSetup() {
+  return `
+    <div class="setup-wrap">
+      <h2>Setup your product</h2>
+      <p class="hint">Give your product a name. You can change it later.</p>
+
+      <label class="field-label" for="product-name">Product name</label>
+      <input type="text" id="product-name" placeholder="e.g. Living Room Light" autocomplete="off">
+      <div class="field-error" id="product-name-error"></div>
+
+      <div class="setup-actions">
+        <button class="link" id="setup-cancel-btn">&larr; Cancel</button>
+        <button class="primary" id="setup-start-btn" disabled>Start</button>
+      </div>
+    </div>
+  `;
+}
+
+/* ---------- Wizard shell (step 1 functional-ish, rest stubbed) ---------- */
+
+function renderWizard() {
+  const p = state.currentProduct;
+  const stepsHtml = WIZARD_STEPS.map((label, i) => {
+    const cls = i < p.step ? "done" : i === p.step ? "active" : "";
+    const marker = i < p.step ? "&#10003;" : i + 1;
+    const sep = i < WIZARD_STEPS.length - 1 ? `<span class="step-sep">&rsaquo;</span>` : "";
+    return `<div class="step ${cls}"><span class="dot">${marker}</span>${escapeHtml(label)}</div>${sep}`;
+  }).join("");
+
+  return `
+    <div class="stepper">${stepsHtml}</div>
+    <div class="wizard-panel">
+      <span class="badge-soon">Coming soon</span>
+      <h2>${escapeHtml(p.name)}</h2>
+      <p>
+        Product created. The next step — <strong>${escapeHtml(WIZARD_STEPS[p.step + 1] || "")}</strong> —
+        isn't wired up yet. This is where device type, ESP32 module, GPIO/driver
+        configuration, and firmware generation will plug in.
+      </p>
+      <div class="wizard-footer">
+        <button class="secondary" id="wizard-back-btn">&larr; Back to dashboard</button>
+        <button class="primary" disabled>Next step &rarr;</button>
+      </div>
+    </div>
+  `;
+}
+
+/* ---------- Events ---------- */
+
+function bindEvents() {
+  const createBtn = document.getElementById("create-product-btn");
+  if (createBtn) createBtn.addEventListener("click", () => goTo("setup"));
+
+  document.querySelectorAll("[data-open-product]").forEach((el) => {
+    el.addEventListener("click", () => {
+      const id = el.getAttribute("data-open-product");
+      state.currentProduct = state.products.find((p) => p.id === id);
+      goTo("wizard");
+    });
+  });
+
+  const cancelBtn = document.getElementById("setup-cancel-btn");
+  if (cancelBtn) cancelBtn.addEventListener("click", () => goTo("dashboard"));
+
+  const nameInput = document.getElementById("product-name");
+  const startBtn = document.getElementById("setup-start-btn");
+  const errorEl = document.getElementById("product-name-error");
+
+  if (nameInput) {
+    nameInput.focus();
+    nameInput.addEventListener("input", () => {
+      startBtn.disabled = nameInput.value.trim().length === 0;
+      errorEl.textContent = "";
+    });
+    nameInput.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" && !startBtn.disabled) startBtn.click();
+    });
+  }
+
+  if (startBtn) {
+    startBtn.addEventListener("click", () => {
+      const name = nameInput.value.trim();
+      if (!name) {
+        errorEl.textContent = "Product name is required.";
+        return;
+      }
+      const product = {
+        id: crypto.randomUUID ? crypto.randomUUID() : String(Date.now()),
+        name,
+        createdAt: new Date().toISOString(),
+        step: 0,
+      };
+      state.products.push(product);
+      state.currentProduct = product;
+      saveProducts();
+      goTo("wizard");
+    });
+  }
+
+  const backBtn = document.getElementById("wizard-back-btn");
+  if (backBtn) backBtn.addEventListener("click", () => goTo("dashboard"));
+}
+
+function escapeHtml(str) {
+  const div = document.createElement("div");
+  div.textContent = str;
+  return div.innerHTML;
+}
+
+function formatDate(iso) {
+  const d = new Date(iso);
+  return d.toLocaleDateString();
+}
+
+render();
+</script>
+
+</body>
+</html>
