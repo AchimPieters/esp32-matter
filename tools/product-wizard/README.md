@@ -35,18 +35,24 @@ open tools/product-wizard/index.html
   `app_main.cpp`. A "Configuration summary" sidebar mirrors the reference
   UI. Purely a value capture for now — it does **not** edit
   `app_main.cpp`'s `LIGHT_LED_GPIO` yet; that's Generate Firmware's job.
-- **Steps 4–6** (`Test Product`, `Customise & Review`, `Generate
-  Firmware`) are intentionally stubbed ("Coming soon") — the stepper and
-  Back/Next navigation already work, selections made so far are shown,
-  just no content yet.
+- **Test Product (step 4)** — a real Web Serial monitor (Chrome/Edge
+  only, with a warning banner elsewhere). Connect to a board already
+  flashed via the Docker build (see `docs/getting-started.md`), pick a
+  baud rate (115200 by default, matching `idf.py monitor`), and watch its
+  live log — e.g. commissioning output. This is intentionally *not* tied
+  to a wizard-generated firmware image (that doesn't exist yet); it just
+  monitors whatever is already on the board. The "Download the generated
+  firmware" card is a visible-but-disabled stub until Generate Firmware
+  exists. Testing is optional — Next is always enabled on this step.
+- **Steps 5–6** (`Customise & Review`, `Generate Firmware`) are
+  intentionally stubbed ("Coming soon") — the stepper and Back/Next
+  navigation already work, selections made so far are shown, just no
+  content yet.
 
 ## Next steps (not yet built)
 
-1. **Test Product** — likely out of scope for a static page (needs
-   WebSerial/USB access); may link out to the flashing instructions in
-   `docs/getting-started.md` instead.
-2. **Customise & Review** — summary screen before generating.
-3. **Generate Firmware** — replaces "Place Order" from the reference UI;
+1. **Customise & Review** — summary screen before generating.
+2. **Generate Firmware** — replaces "Place Order" from the reference UI;
    this is open-source and local, so the end state is a generated
    config/command (and ideally an actual patch to
    `firmware/light/main/app_main.cpp`'s `LIGHT_LED_GPIO`) to run through

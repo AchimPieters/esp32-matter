@@ -472,6 +472,69 @@
     color: var(--text-muted);
     margin-top: 4px;
   }
+
+  /* ---------- Test Product ---------- */
+
+  .warn-box {
+    background: #fdeeee;
+    color: #c0392b;
+    border: 1px solid #f3caca;
+    border-radius: 8px;
+    padding: 12px 14px;
+    font-size: 13px;
+    margin-bottom: 16px;
+  }
+
+  .serial-panel {
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 16px;
+    margin-bottom: 16px;
+  }
+
+  .serial-controls {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+    margin-bottom: 12px;
+  }
+
+  .serial-controls select {
+    padding: 8px 10px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    font-size: 13px;
+  }
+
+  .status-dot {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-muted);
+    margin-left: auto;
+  }
+
+  .status-dot.connected { color: #1a7f37; }
+
+  .serial-log {
+    background: #0f1117;
+    color: #d7e0ea;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 12px;
+    line-height: 1.5;
+    padding: 12px;
+    border-radius: 8px;
+    height: 220px;
+    overflow-y: auto;
+    white-space: pre-wrap;
+    word-break: break-word;
+    margin: 0;
+  }
+
+  .option-card.disabled {
+    cursor: not-allowed;
+    opacity: 0.55;
+  }
 </style>
 </head>
 <body>
@@ -660,6 +723,7 @@ function renderWizard() {
   if (p.step === 0) content = renderGetStarted(p);
   else if (p.step === 1) content = renderSelectModule(p);
   else if (p.step === 2) content = renderConfigureDevice(p);
+  else if (p.step === 3) content = renderTestProduct(p);
   else content = renderStubStep(p);
 
   return `<div class="stepper">${stepsHtml}</div>${content}`;
@@ -768,6 +832,128 @@ function renderConfigureDevice(p) {
       </div>
     </div>
   `;
+}
+
+function renderTestProduct(p) {
+  return `
+    <div class="step-panel">
+      <h2>Test your device</h2>
+      <p class="step-hint">
+        Optional: connect a board already flashed via the Docker build
+        (see <code>docs/getting-started.md</code>) and watch its serial
+        log — handy for checking commissioning output. This talks to
+        whatever firmware is already on the board; generating and flashing
+        firmware straight from this wizard isn't built yet.
+      </p>
+
+      ${serialState.supported ? renderSerialMonitor() : `
+        <div class="warn-box">
+          &#9888; Serial Monitor needs the Web Serial API — supported in
+          Chrome or Edge, not this browser.
+        </div>
+      `}
+
+      <div class="option-card disabled">
+        <h3>Download the generated firmware</h3>
+        <p class="desc">Available once the Generate Firmware step exists.</p>
+      </div>
+
+      ${renderWizardFooter(p, true)}
+    </div>
+  `;
+}
+
+function renderSerialMonitor() {
+  return `
+    <div class="serial-panel">
+      <div class="serial-controls">
+        <select id="serial-baud" title="Baud rate">
+          <option value="115200">115200 (idf.py monitor default)</option>
+          <option value="74880">74880 (ROM bootloader)</option>
+          <option value="230400">230400</option>
+          <option value="9600">9600</option>
+        </select>
+        <button class="secondary" id="serial-connect-btn">Connect</button>
+        <button class="link" id="serial-clear-btn">Clear log</button>
+        <span class="status-dot" id="serial-status">Not connected</span>
+      </div>
+      <pre class="serial-log" id="serial-log"></pre>
+    </div>
+  `;
+}
+
+/* Web Serial connection — deliberately kept outside the render/state cycle.
+ * A full re-render would tear down and recreate the <pre> log element and
+ * sever the read loop's reference to it, so connect/disconnect/log updates
+ * touch the DOM directly instead of going through render(). */
+const serialState = {
+  supported: !!(navigator.serial),
+  port: null,
+  reader: null,
+  connected: false,
+};
+
+async function connectSerial() {
+  try {
+    const port = await navigator.serial.requestPort();
+    const baudSelect = document.getElementById("serial-baud");
+    const baudRate = baudSelect ? parseInt(baudSelect.value, 10) : 115200;
+    await port.open({ baudRate });
+    serialState.port = port;
+    serialState.connected = true;
+    updateSerialUI();
+    readSerialLoop(port);
+  } catch (err) {
+    appendSerialLog(`\n[error] ${err.message}\n`);
+  }
+}
+
+async function readSerialLoop(port) {
+  const decoder = new TextDecoderStream();
+  const streamClosed = port.readable.pipeTo(decoder.writable).catch(() => {});
+  const reader = decoder.readable.getReader();
+  serialState.reader = reader;
+  try {
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      if (value) appendSerialLog(value);
+    }
+  } catch (err) {
+    appendSerialLog(`\n[error] ${err.message}\n`);
+  } finally {
+    reader.releaseLock();
+    await streamClosed;
+  }
+}
+
+async function disconnectSerial() {
+  try {
+    if (serialState.reader) await serialState.reader.cancel();
+    if (serialState.port) await serialState.port.close();
+  } catch (err) {
+    // Port may already be gone (device unplugged) — nothing to do.
+  }
+  serialState.port = null;
+  serialState.reader = null;
+  serialState.connected = false;
+  updateSerialUI();
+}
+
+function appendSerialLog(text) {
+  const log = document.getElementById("serial-log");
+  if (!log) return;
+  log.textContent += text;
+  log.scrollTop = log.scrollHeight;
+}
+
+function updateSerialUI() {
+  const btn = document.getElementById("serial-connect-btn");
+  const status = document.getElementById("serial-status");
+  if (!btn || !status) return;
+  btn.textContent = serialState.connected ? "Disconnect" : "Connect";
+  status.textContent = serialState.connected ? "Connected" : "Not connected";
+  status.classList.toggle("connected", serialState.connected);
 }
 
 function renderStubStep(p) {
@@ -889,9 +1075,30 @@ function bindEvents() {
     });
   });
 
+  const serialConnectBtn = document.getElementById("serial-connect-btn");
+  if (serialConnectBtn) {
+    serialConnectBtn.addEventListener("click", () => {
+      if (serialState.connected) disconnectSerial();
+      else connectSerial();
+    });
+  }
+
+  const serialClearBtn = document.getElementById("serial-clear-btn");
+  if (serialClearBtn) {
+    serialClearBtn.addEventListener("click", () => {
+      const log = document.getElementById("serial-log");
+      if (log) log.textContent = "";
+    });
+  }
+
+  // Reflect the live connection state if this step's DOM was just
+  // (re-)created — e.g. after an unrelated re-render while connected.
+  if (document.getElementById("serial-connect-btn")) updateSerialUI();
+
   const backBtn = document.getElementById("wizard-back-btn");
   if (backBtn) {
     backBtn.addEventListener("click", () => {
+      if (serialState.connected) disconnectSerial();
       const p = state.currentProduct;
       if (p.step === 0) {
         goTo("dashboard");
@@ -906,6 +1113,7 @@ function bindEvents() {
   const nextBtn = document.getElementById("wizard-next-btn");
   if (nextBtn) {
     nextBtn.addEventListener("click", () => {
+      if (serialState.connected) disconnectSerial();
       const p = state.currentProduct;
       if (p.step < WIZARD_STEPS.length - 1) {
         p.step += 1;
