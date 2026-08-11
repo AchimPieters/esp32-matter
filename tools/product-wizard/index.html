@@ -276,17 +276,6 @@
     margin: 0 auto 24px;
   }
 
-  .badge-soon {
-    display: inline-block;
-    background: #eef3ff;
-    color: var(--blue);
-    font-size: 12px;
-    font-weight: 700;
-    padding: 3px 10px;
-    border-radius: 999px;
-    margin-bottom: 16px;
-  }
-
   .wizard-footer {
     display: flex;
     justify-content: space-between;
@@ -586,6 +575,49 @@
     font-size: 12px;
     color: #1a7f37;
   }
+
+  /* ---------- Generate Firmware ---------- */
+
+  .download-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 14px;
+    margin-bottom: 8px;
+  }
+
+  .download-card {
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 16px;
+  }
+
+  .download-card h3 {
+    margin: 0 0 4px;
+    font-size: 14px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+
+  .download-card .desc {
+    font-size: 12px;
+    color: var(--text-muted);
+    margin: 0 0 12px;
+    min-height: 32px;
+  }
+
+  .howto-list {
+    font-size: 13px;
+    color: var(--text);
+    line-height: 1.8;
+    padding-left: 20px;
+    margin: 0 0 8px;
+  }
+
+  .howto-list code {
+    background: #eef1f6;
+    padding: 1px 5px;
+    border-radius: 4px;
+    font-size: 12px;
+  }
 </style>
 </head>
 <body>
@@ -601,9 +633,9 @@
 /*
  * Plain client-side state machine, no build step, no external dependencies.
  * Product data lives only in the browser's localStorage — nothing is sent
- * anywhere. This is the first two screens of the wizard (dashboard + setup);
- * later steps (Select Module, Configure Device, ...) are stubbed on purpose
- * so they can be filled in incrementally.
+ * anywhere. All six wizard steps (Get Started through Generate Firmware)
+ * are implemented; "generating" means downloading a patch + shell script
+ * you apply yourself — this tool never writes to the repo directly.
  */
 
 const STORAGE_KEY = "esp32matter.products";
@@ -776,7 +808,8 @@ function renderWizard() {
   else if (p.step === 2) content = renderConfigureDevice(p);
   else if (p.step === 3) content = renderTestProduct(p);
   else if (p.step === 4) content = renderCustomiseReview(p);
-  else content = renderStubStep(p);
+  else if (p.step === 5) content = renderGenerateFirmware(p);
+  else content = `<div class="wizard-panel"><p>Unknown step.</p></div>`;
 
   return `<div class="stepper">${stepsHtml}</div>${content}`;
 }
@@ -1008,10 +1041,13 @@ function updateSerialUI() {
   status.classList.toggle("connected", serialState.connected);
 }
 
-function renderCustomiseReview(p) {
-  const complete = !!p.deviceType && !!p.target &&
-    Number.isInteger(p.ledGpio) && p.ledGpio >= 0;
+/* Selection completeness + generated set-target/diff text, shared by
+ * Customise & Review and Generate Firmware so they can't drift apart. */
+function isProductComplete(p) {
+  return !!p.deviceType && !!p.target && Number.isInteger(p.ledGpio) && p.ledGpio >= 0;
+}
 
+function buildConfigPreview(p) {
   const setTargetCmd = `idf.py set-target ${p.target || "<module>"}`;
   const diffPreview = [
     "--- a/firmware/light/main/app_main.cpp",
@@ -1020,6 +1056,22 @@ function renderCustomiseReview(p) {
     "-#define LIGHT_LED_GPIO GPIO_NUM_2",
     `+#define LIGHT_LED_GPIO GPIO_NUM_${p.ledGpio != null ? p.ledGpio : "?"}`,
   ].join("\n");
+  return { setTargetCmd, diffPreview };
+}
+
+function slugify(str) {
+  return (
+    str
+      .toLowerCase()
+      .trim()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "") || "product"
+  );
+}
+
+function renderCustomiseReview(p) {
+  const complete = isProductComplete(p);
+  const { setTargetCmd, diffPreview } = buildConfigPreview(p);
 
   return `
     <div class="step-panel">
@@ -1093,19 +1145,94 @@ function renderDiffLines(text) {
     .join("\n");
 }
 
-function renderStubStep(p) {
+function renderGenerateFirmware(p) {
+  const complete = isProductComplete(p);
+
+  if (!complete) {
+    return `
+      <div class="step-panel">
+        <h2>Generate firmware</h2>
+        <div class="warn-box">
+          Some selections are missing — go back to Customise &amp; Review
+          to fix them first.
+        </div>
+        ${renderWizardFooter(p, false)}
+      </div>
+    `;
+  }
+
+  const slug = slugify(p.name);
+
   return `
-    <div class="wizard-panel">
-      <span class="badge-soon">Coming soon</span>
-      <h2>${escapeHtml(WIZARD_STEPS[p.step])}</h2>
-      <p>
-        Not wired up yet. So far: device type
+    <div class="step-panel">
+      <h2>Generate firmware</h2>
+      <p class="step-hint">
+        Download a patch + apply script for "${escapeHtml(p.name)}" —
         <strong>${escapeHtml(deviceTypeName(p.deviceType))}</strong> on
-        <strong>${escapeHtml(moduleName(p.target))}</strong>.
+        <strong>${escapeHtml(moduleName(p.target))}</strong>, LED on GPIO ${p.ledGpio}.
+        Nothing is built or flashed automatically — this stays local and
+        just hands you what it would have run.
       </p>
-      ${renderWizardFooter(p, false)}
+
+      <div class="download-grid">
+        <div class="download-card">
+          <h3>${escapeHtml(slug)}.patch</h3>
+          <p class="desc">Unified diff for <code>app_main.cpp</code>'s LED GPIO define.</p>
+          <button class="secondary" id="download-patch-btn">Download</button>
+        </div>
+        <div class="download-card">
+          <h3>${escapeHtml(slug)}-apply.sh</h3>
+          <p class="desc">Runs <code>idf.py set-target</code>, then applies the patch.</p>
+          <button class="secondary" id="download-script-btn">Download</button>
+        </div>
+      </div>
+
+      <h3 style="margin-top:24px;">How to use these</h3>
+      <ol class="howto-list">
+        <li>Save both files in the root of your <code>esp32-matter</code> checkout.</li>
+        <li>Inside the Docker dev environment (<code>tools/dev.sh</code>): <code>chmod +x ${escapeHtml(slug)}-apply.sh &amp;&amp; ./${escapeHtml(slug)}-apply.sh</code></li>
+        <li>Build: <code>cd firmware/light &amp;&amp; idf.py build</code></li>
+        <li>Flash from the host per <code>docs/getting-started.md</code>.</li>
+      </ol>
+
+      <p class="note-box">
+        This wizard is a scaffold, not a code generator (yet) — it doesn't
+        verify the patch still applies cleanly against a checkout you've
+        modified elsewhere. If it fails, the diff above tells you exactly
+        which line to change by hand.
+      </p>
+
+      ${renderWizardFooter(p, true)}
     </div>
   `;
+}
+
+function buildApplyScript(p, patchFileName) {
+  const { setTargetCmd } = buildConfigPreview(p);
+  return [
+    "#!/usr/bin/env bash",
+    "set -euo pipefail",
+    `# Generated by the esp32-matter Product Wizard for "${p.name}".`,
+    "# Run from the root of your esp32-matter checkout, inside the Docker",
+    "# dev environment (tools/dev.sh) or anywhere idf.py is on PATH.",
+    "",
+    `(cd firmware/light && ${setTargetCmd})`,
+    `patch -p1 < ${patchFileName}`,
+    "",
+    'echo "Applied. Now run: cd firmware/light && idf.py build"',
+  ].join("\n");
+}
+
+function downloadTextFile(filename, text) {
+  const blob = new Blob([text], { type: "text/plain" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
 }
 
 function renderWizardFooter(p, canProceed) {
@@ -1255,6 +1382,24 @@ function bindEvents() {
         if (feedback) feedback.textContent = "Copy failed — select the text manually.";
       }
       if (feedback) setTimeout(() => { feedback.textContent = ""; }, 2500);
+    });
+  }
+
+  const downloadPatchBtn = document.getElementById("download-patch-btn");
+  if (downloadPatchBtn) {
+    downloadPatchBtn.addEventListener("click", () => {
+      const p = state.currentProduct;
+      const { diffPreview } = buildConfigPreview(p);
+      downloadTextFile(`${slugify(p.name)}.patch`, diffPreview + "\n");
+    });
+  }
+
+  const downloadScriptBtn = document.getElementById("download-script-btn");
+  if (downloadScriptBtn) {
+    downloadScriptBtn.addEventListener("click", () => {
+      const p = state.currentProduct;
+      const slug = slugify(p.name);
+      downloadTextFile(`${slug}-apply.sh`, buildApplyScript(p, `${slug}.patch`) + "\n");
     });
   }
 

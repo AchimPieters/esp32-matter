@@ -40,31 +40,41 @@ open tools/product-wizard/index.html
   flashed via the Docker build (see `docs/getting-started.md`), pick a
   baud rate (115200 by default, matching `idf.py monitor`), and watch its
   live log — e.g. commissioning output. This is intentionally *not* tied
-  to a wizard-generated firmware image (that doesn't exist yet); it just
-  monitors whatever is already on the board. The "Download the generated
-  firmware" card is a visible-but-disabled stub until Generate Firmware
-  exists. Testing is optional — Next is always enabled on this step.
+  to a wizard-generated firmware image; it just monitors whatever is
+  already on the board. The "Download the generated firmware" card is a
+  visible-but-disabled stub until Generate Firmware has produced one.
+  Testing is optional — Next is always enabled on this step.
 - **Customise & Review (step 5)** — a review table (Product name, Device
   type, Module, Driver + IO pin) with per-row **Edit** links that jump
   straight back to the relevant step, plus a **Generated configuration
   preview**: the actual `idf.py set-target <chip>` command and a unified
   diff for the one line this wizard can honestly promise to change —
   `LIGHT_LED_GPIO` in `app_main.cpp`. A **Copy** button puts both on the
-  clipboard. Next is disabled if any earlier step is incomplete. Nothing
-  is written to disk — you still apply the diff yourself through the
-  Docker build.
-- **Step 6** (`Generate Firmware`) is intentionally stubbed ("Coming
-  soon") — the stepper and Back/Next navigation already work, selections
-  made so far are shown, just no content yet.
+  clipboard. Next is disabled if any earlier step is incomplete.
+- **Generate Firmware (step 6)** — downloads two files built from that
+  same diff/command: `<slug>.patch` (unified diff) and `<slug>-apply.sh`
+  (runs `idf.py set-target` then `patch -p1`), plus copy-pasteable
+  instructions for applying them through the Docker build and flashing
+  from the host. Still nothing is written to *this* repo automatically —
+  the wizard hands you files, you run them.
 
-## Next steps (not yet built)
+All six steps are implemented end to end: Dashboard → Setup → Get
+Started → Select Module → Configure Device → Test Product → Customise &
+Review → Generate Firmware.
 
-1. **Generate Firmware** — replaces "Place Order" from the reference UI;
-   this is open-source and local, so the end state is a generated
-   config/command to run through the Docker build, not a purchase. Given
-   Customise & Review already renders the diff/command text, this step
-   could reasonably just be a "download as .patch / .sh" convenience
-   rather than new logic.
+## Known limitations
+
+- Only one device type (`On/Off Light`) and one driver (digital GPIO)
+  exist, because that's all `firmware/` has today. Adding a second
+  firmware (switch, temperature sensor) is the natural way to exercise
+  the "more than one card" paths in Get Started / Configure Device.
+- The generated patch assumes `firmware/light/main/app_main.cpp` is
+  still at its default `GPIO_NUM_2`; it won't apply cleanly against a
+  checkout already hand-edited elsewhere. The diff shown in Customise &
+  Review tells you what to change by hand if `patch` fails.
+- No real firmware build/flash happens anywhere in this tool — Test
+  Product only monitors an already-flashed board, Generate Firmware only
+  produces text files.
 
 ## Design notes
 
