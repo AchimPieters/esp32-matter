@@ -44,19 +44,27 @@ open tools/product-wizard/index.html
   monitors whatever is already on the board. The "Download the generated
   firmware" card is a visible-but-disabled stub until Generate Firmware
   exists. Testing is optional — Next is always enabled on this step.
-- **Steps 5–6** (`Customise & Review`, `Generate Firmware`) are
-  intentionally stubbed ("Coming soon") — the stepper and Back/Next
-  navigation already work, selections made so far are shown, just no
-  content yet.
+- **Customise & Review (step 5)** — a review table (Product name, Device
+  type, Module, Driver + IO pin) with per-row **Edit** links that jump
+  straight back to the relevant step, plus a **Generated configuration
+  preview**: the actual `idf.py set-target <chip>` command and a unified
+  diff for the one line this wizard can honestly promise to change —
+  `LIGHT_LED_GPIO` in `app_main.cpp`. A **Copy** button puts both on the
+  clipboard. Next is disabled if any earlier step is incomplete. Nothing
+  is written to disk — you still apply the diff yourself through the
+  Docker build.
+- **Step 6** (`Generate Firmware`) is intentionally stubbed ("Coming
+  soon") — the stepper and Back/Next navigation already work, selections
+  made so far are shown, just no content yet.
 
 ## Next steps (not yet built)
 
-1. **Customise & Review** — summary screen before generating.
-2. **Generate Firmware** — replaces "Place Order" from the reference UI;
+1. **Generate Firmware** — replaces "Place Order" from the reference UI;
    this is open-source and local, so the end state is a generated
-   config/command (and ideally an actual patch to
-   `firmware/light/main/app_main.cpp`'s `LIGHT_LED_GPIO`) to run through
-   the Docker build, not a purchase.
+   config/command to run through the Docker build, not a purchase. Given
+   Customise & Review already renders the diff/command text, this step
+   could reasonably just be a "download as .patch / .sh" convenience
+   rather than new logic.
 
 ## Design notes
 

@@ -535,6 +535,57 @@
     cursor: not-allowed;
     opacity: 0.55;
   }
+
+  /* ---------- Customise & Review ---------- */
+
+  .review-grid {
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 4px 20px;
+    margin-bottom: 8px;
+  }
+
+  .review-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 14px 0;
+    border-top: 1px solid var(--border);
+  }
+
+  .review-row:first-child { border-top: none; }
+
+  .code-block-wrap { margin-bottom: 14px; }
+
+  .code-block-label {
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    color: var(--text-muted);
+    margin-bottom: 6px;
+  }
+
+  .code-block {
+    background: #0f1117;
+    color: #d7e0ea;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 12.5px;
+    line-height: 1.6;
+    padding: 12px 14px;
+    border-radius: 8px;
+    overflow-x: auto;
+    margin: 0;
+    white-space: pre;
+  }
+
+  .diff-add { color: #3fb950; }
+  .diff-del { color: #f85149; }
+
+  .copy-feedback {
+    margin-left: 10px;
+    font-size: 12px;
+    color: #1a7f37;
+  }
 </style>
 </head>
 <body>
@@ -724,6 +775,7 @@ function renderWizard() {
   else if (p.step === 1) content = renderSelectModule(p);
   else if (p.step === 2) content = renderConfigureDevice(p);
   else if (p.step === 3) content = renderTestProduct(p);
+  else if (p.step === 4) content = renderCustomiseReview(p);
   else content = renderStubStep(p);
 
   return `<div class="stepper">${stepsHtml}</div>${content}`;
@@ -956,6 +1008,91 @@ function updateSerialUI() {
   status.classList.toggle("connected", serialState.connected);
 }
 
+function renderCustomiseReview(p) {
+  const complete = !!p.deviceType && !!p.target &&
+    Number.isInteger(p.ledGpio) && p.ledGpio >= 0;
+
+  const setTargetCmd = `idf.py set-target ${p.target || "<module>"}`;
+  const diffPreview = [
+    "--- a/firmware/light/main/app_main.cpp",
+    "+++ b/firmware/light/main/app_main.cpp",
+    "@@",
+    "-#define LIGHT_LED_GPIO GPIO_NUM_2",
+    `+#define LIGHT_LED_GPIO GPIO_NUM_${p.ledGpio != null ? p.ledGpio : "?"}`,
+  ].join("\n");
+
+  return `
+    <div class="step-panel">
+      <h2>Customise &amp; review</h2>
+      <p class="step-hint">Check your choices before generating. Nothing is written to disk yet.</p>
+
+      <div class="review-grid">
+        <div class="review-row">
+          <div>
+            <div class="summary-label">PRODUCT NAME</div>
+            <div class="summary-value">${escapeHtml(p.name)}</div>
+          </div>
+        </div>
+        <div class="review-row">
+          <div>
+            <div class="summary-label">DEVICE TYPE</div>
+            <div class="summary-value">${escapeHtml(deviceTypeName(p.deviceType))}</div>
+          </div>
+          <button class="link" data-goto-step="0">Edit</button>
+        </div>
+        <div class="review-row">
+          <div>
+            <div class="summary-label">MODULE</div>
+            <div class="summary-value">${escapeHtml(moduleName(p.target))}</div>
+          </div>
+          <button class="link" data-goto-step="1">Edit</button>
+        </div>
+        <div class="review-row">
+          <div>
+            <div class="summary-label">DRIVER</div>
+            <div class="summary-value">GPIO (digital on/off) &middot; IO pin GPIO ${p.ledGpio != null ? p.ledGpio : "?"}</div>
+          </div>
+          <button class="link" data-goto-step="2">Edit</button>
+        </div>
+      </div>
+
+      ${complete ? "" : `<div class="warn-box">Some selections are missing — use "Edit" above to go back and complete them.</div>`}
+
+      <h3 style="margin-top:24px;">Generated configuration preview</h3>
+      <p class="field-note">
+        This is what the (not-yet-built) Generate Firmware step would
+        apply — a target switch and a one-line patch to
+        <code>app_main.cpp</code>. Nothing runs automatically; copy it and
+        apply it yourself through the Docker build for now.
+      </p>
+
+      <div class="code-block-wrap">
+        <div class="code-block-label">SET TARGET</div>
+        <pre class="code-block">${escapeHtml(setTargetCmd)}</pre>
+      </div>
+      <div class="code-block-wrap">
+        <div class="code-block-label">APP_MAIN.CPP PATCH</div>
+        <pre class="code-block">${renderDiffLines(diffPreview)}</pre>
+      </div>
+
+      <button class="secondary" id="copy-preview-btn">Copy commands + patch</button>
+      <span class="copy-feedback" id="copy-feedback"></span>
+
+      ${renderWizardFooter(p, complete)}
+    </div>
+  `;
+}
+
+function renderDiffLines(text) {
+  return text
+    .split("\n")
+    .map((line) => {
+      const cls = line.startsWith("+") ? "diff-add" : line.startsWith("-") ? "diff-del" : "";
+      return cls ? `<span class="${cls}">${escapeHtml(line)}</span>` : escapeHtml(line);
+    })
+    .join("\n");
+}
+
 function renderStubStep(p) {
   return `
     <div class="wizard-panel">
@@ -1094,6 +1231,32 @@ function bindEvents() {
   // Reflect the live connection state if this step's DOM was just
   // (re-)created — e.g. after an unrelated re-render while connected.
   if (document.getElementById("serial-connect-btn")) updateSerialUI();
+
+  document.querySelectorAll("[data-goto-step]").forEach((el) => {
+    el.addEventListener("click", () => {
+      if (serialState.connected) disconnectSerial();
+      state.currentProduct.step = parseInt(el.getAttribute("data-goto-step"), 10);
+      saveProducts();
+      render();
+    });
+  });
+
+  const copyPreviewBtn = document.getElementById("copy-preview-btn");
+  if (copyPreviewBtn) {
+    copyPreviewBtn.addEventListener("click", async () => {
+      const text = Array.from(document.querySelectorAll(".code-block"))
+        .map((el) => el.textContent)
+        .join("\n\n");
+      const feedback = document.getElementById("copy-feedback");
+      try {
+        await navigator.clipboard.writeText(text);
+        if (feedback) feedback.textContent = "Copied!";
+      } catch (err) {
+        if (feedback) feedback.textContent = "Copy failed — select the text manually.";
+      }
+      if (feedback) setTimeout(() => { feedback.textContent = ""; }, 2500);
+    });
+  }
 
   const backBtn = document.getElementById("wizard-back-btn");
   if (backBtn) {
