@@ -28,25 +28,29 @@ open tools/product-wizard/index.html
   H2), mirroring what `tools/dev.sh` + `idf.py set-target` actually
   support. Connectivity badges (Wi-Fi/BLE/Thread) reflect each chip's real
   radios — e.g. ESP32-H2 has no Wi-Fi.
-- **Steps 3–6** (`Configure Device`, `Test Product`, `Customise & Review`,
-  `Generate Firmware`) are intentionally stubbed ("Coming soon") — the
-  stepper and Back/Next navigation already work, selections made so far
-  are shown, just no content yet.
+- **Configure Device (step 3)** — set the LED GPIO pin for the on/off
+  light's digital-GPIO driver (the only driver `firmware/light/` actually
+  has — no PWM/dimming yet, unlike the ESP ZeroCode screenshots this is
+  modelled on). Defaults per module echo the comment in
+  `app_main.cpp`. A "Configuration summary" sidebar mirrors the reference
+  UI. Purely a value capture for now — it does **not** edit
+  `app_main.cpp`'s `LIGHT_LED_GPIO` yet; that's Generate Firmware's job.
+- **Steps 4–6** (`Test Product`, `Customise & Review`, `Generate
+  Firmware`) are intentionally stubbed ("Coming soon") — the stepper and
+  Back/Next navigation already work, selections made so far are shown,
+  just no content yet.
 
 ## Next steps (not yet built)
 
-1. **Configure Device** — GPIO/driver options for the chosen device type +
-   module (e.g. LED GPIO pin, PWM frequency), writing out a
-   `sdkconfig.defaults` diff or similar. The screenshots this UI is
-   modelled on show a graphical pinout view — worth revisiting once this
-   step has real content.
-2. **Test Product** — likely out of scope for a static page (needs
+1. **Test Product** — likely out of scope for a static page (needs
    WebSerial/USB access); may link out to the flashing instructions in
    `docs/getting-started.md` instead.
-3. **Customise & Review** — summary screen before generating.
-4. **Generate Firmware** — replaces "Place Order" from the reference UI;
+2. **Customise & Review** — summary screen before generating.
+3. **Generate Firmware** — replaces "Place Order" from the reference UI;
    this is open-source and local, so the end state is a generated
-   config/command to run through the Docker build, not a purchase.
+   config/command (and ideally an actual patch to
+   `firmware/light/main/app_main.cpp`'s `LIGHT_LED_GPIO`) to run through
+   the Docker build, not a purchase.
 
 ## Design notes
 

@@ -380,6 +380,98 @@
     border-top: 1px solid var(--border);
     padding-top: 14px;
   }
+
+  .note-box code {
+    background: #eef1f6;
+    padding: 1px 5px;
+    border-radius: 4px;
+    font-size: 11px;
+  }
+
+  /* ---------- Configure Device ---------- */
+
+  .configure-grid {
+    display: grid;
+    grid-template-columns: 2fr 1fr;
+    gap: 20px;
+    align-items: start;
+  }
+
+  @media (max-width: 720px) {
+    .configure-grid { grid-template-columns: 1fr; }
+  }
+
+  .driver-block {
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 20px;
+    margin-bottom: 4px;
+  }
+
+  .driver-block h3 {
+    margin: 0 0 16px;
+    font-size: 14px;
+  }
+
+  input[type="number"] {
+    width: 100%;
+    max-width: 200px;
+    padding: 11px 12px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    font-size: 14px;
+    margin-bottom: 4px;
+  }
+
+  input[type="number"]:focus {
+    outline: none;
+    border-color: var(--blue);
+    box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15);
+  }
+
+  .field-note {
+    font-size: 12px;
+    color: var(--text-muted);
+    margin: 8px 0 0;
+  }
+
+  .config-sidebar {
+    background: var(--card-bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 20px;
+  }
+
+  .config-sidebar h3 {
+    margin: 0 0 16px;
+    font-size: 14px;
+  }
+
+  .summary-row {
+    padding: 10px 0;
+    border-top: 1px solid var(--border);
+  }
+
+  .summary-row:first-of-type { border-top: none; }
+
+  .summary-label {
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    color: var(--text-muted);
+    margin-bottom: 2px;
+  }
+
+  .summary-value {
+    font-size: 14px;
+    font-weight: 600;
+  }
+
+  .summary-detail {
+    font-size: 12px;
+    color: var(--text-muted);
+    margin-top: 4px;
+  }
 </style>
 </head>
 <body>
@@ -417,9 +509,21 @@ const DEVICE_TYPES = [
   {
     id: "light",
     name: "On/Off Light",
-    desc: "Matter dimmable-capable on/off light. Reference device in firmware/light/.",
+    desc: "Matter on/off light, driven by a single digital GPIO. Reference device in firmware/light/.",
   },
 ];
+
+/* Reasonable default LED GPIO per module, echoing the comment in
+ * firmware/light/main/app_main.cpp ("GPIO 2 is common on classic ESP32
+ * devkits; ESP32-C6 devkits often use GPIO 8") — always adjustable, since
+ * it genuinely depends on the board. */
+const DEFAULT_LED_GPIO = {
+  esp32: 2,
+  esp32c3: 8,
+  esp32c6: 8,
+  esp32s3: 2,
+  esp32h2: 8,
+};
 
 /* Chips this repo's Docker dev flow (tools/dev.sh) targets via
  * `idf.py set-target <chip>`. Connectivity reflects the actual radios on
@@ -555,6 +659,7 @@ function renderWizard() {
   let content;
   if (p.step === 0) content = renderGetStarted(p);
   else if (p.step === 1) content = renderSelectModule(p);
+  else if (p.step === 2) content = renderConfigureDevice(p);
   else content = renderStubStep(p);
 
   return `<div class="stepper">${stepsHtml}</div>${content}`;
@@ -608,6 +713,59 @@ function renderSelectModule(p) {
       <p class="step-hint">Which chip will "${escapeHtml(p.name)}" run on? This maps to <code>idf.py set-target</code>.</p>
       <div class="option-grid">${cards}</div>
       ${renderWizardFooter(p, !!p.target)}
+    </div>
+  `;
+}
+
+function renderConfigureDevice(p) {
+  if (p.ledGpio == null) {
+    p.ledGpio = DEFAULT_LED_GPIO[p.target] != null ? DEFAULT_LED_GPIO[p.target] : 2;
+  }
+  const gpioValid = Number.isInteger(p.ledGpio) && p.ledGpio >= 0;
+
+  return `
+    <div class="configure-grid">
+      <div class="step-panel">
+        <h2>Configure device</h2>
+        <p class="step-hint">Set the driver options for this ${escapeHtml(deviceTypeName(p.deviceType))} on ${escapeHtml(moduleName(p.target))}.</p>
+
+        <div class="driver-block">
+          <h3>LED &middot; digital GPIO</h3>
+          <label class="field-label" for="led-gpio">LED GPIO pin</label>
+          <input type="number" id="led-gpio" min="0" max="48" value="${p.ledGpio}">
+          <div class="field-error">${gpioValid ? "" : "Enter a valid GPIO number (0 or higher)."}</div>
+          <p class="field-note">
+            Adjust to match your board — GPIO ${DEFAULT_LED_GPIO[p.target] != null ? DEFAULT_LED_GPIO[p.target] : 2}
+            is a common default for ${escapeHtml(moduleName(p.target))} devkits, not a guarantee for yours.
+          </p>
+        </div>
+
+        <p class="note-box">
+          This only records your choice for now — it doesn't edit
+          <code>firmware/light/main/app_main.cpp</code> yet. Applying it
+          (replacing <code>LIGHT_LED_GPIO</code>) is part of the
+          not-yet-built Generate Firmware step.
+        </p>
+
+        ${renderWizardFooter(p, gpioValid)}
+      </div>
+
+      <div class="config-sidebar">
+        <h3>Configuration summary</h3>
+        <div class="summary-row">
+          <div class="summary-label">DEVICE</div>
+          <div class="summary-value">${escapeHtml(deviceTypeName(p.deviceType))}</div>
+        </div>
+        <div class="summary-row">
+          <div class="summary-label">MODULE</div>
+          <div class="summary-value">${escapeHtml(moduleName(p.target))}</div>
+        </div>
+        <div class="summary-row">
+          <div class="summary-label">DRIVER</div>
+          <div class="summary-value">GPIO (digital on/off)</div>
+          <div class="summary-detail">IO pin: GPIO ${gpioValid ? p.ledGpio : "?"}</div>
+        </div>
+      </div>
     </div>
   `;
 }
@@ -695,6 +853,7 @@ function bindEvents() {
         step: 0,
         deviceType: null,
         target: null,
+        ledGpio: null,
       };
       state.products.push(product);
       state.currentProduct = product;
@@ -710,6 +869,17 @@ function bindEvents() {
       render();
     });
   });
+
+  const ledGpioInput = document.getElementById("led-gpio");
+  if (ledGpioInput) {
+    ledGpioInput.addEventListener("input", () => {
+      const raw = ledGpioInput.value;
+      state.currentProduct.ledGpio = raw === "" ? null : parseInt(raw, 10);
+      saveProducts();
+      render();
+      document.getElementById("led-gpio").focus();
+    });
+  }
 
   document.querySelectorAll("[data-select-module]").forEach((el) => {
     el.addEventListener("click", () => {
