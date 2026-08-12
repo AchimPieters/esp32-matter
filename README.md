@@ -34,7 +34,7 @@ esp32-matter/
 ├── tools/
 │   ├── dev.sh               # Opens the Docker dev environment
 │   ├── gen_factory.sh       # Generates the factory partition + QR code locally
-│   └── product-wizard/      # Local no-build web UI to set up a device + generate a patch
+│   └── product-wizard/      # Local no-build web UI to set up a device + generate build/flash commands
 ├── .github/workflows/
 │   └── build.yml           # CI: builds in the esp-matter image, attaches .bin to Releases
 ├── docs/
@@ -53,11 +53,13 @@ esp32-matter/
    docker pull espressif/esp-matter:release-v1.6_idf_v5.5.4
    ```
 
-3. **Clone this repository** (recursively):
+3. **Clone this repository:**
    ```bash
-   git clone --recursive https://github.com/AchimPieters/esp32-matter.git
+   git clone https://github.com/AchimPieters/esp32-matter.git
    cd esp32-matter
    ```
+   (No `--recursive` — esp-matter/connectedhomeip live inside the Docker
+   image, not as git submodules here.)
 
 4. **Open the dev environment** (mounts the repo at /project inside the container):
    ```bash

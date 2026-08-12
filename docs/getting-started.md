@@ -36,9 +36,12 @@ docker pull espressif/esp-matter:release-v1.6_idf_v5.5.4
 ## 3. Clone the repository
 
 ```bash
-git clone --recursive https://github.com/AchimPieters/esp32-matter.git
+git clone https://github.com/AchimPieters/esp32-matter.git
 cd esp32-matter
 ```
+
+(No `--recursive` needed — esp-matter and connectedhomeip live inside the
+Docker image, not as git submodules of this repo.)
 
 ## 4. Start the container
 

@@ -99,8 +99,9 @@ tools/
   dev.sh                  opens the Docker dev environment
   gen_factory.sh          local QR + factory partition generator
   product-wizard/         local no-build web UI that walks through picking a
-                           device type + module + GPIO and downloads a patch
-                           to apply by hand (see its own README)
+                           device type + module + GPIO and generates the
+                           build + flash commands to run yourself (see its
+                           own README)
 .github/workflows/build.yml  CI: builds in espressif/esp-matter image, attaches .bin to Releases on v* tags
 docs/getting-started.md   step-by-step first-device guide
 SECURITY.md               flash encryption / secure boot / signed OTA guidance
@@ -113,10 +114,12 @@ SECURITY.md               flash encryption / secure boot / signed OTA guidance
 - Adding a new device type: copy `firmware/light/` to e.g. `firmware/switch/` and
   swap the endpoint type in `app_main.cpp` (esp-matter offers `on_off_switch`,
   `dimmable_light`, `temperature_sensor`, `contact_sensor`, etc.).
-- Releases: push a `v*` tag; CI builds and publishes the `.bin`.
-- Image tag is pinned to `release-v1.6_idf_v5.5.4` in `tools/dev.sh` (and should
-  be, once it exists, in `build.yml` too) for reproducible builds — see
-  "Development environment" above for why not `latest` or an IDF v6.0.x tag.
+- Releases: push a `v*` tag; CI (`.github/workflows/build.yml`) builds every
+  `firmware/<type>/` for every supported target and attaches each `.bin` to
+  the release. Only esp32 is hardware-verified — the release notes say so.
+- Image tag is pinned to `release-v1.6_idf_v5.5.4` in both `tools/dev.sh` and
+  `build.yml` for reproducible builds — see "Development environment" above
+  for why not `latest` or an IDF v6.0.x tag.
 
 ## Never commit
 
@@ -132,10 +135,11 @@ SECURITY.md               flash encryption / secure boot / signed OTA guidance
    client invoke API in `firmware/switch/main/app_main.cpp` (see the TODO in
    that file) instead of just toggling its own attribute locally.
 3. Implement Matter **OTA** so devices update themselves over the air from a
-   GitHub Release `.bin` (start from USB flashing, add signed OTA on top).
-4. `build.yml` is documented above but doesn't exist yet — write the actual
-   CI workflow, pinned to the same `release-v1.6_idf_v5.5.4` image tag.
-5. Move to an ESP-IDF v6.0.x-based image once esp-matter publishes one.
+   GitHub Release `.bin` (start from USB flashing, add signed OTA on top) —
+   `build.yml` already publishes the `.bin`s this would consume.
+4. Move to an ESP-IDF v6.0.x-based image once esp-matter publishes one
+   (update `tools/dev.sh`, `build.yml`, and the wizard's `ESP_MATTER_IMAGE`
+   together).
 
 ## Note on hardware/USB
 

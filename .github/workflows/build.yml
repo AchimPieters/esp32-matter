@@ -1,0 +1,166 @@
+name: Build
+
+# Builds every firmware/<type>/ against the pinned espressif/esp-matter
+# image — the exact same image + `cd /project/firmware/<type>` recipe
+# documented in CLAUDE.md and used by tools/dev.sh, so what passes here is
+# what you'd actually get running the commands yourself. No third-party
+# Actions beyond GitHub's own (checkout/cache/upload-artifact) — release
+# publishing uses the `gh` CLI, already on every runner, instead of a
+# marketplace action, to keep this whole pipeline auditable as plain steps.
+#
+# - On every push/PR touching firmware or this workflow: build the default
+#   esp32 target only, for both device types. Fast regression check.
+# - On a `v*` tag: build every supported target too, then attach every
+#   .bin to a GitHub Release for that tag.
+#
+# Only the esp32 target has actually been flashed and commissioned on real
+# hardware (see CLAUDE.md) — a green build for the other four targets means
+# "compiles cleanly", not "verified to boot". Say so in the release notes.
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+    paths:
+      - "firmware/**"
+      - ".github/workflows/build.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "firmware/**"
+      - ".github/workflows/build.yml"
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  ESP_MATTER_IMAGE: espressif/esp-matter:release-v1.6_idf_v5.5.4
+
+jobs:
+  # Fast path: every push/PR, esp32 only (the one target verified on real
+  # hardware), both device types.
+  build:
+    if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        firmware: [light, switch]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cache esp-matter Docker image
+        uses: actions/cache@v4
+        with:
+          path: /tmp/esp-matter-image.tar
+          key: esp-matter-image-${{ env.ESP_MATTER_IMAGE }}
+
+      - name: Load or pull the pinned image
+        run: |
+          if [ -f /tmp/esp-matter-image.tar ]; then
+            docker load -i /tmp/esp-matter-image.tar
+          else
+            docker pull "$ESP_MATTER_IMAGE"
+            docker save "$ESP_MATTER_IMAGE" -o /tmp/esp-matter-image.tar
+          fi
+
+      - name: Build firmware/${{ matrix.firmware }} for esp32
+        run: |
+          docker run --rm -v "$PWD":/project "$ESP_MATTER_IMAGE" bash -c '
+            set -e
+            cd /project/firmware/${{ matrix.firmware }}
+            idf.py set-target esp32
+            idf.py build
+          '
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: matter_${{ matrix.firmware }}-esp32
+          path: firmware/${{ matrix.firmware }}/build/matter_${{ matrix.firmware }}.bin
+          if-no-files-found: error
+
+  # Release path: only on a v* tag. Every device type x every supported
+  # target, then every .bin gets attached to the tag's GitHub Release.
+  build-release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        firmware: [light, switch]
+        target: [esp32, esp32c3, esp32c6, esp32s3, esp32h2]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cache esp-matter Docker image
+        uses: actions/cache@v4
+        with:
+          path: /tmp/esp-matter-image.tar
+          key: esp-matter-image-${{ env.ESP_MATTER_IMAGE }}
+
+      - name: Load or pull the pinned image
+        run: |
+          if [ -f /tmp/esp-matter-image.tar ]; then
+            docker load -i /tmp/esp-matter-image.tar
+          else
+            docker pull "$ESP_MATTER_IMAGE"
+            docker save "$ESP_MATTER_IMAGE" -o /tmp/esp-matter-image.tar
+          fi
+
+      - name: Build firmware/${{ matrix.firmware }} for ${{ matrix.target }}
+        run: |
+          docker run --rm -v "$PWD":/project "$ESP_MATTER_IMAGE" bash -c '
+            set -e
+            cd /project/firmware/${{ matrix.firmware }}
+            idf.py set-target ${{ matrix.target }}
+            idf.py build
+          '
+
+      - name: Rename binary with target suffix (avoids collisions in the release)
+        run: |
+          cp "firmware/${{ matrix.firmware }}/build/matter_${{ matrix.firmware }}.bin" \
+             "matter_${{ matrix.firmware }}-${{ matrix.target }}.bin"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: matter_${{ matrix.firmware }}-${{ matrix.target }}
+          path: matter_${{ matrix.firmware }}-${{ matrix.target }}.bin
+          if-no-files-found: error
+
+  release:
+    needs: build-release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Flatten artifacts into one directory
+        run: |
+          mkdir -p out
+          find artifacts -name "*.bin" -exec cp {} out/ \;
+          ls -la out/
+
+      - name: Create or update the release and attach binaries
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          NOTES="Built with ${{ env.ESP_MATTER_IMAGE }}.
+
+          Only esp32 (classic WROOM-32) has been flashed and commissioned on
+          real hardware — see CLAUDE.md. The other targets build cleanly but
+          their flash offsets/behavior haven't been physically verified in
+          this repo yet."
+
+          if gh release view "${{ github.ref_name }}" --repo "${{ github.repository }}" >/dev/null 2>&1; then
+            gh release upload "${{ github.ref_name }}" out/*.bin \
+              --repo "${{ github.repository }}" --clobber
+          else
+            gh release create "${{ github.ref_name }}" out/*.bin \
+              --repo "${{ github.repository }}" \
+              --title "${{ github.ref_name }}" \
+              --notes "$NOTES"
+          fi
