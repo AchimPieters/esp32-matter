@@ -35,8 +35,6 @@ esp32-matter/
 │   ├── dev.sh               # Opens the Docker dev environment
 │   ├── gen_factory.sh       # Generates the factory partition + QR code locally
 │   └── product-wizard/      # Local no-build web UI to set up a device + generate build/flash commands
-├── .github/workflows/
-│   └── build.yml           # CI: builds in the esp-matter image, attaches .bin to Releases
 ├── docs/
 │   └── getting-started.md  # Step-by-step first-device guide
 └── SECURITY.md             # How to enable flash encryption + secure boot
@@ -80,10 +78,16 @@ esp32-matter/
    ```
 
 6. **Flash from your host** (Docker Desktop on macOS can't see the USB port, so
-   flash outside the container — install esptool with `pip3 install esptool`):
+   flash outside the container — install esptool with `pip3 install esptool`).
+   `0x1000` is the bootloader offset for classic ESP32 specifically — it's
+   `0x0` on every later chip (C3/C6/S3/H2). `ota_data_initial.bin` is
+   required too: this partition table has no "factory" app slot, so the
+   bootloader needs it to know which OTA slot to boot.
    ```bash
-   esptool.py -p <PORT> write_flash 0x0 firmware/light/build/bootloader/bootloader.bin \
-       0x8000 firmware/light/build/partition_table/partition-table.bin \
+   esptool.py -p <PORT> write_flash \
+       0x1000  firmware/light/build/bootloader/bootloader.bin \
+       0x8000  firmware/light/build/partition_table/partition-table.bin \
+       0x10000 firmware/light/build/ota_data_initial.bin \
        0x20000 firmware/light/build/matter_light.bin
    ```
 
@@ -99,18 +103,14 @@ state, though sending a command to a bound device is still a TODO in its
 type in `app_main.cpp` — esp-matter provides ready-made types like
 `dimmable_light`, `temperature_sensor`, `contact_sensor`, and many more.
 
-## Updates via GitHub Releases
+## Updates
 
-Push a tag and CI builds the firmware in the esp-matter image and publishes a
-Release with the `.bin` attached:
-
-```bash
-git tag v1.0.0
-git push origin v1.0.0
-```
-
-Flash a Release `.bin` over USB, or build Matter OTA on top so devices update
-themselves over the air (start with USB; add OTA later).
+No CI yet (see CLAUDE.md — an automated build/release workflow was tried
+but the multi-GB Docker image stalled out on GitHub-hosted runners, so it
+was reverted rather than left flaky). For now, build + flash a new version
+yourself following the Quick Start steps above whenever you change
+`app_main.cpp`, or build Matter OTA on top so devices update themselves
+over the air (start with USB; add OTA later).
 
 ## Honest expectations
 
