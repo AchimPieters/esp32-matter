@@ -23,15 +23,18 @@ setup; the code also runs on ESP32-C3/C6/S3/H2.
 ```
 esp32-matter/
 ├── firmware/
-│   └── light/              # A minimal On/Off light — your starting point
-│       ├── main/app_main.cpp
-│       ├── main/CMakeLists.txt
-│       ├── CMakeLists.txt
-│       ├── partitions.csv  # OTA A/B slots + separate factory partition
-│       └── sdkconfig.defaults
+│   ├── light/               # A minimal On/Off light — your starting point
+│   │   ├── main/app_main.cpp
+│   │   ├── main/CMakeLists.txt
+│   │   ├── CMakeLists.txt
+│   │   ├── partitions.csv   # OTA A/B slots + separate factory partition
+│   │   └── sdkconfig.defaults
+│   └── switch/              # A minimal On/Off switch — copied from light/
+│       └── (same layout as light/)
 ├── tools/
-│   ├── dev.sh              # Opens the Docker dev environment
-│   └── gen_factory.sh      # Generates the factory partition + QR code locally
+│   ├── dev.sh               # Opens the Docker dev environment
+│   ├── gen_factory.sh       # Generates the factory partition + QR code locally
+│   └── product-wizard/      # Local no-build web UI to set up a device + generate a patch
 ├── .github/workflows/
 │   └── build.yml           # CI: builds in the esp-matter image, attaches .bin to Releases
 ├── docs/
@@ -43,9 +46,11 @@ esp32-matter/
 
 1. **Install Docker Desktop** and make sure it's running.
 
-2. **Pull the esp-matter image** (ESP-IDF + esp-matter pre-installed):
+2. **Pull the esp-matter image** (ESP-IDF + esp-matter pre-installed). Pinned
+   to esp-matter's own recommended ESP-IDF version (v5.5.4) for reproducible
+   builds — esp-matter doesn't support ESP-IDF v6.0.x yet:
    ```bash
-   docker pull espressif/esp-matter:latest
+   docker pull espressif/esp-matter:release-v1.6_idf_v5.5.4
    ```
 
 3. **Clone this repository** (recursively):
@@ -60,13 +65,14 @@ esp32-matter/
    ```
    Or manually, exactly in the StudioPieters style:
    ```bash
-   docker run --rm -it -v "$PWD":/project -w /project espressif/esp-matter:latest /bin/bash
+   docker run --rm -it -v "$PWD":/project -w /project espressif/esp-matter:release-v1.6_idf_v5.5.4 /bin/bash
    ```
 
-5. **Build inside the container:**
+5. **Build inside the container.** The image's entrypoint already activates
+   ESP-IDF and esp-matter for you, but it also leaves the shell in
+   `$ESP_MATTER_PATH`, not `/project` — use the absolute path:
    ```bash
-   . "$IDF_PATH/export.sh" && . "$ESP_MATTER_PATH/export.sh"
-   cd firmware/light
+   cd /project/firmware/light
    idf.py set-target esp32        # or esp32c3 / esp32c6 / esp32s3 / esp32h2
    idf.py build
    ```
@@ -84,8 +90,11 @@ esp32-matter/
 
 ## Adding more device types
 
-Copy `firmware/light/` to e.g. `firmware/switch/` and swap the endpoint type in
-`app_main.cpp` — esp-matter provides ready-made types like `on_off_switch`,
+`firmware/switch/` is a second example, copied from `firmware/light/` with the
+endpoint type swapped to `on_off_switch` — its button toggles its own OnOff
+state, though sending a command to a bound device is still a TODO in its
+`app_main.cpp`. To add another type, copy either folder and swap the endpoint
+type in `app_main.cpp` — esp-matter provides ready-made types like
 `dimmable_light`, `temperature_sensor`, `contact_sensor`, and many more.
 
 ## Updates via GitHub Releases

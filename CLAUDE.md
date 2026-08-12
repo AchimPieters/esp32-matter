@@ -27,9 +27,16 @@ The HomeKit guide uses the `espressif/idf` image, which does NOT contain
 esp-matter — so we use the **`espressif/esp-matter`** image instead (ESP-IDF +
 esp-matter pre-installed, `IDF_PATH` and `ESP_MATTER_PATH` already set).
 
+Pinned to **`espressif/esp-matter:release-v1.6_idf_v5.5.4`** — esp-matter's own
+recommended ESP-IDF version, for reproducible builds. **Do not bump this to an
+ESP-IDF v6.0.x image**: esp-matter does not support ESP-IDF v6.0 yet (confirmed
+via the esp-matter repo, which still recommends v5.5.4, and Espressif's own
+v6.0 announcement, which lists Matter as not yet available on that branch).
+Revisit this once esp-matter publishes a v6.0-based release tag.
+
 Open the environment:
 ```bash
-./tools/dev.sh          # wraps: docker run --rm -it -v "$PWD":/project -w /project espressif/esp-matter:latest /bin/bash
+./tools/dev.sh          # wraps: docker run --rm -it -v "$PWD":/project -w /project espressif/esp-matter:release-v1.6_idf_v5.5.4 /bin/bash
 ```
 
 Default build target: classic **ESP32 (WROOM-32)**. Also supports esp32c3 / c6 /
@@ -37,13 +44,28 @@ s3 / h2. (C6/H2 additionally support Thread; classic ESP32 is Wi-Fi.)
 
 ## Common commands
 
-Build (inside the container):
+Build (inside the container). The image's entrypoint already sources both
+export.sh scripts before you get a shell, so that step isn't needed — but the
+entrypoint also leaves you in `$ESP_MATTER_PATH` (`/opt/espressif/esp-matter`),
+**not** `/project`, no matter what `-w` you pass to `docker run`. Use the
+absolute container path, not a path relative to wherever your shell happens
+to have landed:
 ```bash
-. "$IDF_PATH/export.sh" && . "$ESP_MATTER_PATH/export.sh"
-cd firmware/light
+cd /project/firmware/light
 idf.py set-target esp32
 idf.py build
 ```
+
+Two build-system gotchas already worked around in this repo's CMakeLists.txt
+files, worth knowing if you copy `firmware/light/` for a new device type:
+- Don't add `$ESP_MATTER_PATH/examples/common` to `EXTRA_COMPONENT_DIRS`
+  unless you actually use something from it (e.g. `app_reset`) — ESP-IDF
+  tries to build every component it finds there, and `app_reset` needs a
+  `button` component this project doesn't declare.
+- `-DCHIP_HAVE_CONFIG_H` (and a few other flags) must be set **project-wide**
+  via `idf_build_set_property(...)` before `project(...)` in the root
+  `CMakeLists.txt` — connectedhomeip/esp_matter compile as their own
+  component, so setting it only on `main` isn't enough.
 
 Flash (from the HOST, not the container — Docker Desktop on macOS can't see USB):
 ```bash
@@ -67,9 +89,18 @@ firmware/light/          On/Off light — the reference device
   main/app_main.cpp       plain esp-matter code; LED on GPIO 2 (WROOM-32)
   partitions.csv          OTA A/B slots + separate fctry partition (fits 4 MB)
   sdkconfig.defaults      factory-data provider + custom partition table
+firmware/switch/          On/Off switch — second device type, copied from light/
+  main/app_main.cpp       button on GPIO 0 (WROOM-32) toggles the switch's own
+                           OnOff attribute; sending commands to a bound device
+                           is a documented TODO (needs esp-matter client APIs)
+  partitions.csv           same OTA + fctry layout as firmware/light/
+  sdkconfig.defaults        same as firmware/light/
 tools/
   dev.sh                  opens the Docker dev environment
   gen_factory.sh          local QR + factory partition generator
+  product-wizard/         local no-build web UI that walks through picking a
+                           device type + module + GPIO and downloads a patch
+                           to apply by hand (see its own README)
 .github/workflows/build.yml  CI: builds in espressif/esp-matter image, attaches .bin to Releases on v* tags
 docs/getting-started.md   step-by-step first-device guide
 SECURITY.md               flash encryption / secure boot / signed OTA guidance
@@ -83,9 +114,9 @@ SECURITY.md               flash encryption / secure boot / signed OTA guidance
   swap the endpoint type in `app_main.cpp` (esp-matter offers `on_off_switch`,
   `dimmable_light`, `temperature_sensor`, `contact_sensor`, etc.).
 - Releases: push a `v*` tag; CI builds and publishes the `.bin`.
-- For reproducible builds, consider pinning the image tag (e.g.
-  `espressif/esp-matter:release-v1.5`) in `tools/dev.sh` and `build.yml` instead
-  of `latest`.
+- Image tag is pinned to `release-v1.6_idf_v5.5.4` in `tools/dev.sh` (and should
+  be, once it exists, in `build.yml` too) for reproducible builds — see
+  "Development environment" above for why not `latest` or an IDF v6.0.x tag.
 
 ## Never commit
 
@@ -95,11 +126,16 @@ SECURITY.md               flash encryption / secure boot / signed OTA guidance
 
 ## Open next steps (discussed, not yet done)
 
-1. Add a second device type (switch or temperature sensor) as a concrete
-   duplication example.
-2. Implement Matter **OTA** so devices update themselves over the air from a
+1. Add a third device type (temperature or contact sensor) — `firmware/light/`
+   and `firmware/switch/` are both there now as duplication examples.
+2. Make the switch actually control a bound device: wire up esp-matter's
+   client invoke API in `firmware/switch/main/app_main.cpp` (see the TODO in
+   that file) instead of just toggling its own attribute locally.
+3. Implement Matter **OTA** so devices update themselves over the air from a
    GitHub Release `.bin` (start from USB flashing, add signed OTA on top).
-3. Optionally pin SDK/image versions for reproducibility.
+4. `build.yml` is documented above but doesn't exist yet — write the actual
+   CI workflow, pinned to the same `release-v1.6_idf_v5.5.4` image tag.
+5. Move to an ESP-IDF v6.0.x-based image once esp-matter publishes one.
 
 ## Note on hardware/USB
 

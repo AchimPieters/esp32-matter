@@ -56,3 +56,18 @@ dkms.conf
 
 # debug information files
 *.dwo
+
+# ESP-IDF build output + generated/fetched files (per firmware/*/ project)
+build/
+sdkconfig
+dependencies.lock
+managed_components/
+
+# tools/gen_factory.sh output — per-device secrets, never commit
+out/
+tools/test-credentials/
+*-qrcode.png
+
+# Firmware images and signing keys — never commit (see CLAUDE.md)
+*.bin
+*.pem

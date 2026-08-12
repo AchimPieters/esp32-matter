@@ -22,10 +22,12 @@ flashing). Everything else lives inside the container.
 
 ## 2. Pull the esp-matter Docker image
 
-This image bundles ESP-IDF *and* esp-matter, already installed and exported:
+This image bundles ESP-IDF *and* esp-matter, already installed and exported.
+Pinned to esp-matter's own recommended ESP-IDF version (v5.5.4) for
+reproducible builds — esp-matter doesn't support ESP-IDF v6.0.x yet:
 
 ```bash
-docker pull espressif/esp-matter:latest
+docker pull espressif/esp-matter:release-v1.6_idf_v5.5.4
 ```
 
 > The plain `espressif/idf` image used in the HomeKit guide does **not** contain
@@ -49,16 +51,20 @@ Use the helper:
 …which is equivalent to the StudioPieters-style command:
 
 ```bash
-docker run --rm -it -v "$PWD":/project -w /project espressif/esp-matter:latest /bin/bash
+docker run --rm -it -v "$PWD":/project -w /project espressif/esp-matter:release-v1.6_idf_v5.5.4 /bin/bash
 ```
 
-You're now inside the container, in `/project`, with the whole SDK available.
+You're now inside the container with the whole SDK already activated — the
+image's entrypoint runs both `export.sh` scripts for you before handing you
+the shell. That entrypoint also leaves you in `$ESP_MATTER_PATH`
+(`/opt/espressif/esp-matter`), **not** `/project`, regardless of the `-w`
+flag passed to `docker run`. Your repo is still mounted at `/project`; just
+use the absolute path to get there.
 
 ## 5. Build the light (inside the container)
 
 ```bash
-. "$IDF_PATH/export.sh" && . "$ESP_MATTER_PATH/export.sh"
-cd firmware/light
+cd /project/firmware/light
 idf.py set-target esp32          # or esp32c3 / esp32c6 / esp32s3 / esp32h2
 idf.py build
 ```

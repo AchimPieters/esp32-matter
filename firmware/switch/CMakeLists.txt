@@ -21,11 +21,9 @@ set(MATTER_SDK_PATH ${ESP_MATTER_PATH}/connectedhomeip/connectedhomeip)
 # EXTRA_COMPONENT_DIRS, and examples/common/app_reset requires a "button"
 # component (espressif/button from the component registry) that isn't
 # declared anywhere in this minimal project. Since app_main.cpp doesn't use
-# anything from examples/common, leaving it out avoids that unresolved
-# dependency entirely. If you add code that needs something from there
-# (e.g. app_reset for a factory-reset button), add this dir back AND add an
-# idf_component.yml declaring `espressif/button: "^4"` under main/, per
-# examples/generic_switch/main/idf_component.yml in the SDK.
+# anything from examples/common (this switch reads its button via plain
+# driver/gpio.h, not the button/app_reset components), leaving it out
+# avoids that unresolved dependency entirely.
 set(EXTRA_COMPONENT_DIRS
     "${ESP_MATTER_PATH}/components"
     "${MATTER_SDK_PATH}/config/esp32/components")
@@ -35,12 +33,11 @@ include($ENV{IDF_PATH}/tools/cmake/project.cmake)
 # The connectedhomeip/esp_matter sources are compiled as their own component,
 # so this flag has to be set project-wide (not just on our own component in
 # main/CMakeLists.txt) — every official esp-matter example sets it the same
-# way, right here, before project(). Without it, headers like
-# connectedhomeip/src/include/platform/PlatformManager.h fail to compile
-# (missing platform-specific implementation types) because they're gated on
-# CHIP_HAVE_CONFIG_H being defined.
+# way, right here, before project(). Without it, platform headers fail to
+# compile (missing platform-specific implementation types) because they're
+# gated on CHIP_HAVE_CONFIG_H being defined.
 idf_build_set_property(CXX_COMPILE_OPTIONS "-std=gnu++17;-Os;-DCHIP_HAVE_CONFIG_H;-Wno-overloaded-virtual" APPEND)
 idf_build_set_property(C_COMPILE_OPTIONS "-Os" APPEND)
 idf_build_set_property(COMPILE_OPTIONS "-Wno-format-nonliteral;-Wno-format-security" APPEND)
 
-project(matter_light)
+project(matter_switch)

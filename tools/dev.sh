@@ -14,9 +14,10 @@
 
 set -euo pipefail
 
-# Pin the image tag deliberately. 'latest' tracks the newest esp-matter release;
-# pin to e.g. release-v1.5 for reproducible builds.
-IMAGE="${ESP_MATTER_IMAGE:-espressif/esp-matter:latest}"
+# Pinned to esp-matter's own recommended ESP-IDF version for reproducible
+# builds (esp-matter doesn't support ESP-IDF v6.0.x yet — see CLAUDE.md).
+# Override with ESP_MATTER_IMAGE=... to track 'latest' or another tag instead.
+IMAGE="${ESP_MATTER_IMAGE:-espressif/esp-matter:release-v1.6_idf_v5.5.4}"
 
 # Mount the repository root at /project inside the container.
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"

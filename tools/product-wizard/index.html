@@ -541,11 +541,6 @@
     margin: 0;
   }
 
-  .option-card.disabled {
-    cursor: not-allowed;
-    opacity: 0.55;
-  }
-
   /* ---------- Customise & Review ---------- */
 
   .review-grid {
@@ -597,48 +592,6 @@
     color: #1a7f37;
   }
 
-  /* ---------- Generate Firmware ---------- */
-
-  .download-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-    gap: 14px;
-    margin-bottom: 8px;
-  }
-
-  .download-card {
-    border: 1px solid var(--border);
-    border-radius: var(--radius);
-    padding: 16px;
-  }
-
-  .download-card h3 {
-    margin: 0 0 4px;
-    font-size: 14px;
-    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  }
-
-  .download-card .desc {
-    font-size: 12px;
-    color: var(--text-muted);
-    margin: 0 0 12px;
-    min-height: 32px;
-  }
-
-  .howto-list {
-    font-size: 13px;
-    color: var(--text);
-    line-height: 1.8;
-    padding-left: 20px;
-    margin: 0 0 8px;
-  }
-
-  .howto-list code {
-    background: #eef1f6;
-    padding: 1px 5px;
-    border-radius: 4px;
-    font-size: 12px;
-  }
 </style>
 </head>
 <body>
@@ -661,6 +614,11 @@
 
 const STORAGE_KEY = "esp32matter.products";
 
+// Same image + tag as tools/dev.sh, pinned to esp-matter's own recommended
+// ESP-IDF version (v5.5.4) for reproducible builds — esp-matter doesn't
+// support ESP-IDF v6.0.x yet. See CLAUDE.md before bumping this.
+const ESP_MATTER_IMAGE = "espressif/esp-matter:release-v1.6_idf_v5.5.4";
+
 const WIZARD_STEPS = [
   "Get Started",
   "Select Module",
@@ -670,61 +628,115 @@ const WIZARD_STEPS = [
   "Generate Firmware",
 ];
 
-/* Device types this repo actually has firmware for (see firmware/).
- * Only one today — copy firmware/light/ to add more, per CLAUDE.md. */
+/* Device types this repo actually has firmware for (see firmware/). Each
+ * entry's `driver` block describes the one GPIO setting that device's
+ * app_main.cpp actually exposes, plus the exact #define + file path so the
+ * Customise & Review / Generate Firmware steps can generate a real diff
+ * instead of a generic placeholder. Copy an existing firmware/ folder to
+ * add a new type, per CLAUDE.md, and add a matching entry here. */
 const DEVICE_TYPES = [
   {
     id: "light",
     name: "On/Off Light",
     desc: "Matter on/off light, driven by a single digital GPIO. Reference device in firmware/light/.",
+    // Matches project(matter_light) in firmware/light/CMakeLists.txt — the
+    // built app image is always <project name>.bin.
+    binName: "matter_light.bin",
+    driver: {
+      summary: "GPIO (digital output)",
+      fieldLabel: "LED GPIO pin",
+      blockTitle: "LED · digital GPIO",
+      filePath: "firmware/light/main/app_main.cpp",
+      defineName: "LIGHT_LED_GPIO",
+      // The literal value app_main.cpp ships with today, regardless of
+      // target chip — this is the diff's baseline ("-" line).
+      currentGpio: 2,
+      // Suggested value to prefill per module (echoes the comment in
+      // app_main.cpp: "GPIO 2 is common on classic ESP32 devkits; ESP32-C6
+      // devkits often use GPIO 8") — you still have to edit the file.
+      defaultsByModule: { esp32: 2, esp32c3: 8, esp32c6: 8, esp32s3: 2, esp32h2: 8 },
+    },
+  },
+  {
+    id: "switch",
+    name: "On/Off Switch",
+    desc: "Matter on/off switch: a physical button toggles the switch's own state. Reference device in firmware/switch/.",
+    // Matches project(matter_switch) in firmware/switch/CMakeLists.txt.
+    binName: "matter_switch.bin",
+    driver: {
+      summary: "GPIO (digital input, active-low)",
+      fieldLabel: "Button GPIO pin",
+      blockTitle: "Button · digital GPIO input",
+      filePath: "firmware/switch/main/app_main.cpp",
+      defineName: "SWITCH_BUTTON_GPIO",
+      // The literal value app_main.cpp ships with today — this is the
+      // diff's baseline ("-" line).
+      currentGpio: 0,
+      // Suggested value to prefill per module (GPIO 0 = BOOT button on
+      // classic ESP32 DevKitC; C3/C6/H2 DevKits typically wire BOOT to
+      // GPIO 9) — you still have to edit the file.
+      defaultsByModule: { esp32: 0, esp32c3: 9, esp32c6: 9, esp32s3: 0, esp32h2: 9 },
+    },
   },
 ];
 
-/* Reasonable default LED GPIO per module, echoing the comment in
- * firmware/light/main/app_main.cpp ("GPIO 2 is common on classic ESP32
- * devkits; ESP32-C6 devkits often use GPIO 8") — always adjustable, since
- * it genuinely depends on the board. */
-const DEFAULT_LED_GPIO = {
-  esp32: 2,
-  esp32c3: 8,
-  esp32c6: 8,
-  esp32s3: 2,
-  esp32h2: 8,
-};
+function findDeviceType(id) {
+  return DEVICE_TYPES.find((d) => d.id === id) || null;
+}
 
 /* Chips this repo's Docker dev flow (tools/dev.sh) targets via
  * `idf.py set-target <chip>`. Connectivity reflects the actual radios on
- * each chip, not marketing copy — ESP32-H2 has no Wi-Fi, for example. */
+ * each chip, not marketing copy — ESP32-H2 has no Wi-Fi, for example.
+ *
+ * bootloaderOffset: where the second-stage bootloader gets flashed — 0x1000
+ * on the original ESP32 (Xtensa LX6), 0x0 on every later chip (RISC-V ones
+ * and Xtensa S3). Getting this wrong doesn't fail loudly; the board just
+ * won't boot. offsetsVerified is true only for esp32 — the one target this
+ * project has actually built, flashed, and commissioned end to end. The
+ * others follow documented ESP-IDF convention but haven't been confirmed
+ * against real hardware in this repo yet; idf.py build always prints the
+ * authoritative command for whatever it just built, so cross-check that if
+ * you hit boot trouble on one of them. */
 const MODULES = [
   {
     id: "esp32",
     name: "ESP32 (WROOM-32)",
     desc: "Classic dual-core ESP32 — the default target for this repo.",
     conn: ["wifi", "ble"],
+    bootloaderOffset: "0x1000",
+    offsetsVerified: true,
   },
   {
     id: "esp32c3",
     name: "ESP32-C3",
     desc: "Single-core RISC-V, compact and low-cost.",
     conn: ["wifi", "ble"],
+    bootloaderOffset: "0x0",
+    offsetsVerified: false,
   },
   {
     id: "esp32c6",
     name: "ESP32-C6",
     desc: "Wi-Fi 6 plus 802.15.4 — can run Matter over Thread.",
     conn: ["wifi", "ble", "thread"],
+    bootloaderOffset: "0x0",
+    offsetsVerified: false,
   },
   {
     id: "esp32s3",
     name: "ESP32-S3",
     desc: "Dual-core with more RAM/flash headroom.",
     conn: ["wifi", "ble"],
+    bootloaderOffset: "0x0",
+    offsetsVerified: false,
   },
   {
     id: "esp32h2",
     name: "ESP32-H2",
     desc: "802.15.4 (Thread/Zigbee) only — no Wi-Fi. Needs a Thread border router.",
     conn: ["ble", "thread"],
+    bootloaderOffset: "0x0",
+    offsetsVerified: false,
   },
 ];
 
@@ -736,7 +748,13 @@ const state = {
 
 function loadProducts() {
   try {
-    return JSON.parse(localStorage.getItem(STORAGE_KEY)) || [];
+    const products = JSON.parse(localStorage.getItem(STORAGE_KEY)) || [];
+    // Migrate products saved before device types were generalised: the LED
+    // GPIO field used to be called ledGpio specifically.
+    products.forEach((p) => {
+      if (p.gpioPin == null && p.ledGpio != null) p.gpioPin = p.ledGpio;
+    });
+    return products;
   } catch (e) {
     return [];
   }
@@ -856,8 +874,10 @@ function renderGetStarted(p) {
       <p class="step-hint">What kind of Matter device is "${escapeHtml(p.name)}"?</p>
       <div class="option-grid">${cards}</div>
       <p class="note-box">
-        Only the On/Off Light is implemented so far. Adding a switch or
-        temperature sensor is an open next step — see CLAUDE.md.
+        Only On/Off Light and On/Off Switch are implemented so far — each
+        maps to a real folder under <code>firmware/</code>. Adding a
+        temperature or contact sensor is an open next step, copying either
+        one per CLAUDE.md.
       </p>
       ${renderWizardFooter(p, !!p.deviceType)}
     </div>
@@ -889,10 +909,12 @@ function renderSelectModule(p) {
 }
 
 function renderConfigureDevice(p) {
-  if (p.ledGpio == null) {
-    p.ledGpio = DEFAULT_LED_GPIO[p.target] != null ? DEFAULT_LED_GPIO[p.target] : 2;
-  }
-  const gpioValid = Number.isInteger(p.ledGpio) && p.ledGpio >= 0;
+  const deviceType = findDeviceType(p.deviceType);
+  const driver = deviceType ? deviceType.driver : null;
+  const defaultGpio = driver ? (driver.defaultsByModule[p.target] != null ? driver.defaultsByModule[p.target] : 2) : 2;
+
+  if (p.gpioPin == null) p.gpioPin = defaultGpio;
+  const gpioValid = Number.isInteger(p.gpioPin) && p.gpioPin >= 0;
 
   return `
     <div class="configure-grid">
@@ -901,21 +923,21 @@ function renderConfigureDevice(p) {
         <p class="step-hint">Set the driver options for this ${escapeHtml(deviceTypeName(p.deviceType))} on ${escapeHtml(moduleName(p.target))}.</p>
 
         <div class="driver-block">
-          <h3>LED &middot; digital GPIO</h3>
-          <label class="field-label" for="led-gpio">LED GPIO pin</label>
-          <input type="number" id="led-gpio" min="0" max="48" value="${p.ledGpio}">
+          <h3>${escapeHtml(driver ? driver.blockTitle : "GPIO")}</h3>
+          <label class="field-label" for="gpio-pin">${escapeHtml(driver ? driver.fieldLabel : "GPIO pin")}</label>
+          <input type="number" id="gpio-pin" min="0" max="48" value="${p.gpioPin}">
           <div class="field-error">${gpioValid ? "" : "Enter a valid GPIO number (0 or higher)."}</div>
           <p class="field-note">
-            Adjust to match your board — GPIO ${DEFAULT_LED_GPIO[p.target] != null ? DEFAULT_LED_GPIO[p.target] : 2}
+            Adjust to match your board — GPIO ${defaultGpio}
             is a common default for ${escapeHtml(moduleName(p.target))} devkits, not a guarantee for yours.
           </p>
         </div>
 
         <p class="note-box">
           This only records your choice for now — it doesn't edit
-          <code>firmware/light/main/app_main.cpp</code> yet. Applying it
-          (replacing <code>LIGHT_LED_GPIO</code>) is part of the
-          not-yet-built Generate Firmware step.
+          <code>${escapeHtml(driver ? driver.filePath : "app_main.cpp")}</code> yet. Applying it
+          (replacing <code>${escapeHtml(driver ? driver.defineName : "")}</code>) happens in the
+          Generate Firmware step.
         </p>
 
         ${renderWizardFooter(p, gpioValid)}
@@ -933,8 +955,8 @@ function renderConfigureDevice(p) {
         </div>
         <div class="summary-row">
           <div class="summary-label">DRIVER</div>
-          <div class="summary-value">GPIO (digital on/off)</div>
-          <div class="summary-detail">IO pin: GPIO ${gpioValid ? p.ledGpio : "?"}</div>
+          <div class="summary-value">${escapeHtml(driver ? driver.summary : "—")}</div>
+          <div class="summary-detail">IO pin: GPIO ${gpioValid ? p.gpioPin : "?"}</div>
         </div>
       </div>
     </div>
@@ -946,11 +968,11 @@ function renderTestProduct(p) {
     <div class="step-panel">
       <h2>Test your device</h2>
       <p class="step-hint">
-        Optional: connect a board already flashed via the Docker build
-        (see <code>docs/getting-started.md</code>) and watch its serial
-        log — handy for checking commissioning output. This talks to
-        whatever firmware is already on the board; generating and flashing
-        firmware straight from this wizard isn't built yet.
+        Optional: connect a board and watch its serial log — handy for
+        checking commissioning output. This talks to whatever firmware is
+        already on the board, so it works whether you flashed it just now
+        via Generate Firmware's commands (step 6) or some other way (see
+        <code>docs/getting-started.md</code>).
       </p>
 
       ${serialState.supported ? renderSerialMonitor() : `
@@ -959,11 +981,6 @@ function renderTestProduct(p) {
           Chrome or Edge, not this browser.
         </div>
       `}
-
-      <div class="option-card disabled">
-        <h3>Download the generated firmware</h3>
-        <p class="desc">Available once the Generate Firmware step exists.</p>
-      </div>
 
       ${renderWizardFooter(p, true)}
     </div>
@@ -1066,29 +1083,28 @@ function updateSerialUI() {
 /* Selection completeness + generated set-target/diff text, shared by
  * Customise & Review and Generate Firmware so they can't drift apart. */
 function isProductComplete(p) {
-  return !!p.deviceType && !!p.target && Number.isInteger(p.ledGpio) && p.ledGpio >= 0;
+  return !!p.deviceType && !!p.target && Number.isInteger(p.gpioPin) && p.gpioPin >= 0;
 }
 
 function buildConfigPreview(p) {
+  const deviceType = findDeviceType(p.deviceType);
+  const driver = deviceType ? deviceType.driver : null;
+  const filePath = driver ? driver.filePath : "app_main.cpp";
+  const defineName = driver ? driver.defineName : "GPIO_PIN";
+  // The diff's "-" line must match what's actually in the file today, not
+  // a per-module suggestion — those only prefill the input, they don't
+  // change what's shipped.
+  const currentGpio = driver ? driver.currentGpio : 2;
+
   const setTargetCmd = `idf.py set-target ${p.target || "<module>"}`;
   const diffPreview = [
-    "--- a/firmware/light/main/app_main.cpp",
-    "+++ b/firmware/light/main/app_main.cpp",
+    `--- a/${filePath}`,
+    `+++ b/${filePath}`,
     "@@",
-    "-#define LIGHT_LED_GPIO GPIO_NUM_2",
-    `+#define LIGHT_LED_GPIO GPIO_NUM_${p.ledGpio != null ? p.ledGpio : "?"}`,
+    `-#define ${defineName} GPIO_NUM_${currentGpio}`,
+    `+#define ${defineName} GPIO_NUM_${p.gpioPin != null ? p.gpioPin : "?"}`,
   ].join("\n");
-  return { setTargetCmd, diffPreview };
-}
-
-function slugify(str) {
-  return (
-    str
-      .toLowerCase()
-      .trim()
-      .replace(/[^a-z0-9]+/g, "-")
-      .replace(/^-+|-+$/g, "") || "product"
-  );
+  return { setTargetCmd, diffPreview, filePath };
 }
 
 function renderCustomiseReview(p) {
@@ -1124,7 +1140,7 @@ function renderCustomiseReview(p) {
         <div class="review-row">
           <div>
             <div class="summary-label">DRIVER</div>
-            <div class="summary-value">GPIO (digital on/off) &middot; IO pin GPIO ${p.ledGpio != null ? p.ledGpio : "?"}</div>
+            <div class="summary-value">${escapeHtml(driverSummary(p.deviceType))} &middot; IO pin GPIO ${p.gpioPin != null ? p.gpioPin : "?"}</div>
           </div>
           <button class="link" data-goto-step="2">Edit</button>
         </div>
@@ -1134,10 +1150,9 @@ function renderCustomiseReview(p) {
 
       <h3 style="margin-top:24px;">Generated configuration preview</h3>
       <p class="field-note">
-        This is what the (not-yet-built) Generate Firmware step would
-        apply — a target switch and a one-line patch to
-        <code>app_main.cpp</code>. Nothing runs automatically; copy it and
-        apply it yourself through the Docker build for now.
+        A preview of the target switch and the one-line patch to
+        <code>app_main.cpp</code> — Generate Firmware (step 6) wraps both
+        of these into ready-to-run build and flash commands.
       </p>
 
       <div class="code-block-wrap">
@@ -1167,6 +1182,22 @@ function renderDiffLines(text) {
     .join("\n");
 }
 
+/* This page always lives at <repo>/tools/product-wizard/index.html when
+ * opened the normal way (open tools/product-wizard/index.html). A file://
+ * page can't browse your filesystem, but it CAN read its own location — so
+ * instead of asking you to type your checkout path, or guessing where you
+ * saved a downloaded file, we read it straight out of window.location and
+ * bake the real absolute path into the generated command. Returns null if
+ * the page isn't being served as file:// from that expected location (e.g.
+ * you renamed the folder, or it's running off a web server). */
+function detectRepoRoot() {
+  if (window.location.protocol !== "file:") return null;
+  const marker = "/tools/product-wizard/";
+  const path = decodeURIComponent(window.location.pathname);
+  const idx = path.indexOf(marker);
+  return idx === -1 ? null : path.slice(0, idx);
+}
+
 function renderGenerateFirmware(p) {
   const complete = isProductComplete(p);
 
@@ -1183,44 +1214,111 @@ function renderGenerateFirmware(p) {
     `;
   }
 
-  const slug = slugify(p.name);
+  const repoRoot = detectRepoRoot();
+  const module = findModule(p.target);
+  const offsetCaveat = module && !module.offsetsVerified;
+  const deviceType = findDeviceType(p.deviceType);
+  const firmwareDir = deviceType ? deviceType.driver.filePath.replace(/\/main\/app_main\.cpp$/, "") : "firmware/light";
 
   return `
     <div class="step-panel">
       <h2>Generate firmware</h2>
       <p class="step-hint">
-        Download a patch + apply script for "${escapeHtml(p.name)}" —
+        For "${escapeHtml(p.name)}" —
         <strong>${escapeHtml(deviceTypeName(p.deviceType))}</strong> on
-        <strong>${escapeHtml(moduleName(p.target))}</strong>, LED on GPIO ${p.ledGpio}.
-        Nothing is built or flashed automatically — this stays local and
-        just hands you what it would have run.
+        <strong>${escapeHtml(moduleName(p.target))}</strong>, GPIO ${p.gpioPin}.
+        This is the exact two-step flow validated end to end on real
+        hardware for this device type: build, then flash. Nothing runs
+        automatically — you paste and run each command yourself.
       </p>
 
-      <div class="download-grid">
-        <div class="download-card">
-          <h3>${escapeHtml(slug)}.patch</h3>
-          <p class="desc">Unified diff for <code>app_main.cpp</code>'s LED GPIO define.</p>
-          <button class="secondary" id="download-patch-btn">Download</button>
+      ${repoRoot ? `
+        <p class="field-note">
+          Detected checkout at <code>${escapeHtml(repoRoot)}</code> from this
+          page's own file:// location — both commands below are ready to
+          paste as-is, no editing needed (except <code>&lt;PORT&gt;</code>).
+        </p>
+      ` : `
+        <div class="warn-box">
+          Couldn't detect your checkout path (this page isn't being opened
+          as a local <code>tools/product-wizard/index.html</code> file).
+          Replace <code>&lt;path-to-esp32-matter&gt;</code> below by hand.
         </div>
-        <div class="download-card">
-          <h3>${escapeHtml(slug)}-apply.sh</h3>
-          <p class="desc">Runs <code>idf.py set-target</code>, then applies the patch.</p>
-          <button class="secondary" id="download-script-btn">Download</button>
-        </div>
-      </div>
+      `}
 
-      <h3 style="margin-top:24px;">How to use these</h3>
-      <ol class="howto-list">
-        <li>Save both files in the root of your <code>esp32-matter</code> checkout.</li>
-        <li>Inside the Docker dev environment (<code>tools/dev.sh</code>): <code>chmod +x ${escapeHtml(slug)}-apply.sh &amp;&amp; ./${escapeHtml(slug)}-apply.sh</code></li>
-        <li>Build: <code>cd firmware/light &amp;&amp; idf.py build</code></li>
-        <li>Flash from the host per <code>docs/getting-started.md</code>.</li>
-      </ol>
+      <h3>1. Build + generate factory data (Docker)</h3>
+      <p class="field-note">
+        Applies the GPIO patch, builds the firmware, then generates a
+        factory partition + QR code (<code>tools/gen_factory.sh</code>) —
+        including a fresh self-signed test attestation certificate the
+        first time you run this, cached under
+        <code>tools/test-credentials/</code> for next time. No file to
+        download or move: the patch is embedded straight in the command.
+      </p>
+      <div class="code-block-wrap">
+        <div class="code-block-label">DOCKER COMMAND</div>
+        <pre class="code-block" id="docker-cmd-block">${escapeHtml(buildDockerRunCmd(p, repoRoot))}</pre>
+      </div>
+      <button class="secondary" id="copy-docker-btn">Copy command</button>
+      <span class="copy-feedback" id="docker-copy-feedback"></span>
+
+      <p class="field-note" style="margin-top:14px;">
+        Uses the same <code>${ESP_MATTER_IMAGE}</code> image and env setup
+        as <code>tools/dev.sh</code> — not <code>espressif/idf</code>,
+        which doesn't have esp-matter installed, and not an ESP-IDF v6.0.x
+        image, which esp-matter doesn't support yet (see CLAUDE.md).
+      </p>
+
+      <h3 style="margin-top:24px;">2. Flash everything (from your host)</h3>
+      <p class="field-note">
+        Docker Desktop on macOS/Windows can't reach the USB port, so this
+        runs on your host, after step 1 finishes. Replace
+        <code>&lt;PORT&gt;</code> with your board's serial port (macOS:
+        <code>ls /dev/cu.*</code>; Linux: <code>ls /dev/ttyUSB*</code>;
+        Windows: Device Manager). The last line uses a shell glob to find
+        the factory partition step 1 just generated — if you've run step 1
+        more than once, clear out old runs first
+        (<code>rm -rf ${escapeHtml(firmwareDir)}/out</code>)
+        so the glob matches exactly one file.
+      </p>
+      <div class="code-block-wrap">
+        <div class="code-block-label">FLASH COMMAND</div>
+        <pre class="code-block" id="flash-cmd-block">${escapeHtml(buildFlashCmd(p, repoRoot))}</pre>
+      </div>
+      <button class="secondary" id="copy-flash-btn">Copy command</button>
+      <span class="copy-feedback" id="flash-copy-feedback"></span>
+
+      ${offsetCaveat ? `
+        <p class="field-note" style="margin-top:14px;">
+          &#9888; The bootloader offset (<code>${escapeHtml(module.bootloaderOffset)}</code>)
+          for ${escapeHtml(moduleName(p.target))} follows standard ESP-IDF
+          convention but hasn't been physically verified in this repo yet —
+          only the classic ESP32 build/flash/commission path has. If the
+          board doesn't boot, cross-check against the flash command
+          <code>idf.py build</code> itself prints at the end of step 1;
+          that one is always authoritative for what it just built.
+        </p>
+      ` : ""}
+
+      <p class="field-note" style="margin-top:14px;">
+        After flashing, scan the QR code PNG under
+        <code>${escapeHtml(firmwareDir)}/out/*/*/</code>
+        with your controller app. Home Assistant and chip-tool accept a
+        self-signed test attestation chain like this one without
+        complaint; Apple Home and Google Home <em>may</em> still reject it
+        depending on app/OS version, since they validate against their own
+        list of recognised root certificates — that's a separate,
+        ecosystem-level restriction, not a bug in what this generates (see
+        the comment at the top of <code>tools/gen_factory.sh</code>). Watch
+        the pairing attempt live via Test Product's serial monitor
+        (step 4) if it fails and you want to see why.
+      </p>
 
       <p class="note-box">
         This wizard is a scaffold, not a code generator (yet) — it doesn't
         verify the patch still applies cleanly against a checkout you've
-        modified elsewhere. If it fails, the diff above tells you exactly
+        modified elsewhere. If <code>patch</code> fails inside the
+        container, the diff in Customise &amp; Review tells you exactly
         which line to change by hand.
       </p>
 
@@ -1229,32 +1327,65 @@ function renderGenerateFirmware(p) {
   `;
 }
 
-function buildApplyScript(p, patchFileName) {
-  const { setTargetCmd } = buildConfigPreview(p);
-  return [
-    "#!/usr/bin/env bash",
-    "set -euo pipefail",
-    `# Generated by the esp32-matter Product Wizard for "${p.name}".`,
-    "# Run from the root of your esp32-matter checkout, inside the Docker",
-    "# dev environment (tools/dev.sh) or anywhere idf.py is on PATH.",
-    "",
-    `(cd firmware/light && ${setTargetCmd})`,
-    `patch -p1 < ${patchFileName}`,
-    "",
-    'echo "Applied. Now run: cd firmware/light && idf.py build"',
-  ].join("\n");
+// Strips anything that would need escaping inside a double-quoted shell
+// string (quotes, backslashes, backticks, $) before a product name goes
+// into a generated command — simpler and safer than trying to escape it
+// correctly for every shell this might get pasted into.
+function shellSafeName(str) {
+  return str.replace(/[^a-zA-Z0-9 _-]/g, "").trim() || "Device";
 }
 
-function downloadTextFile(filename, text) {
-  const blob = new Blob([text], { type: "text/plain" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
+function buildDockerRunCmd(p, repoRoot) {
+  const { setTargetCmd, diffPreview } = buildConfigPreview(p);
+  const deviceType = findDeviceType(p.deviceType);
+  const driver = deviceType ? deviceType.driver : null;
+  const firmwareDir = driver ? driver.filePath.replace(/\/main\/app_main\.cpp$/, "") : "firmware/light";
+  const mountPath = repoRoot || "<path-to-esp32-matter>";
+  const productNameSafe = shellSafeName(p.name);
+
+  // Base64-embed the patch so there's no separate file to download, move,
+  // or lose track of — no quoting hazards either, unlike piping raw diff
+  // text through a single-quoted -c '...' string.
+  const patchB64 = btoa(diffPreview + "\n");
+
+  // No need to source export.sh: the espressif/esp-matter image's own
+  // entrypoint already does that before handing off to this command. It
+  // does, however, leave the shell in $ESP_MATTER_PATH — never /project,
+  // no matter what -w is passed to docker run — so every path below is
+  // absolute against /project rather than relative. gen_factory.sh writes
+  // its output under ./out/ relative to wherever it's invoked from, so it
+  // runs from the same firmware/<type> directory as the build, landing
+  // output at firmware/<type>/out/ — right where the flash command below
+  // expects to find it.
+  const inner = [
+    "cd /project",
+    `echo ${patchB64} | base64 -d | patch -p1`,
+    `cd /project/${firmwareDir}`,
+    setTargetCmd,
+    "idf.py build",
+    `PRODUCT_NAME="${productNameSafe}" /project/tools/gen_factory.sh`,
+  ].join(" && ");
+
+  return `docker run --rm -it -v "${mountPath}:/project" -w /project ${ESP_MATTER_IMAGE} bash -c '${inner}'`;
+}
+
+function buildFlashCmd(p, repoRoot) {
+  const deviceType = findDeviceType(p.deviceType);
+  const firmwareDir = deviceType ? deviceType.driver.filePath.replace(/\/main\/app_main\.cpp$/, "") : "firmware/light";
+  const binName = deviceType ? deviceType.binName : "matter_light.bin";
+  const module = findModule(p.target);
+  const bootloaderOffset = module ? module.bootloaderOffset : "0x1000";
+  const dir = repoRoot ? `${repoRoot}/${firmwareDir}` : firmwareDir;
+
+  return [
+    `esptool.py --chip ${p.target || "<module>"} -p <PORT> -b 460800 --before default_reset --after hard_reset write_flash \\`,
+    "  --flash_mode dio --flash_size 4MB --flash_freq 40m \\",
+    `  ${bootloaderOffset}  ${dir}/build/bootloader/bootloader.bin \\`,
+    `  0x8000  ${dir}/build/partition_table/partition-table.bin \\`,
+    `  0x10000 ${dir}/build/ota_data_initial.bin \\`,
+    `  0x20000 ${dir}/build/${binName} \\`,
+    `  0x3E0000 ${dir}/out/*/*/*-partition.bin`,
+  ].join("\n");
 }
 
 function renderWizardFooter(p, canProceed) {
@@ -1274,9 +1405,39 @@ function deviceTypeName(id) {
   return d ? d.name : "—";
 }
 
+function driverSummary(deviceTypeId) {
+  const d = findDeviceType(deviceTypeId);
+  return d ? d.driver.summary : "—";
+}
+
 function moduleName(id) {
   const m = MODULES.find((x) => x.id === id);
   return m ? m.name : "—";
+}
+
+function findModule(id) {
+  return MODULES.find((x) => x.id === id) || null;
+}
+
+/* Wires a "Copy" button to copy one specific <pre> block's text, with a
+ * transient "Copied!" / failure message in a nearby feedback span. Used
+ * for every single-block copy button; copy-preview-btn (Customise &
+ * Review) is the one exception that intentionally copies more than one
+ * block at once, so it keeps its own handler. */
+function bindCopyButton(buttonId, blockId, feedbackId) {
+  const btn = document.getElementById(buttonId);
+  if (!btn) return;
+  btn.addEventListener("click", async () => {
+    const block = document.getElementById(blockId);
+    const feedback = document.getElementById(feedbackId);
+    try {
+      await navigator.clipboard.writeText(block ? block.textContent : "");
+      if (feedback) feedback.textContent = "Copied!";
+    } catch (err) {
+      if (feedback) feedback.textContent = "Copy failed — select the text manually.";
+    }
+    if (feedback) setTimeout(() => { feedback.textContent = ""; }, 2500);
+  });
 }
 
 /* ---------- Events ---------- */
@@ -1338,7 +1499,7 @@ function bindEvents() {
         step: 0,
         deviceType: null,
         target: null,
-        ledGpio: null,
+        gpioPin: null,
       };
       state.products.push(product);
       state.currentProduct = product;
@@ -1355,14 +1516,14 @@ function bindEvents() {
     });
   });
 
-  const ledGpioInput = document.getElementById("led-gpio");
-  if (ledGpioInput) {
-    ledGpioInput.addEventListener("input", () => {
-      const raw = ledGpioInput.value;
-      state.currentProduct.ledGpio = raw === "" ? null : parseInt(raw, 10);
+  const gpioPinInput = document.getElementById("gpio-pin");
+  if (gpioPinInput) {
+    gpioPinInput.addEventListener("input", () => {
+      const raw = gpioPinInput.value;
+      state.currentProduct.gpioPin = raw === "" ? null : parseInt(raw, 10);
       saveProducts();
       render();
-      document.getElementById("led-gpio").focus();
+      document.getElementById("gpio-pin").focus();
     });
   }
 
@@ -1420,23 +1581,8 @@ function bindEvents() {
     });
   }
 
-  const downloadPatchBtn = document.getElementById("download-patch-btn");
-  if (downloadPatchBtn) {
-    downloadPatchBtn.addEventListener("click", () => {
-      const p = state.currentProduct;
-      const { diffPreview } = buildConfigPreview(p);
-      downloadTextFile(`${slugify(p.name)}.patch`, diffPreview + "\n");
-    });
-  }
-
-  const downloadScriptBtn = document.getElementById("download-script-btn");
-  if (downloadScriptBtn) {
-    downloadScriptBtn.addEventListener("click", () => {
-      const p = state.currentProduct;
-      const slug = slugify(p.name);
-      downloadTextFile(`${slug}-apply.sh`, buildApplyScript(p, `${slug}.patch`) + "\n");
-    });
-  }
+  bindCopyButton("copy-docker-btn", "docker-cmd-block", "docker-copy-feedback");
+  bindCopyButton("copy-flash-btn", "flash-cmd-block", "flash-copy-feedback");
 
   const backBtn = document.getElementById("wizard-back-btn");
   if (backBtn) {
