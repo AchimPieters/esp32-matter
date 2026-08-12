@@ -97,7 +97,7 @@ esp32-matter/
 ## Adding more device types
 
 `firmware/switch/` is a second example, copied from `firmware/light/` with the
-endpoint type swapped to `on_off_switch` — its button toggles its own OnOff
+endpoint type swapped to `on_off_light_switch` — its button toggles its own OnOff
 state, though sending a command to a bound device is still a TODO in its
 `app_main.cpp`. To add another type, copy either folder and swap the endpoint
 type in `app_main.cpp` — esp-matter provides ready-made types like

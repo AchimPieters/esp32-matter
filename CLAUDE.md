@@ -111,7 +111,7 @@ SECURITY.md               flash encryption / secure boot / signed OTA guidance
 - Certificates: use Matter **test** certs + test VID (0xFFF1–0xFFF4) for hobby
   use. A real certified product needs a CSA-issued Vendor ID.
 - Adding a new device type: copy `firmware/light/` to e.g. `firmware/switch/` and
-  swap the endpoint type in `app_main.cpp` (esp-matter offers `on_off_switch`,
+  swap the endpoint type in `app_main.cpp` (esp-matter offers `on_off_light_switch`,
   `dimmable_light`, `temperature_sensor`, `contact_sensor`, etc.).
 - No CI yet — a `.github/workflows/build.yml` was tried (build both device
   types x every target, attach `.bin`s to the release on a `v*` tag) but the
@@ -142,6 +142,13 @@ SECURITY.md               flash encryption / secure boot / signed OTA guidance
    per-job, so it doesn't stall out again.
 5. Move to an ESP-IDF v6.0.x-based image once esp-matter publishes one
    (update `tools/dev.sh` and the wizard's `ESP_MATTER_IMAGE` together).
+6. `firmware/switch/`'s physical button is unreliable on the dev board this
+   was built against — the interrupt/debounce logic is confirmed correct
+   (one clean press produced a perfect read and toggle), but most presses
+   since produce no interrupt at all, even after a fully clean rebuild and
+   reflash. Looks like a mechanical issue with that specific button, not a
+   code bug. Needs the board in hand to investigate further (or try wiring
+   an external button to a non-strapping GPIO instead of GPIO 0/BOOT).
 
 ## Note on hardware/USB
 

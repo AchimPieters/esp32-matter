@@ -16,6 +16,7 @@
 #include <esp_log.h>
 #include <nvs_flash.h>
 #include <driver/gpio.h>
+#include <esp_timer.h>
 
 #include <esp_matter.h>
 
@@ -26,15 +27,33 @@ static const char *TAG = "matter_light";
  * use GPIO 8. Adjust to match your board. */
 #define LIGHT_LED_GPIO GPIO_NUM_2
 
+/* Separate LED for the Matter "Identify" cluster — blinks so you can
+ * physically find this device when a controller asks it to identify
+ * itself, independent of the light's own on/off state. Any free GPIO
+ * works; GPIO 4 is commonly unused on classic ESP32 (WROOM-32) devkits.
+ * Adjust to match your board, or wire it to the same LED as LIGHT_LED_GPIO
+ * if you only have one and don't mind it blinking during identify. */
+#define IDENTIFY_LED_GPIO GPIO_NUM_4
+#define IDENTIFY_BLINK_INTERVAL_MS 500
+
 using namespace esp_matter;
 using namespace esp_matter::endpoint;
 using namespace chip::app::Clusters;
 
 static uint16_t light_endpoint_id = 0;
+static esp_timer_handle_t identify_led_timer = NULL;
 
 static void set_led(bool on)
 {
     gpio_set_level(LIGHT_LED_GPIO, on ? 1 : 0);
+}
+
+/* Toggles the identify LED each time the timer fires — the actual blink. */
+static void identify_led_timer_cb(void *arg)
+{
+    static bool identify_led_state = false;
+    identify_led_state = !identify_led_state;
+    gpio_set_level(IDENTIFY_LED_GPIO, identify_led_state ? 1 : 0);
 }
 
 /* Lifecycle events from the Matter stack (commissioning, connectivity, ...). */
@@ -63,11 +82,29 @@ static esp_err_t app_attribute_update_cb(attribute::callback_type_t type, uint16
     return ESP_OK;
 }
 
-/* Called when a controller asks the device to "identify" itself. */
+/* Called when a controller asks the device to "identify" itself — starts
+ * or stops the identify LED blinking accordingly. */
 static esp_err_t app_identification_cb(identification::callback_type_t type, uint16_t endpoint_id,
                                        uint8_t effect_id, uint8_t effect_variant, void *priv_data)
 {
-    ESP_LOGI(TAG, "Identify requested on endpoint %u", endpoint_id);
+    switch (type) {
+    case identification::START:
+        ESP_LOGI(TAG, "Identify started on endpoint %u", endpoint_id);
+        esp_timer_start_periodic(identify_led_timer, IDENTIFY_BLINK_INTERVAL_MS * 1000);
+        break;
+    case identification::STOP:
+        ESP_LOGI(TAG, "Identify stopped on endpoint %u", endpoint_id);
+        esp_timer_stop(identify_led_timer);
+        gpio_set_level(IDENTIFY_LED_GPIO, 0);
+        break;
+    case identification::EFFECT:
+        /* Effect variants (breathe, flash-twice, ...) aren't implemented —
+         * treat any of them the same as a plain blink rather than guessing
+         * at per-variant timing. */
+        ESP_LOGI(TAG, "Identify effect %u (variant %u) on endpoint %u — blinking as usual",
+                 effect_id, effect_variant, endpoint_id);
+        break;
+    }
     return ESP_OK;
 }
 
@@ -86,6 +123,20 @@ extern "C" void app_main(void)
     io_conf.mode = GPIO_MODE_OUTPUT;
     gpio_config(&io_conf);
     set_led(false);
+
+    /* 2b. Configure the identify LED + its blink timer (not started yet —
+     * only runs while a controller has an identify request active). */
+    gpio_config_t identify_io_conf = {};
+    identify_io_conf.pin_bit_mask = (1ULL << IDENTIFY_LED_GPIO);
+    identify_io_conf.mode = GPIO_MODE_OUTPUT;
+    gpio_config(&identify_io_conf);
+    gpio_set_level(IDENTIFY_LED_GPIO, 0);
+
+    const esp_timer_create_args_t identify_timer_args = {
+        .callback = &identify_led_timer_cb,
+        .name = "identify_led",
+    };
+    esp_timer_create(&identify_timer_args, &identify_led_timer);
 
     /* 3. Build the Matter data model: one node, one On/Off Light endpoint. */
     node::config_t node_config;

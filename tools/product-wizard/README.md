@@ -33,9 +33,16 @@ open tools/product-wizard/index.html
   digital-GPIO driver actually exposes: the LED pin for the light, the
   button pin for the switch (no PWM/dimming or debounce config yet, unlike
   the ESP ZeroCode screenshots this is modelled on). Defaults per module
-  echo the comments in each `app_main.cpp`. A "Configuration summary"
-  sidebar mirrors the reference UI. Purely a value capture for now — it
-  does **not** edit the firmware file yet; that's Generate Firmware's job.
+  echo the comments in each `app_main.cpp`. Also an **Identify LED**
+  checkbox, on by default — every device type has one, since it's a real
+  Matter cluster (blinks in response to a controller's "Identify"
+  command) implemented in both firmware files, not just a wizard-only
+  option. Untick it and the wizard leaves that `#define` alone, so the
+  firmware's shipped default GPIO stays in effect — the LED still exists
+  in the compiled firmware either way, this only controls whether the
+  wizard customises its pin. A "Configuration summary" sidebar mirrors
+  the reference UI. Purely a value capture for now — it does **not** edit
+  the firmware file yet; that's Generate Firmware's job.
 - **Test Product (step 4)** — a real Web Serial monitor (Chrome/Edge
   only, with a warning banner elsewhere). Connect to a board, pick a baud
   rate (115200 by default, matching `idf.py monitor`), and watch its live
@@ -44,25 +51,24 @@ open tools/product-wizard/index.html
   monitors whatever's already on it. Testing is optional — Next is
   always enabled on this step.
 - **Customise & Review (step 5)** — a review table (Product name, Device
-  type, Module, Driver + IO pin) with per-row **Edit** links that jump
-  straight back to the relevant step, plus a **Generated configuration
-  preview**: the actual `idf.py set-target <chip>` command and a unified
-  diff for the one line this wizard can honestly promise to change — the
-  GPIO `#define` in the chosen device type's `app_main.cpp`. A **Copy**
+  type, Module, Driver + IO pin, Identify LED — or "Not added" if you
+  unticked it) with per-row **Edit** links that jump straight back to the
+  relevant step, plus a **Generated configuration preview**: the actual
+  `idf.py set-target <chip>` command and the exact `sed` command(s) that
+  will edit `app_main.cpp` — one per enabled GPIO setting. A **Copy**
   button puts both on the clipboard. Next is disabled if any earlier step
   is incomplete.
 - **Generate Firmware (step 6)** — two ready-to-paste commands, nothing to
   download:
-  1. **Build + generate factory data (Docker).** Applies the patch
-     (base64-embedded directly in the command — no separate file that can
-     land in `~/Downloads` instead of your checkout, which was an earlier,
-     more fragile version of this step), builds the firmware, then runs
-     `tools/gen_factory.sh` to generate a factory partition + QR code —
-     including a self-signed test attestation certificate the first time
-     you run it, cached under `tools/test-credentials/` after that. Same
-     pinned `espressif/esp-matter:release-v1.6_idf_v5.5.4` image and env
-     setup as `tools/dev.sh` (see CLAUDE.md for why it's pinned, and why
-     not ESP-IDF v6.0.x — esp-matter doesn't support that yet).
+  1. **Build + generate factory data (Docker).** Runs the same `sed`
+     command(s) shown in Customise & Review, builds the firmware, then
+     runs `tools/gen_factory.sh` to generate a factory partition + QR
+     code — including a self-signed test attestation certificate the
+     first time you run it, cached under `tools/test-credentials/` after
+     that. Same pinned `espressif/esp-matter:release-v1.6_idf_v5.5.4`
+     image and env setup as `tools/dev.sh` (see CLAUDE.md for why it's
+     pinned, and why not ESP-IDF v6.0.x — esp-matter doesn't support that
+     yet).
   2. **Flash everything (host).** An `esptool.py write_flash` command
      with the correct offsets for the chosen chip — including the
      bootloader offset, which differs between the classic ESP32 (`0x1000`)
@@ -70,11 +76,21 @@ open tools/product-wizard/index.html
      partition table has no "factory" app slot, so the bootloader needs it
      to know which OTA slot to boot) and the factory partition, found via
      a shell glob since its filename includes a random UUID.
-  
+
   The mount/file paths aren't placeholders: this page always lives at
   `<repo>/tools/product-wizard/index.html`, so it reads its own `file://`
   URL to fill in your actual checkout path. Still nothing is written to
   *this* repo automatically — you run both commands yourself.
+
+  This step originally shipped applying a unified diff via `patch`,
+  base64-embedded in the command. That was never actually run end to end
+  before shipping — only its base64 round-trip was checked — and the
+  first real attempt failed outright (`patch: **** Only garbage was found
+  in the patch input.`, from the bare `@@` hunk header having no line
+  numbers). Replaced with `sed` substitutions anchored on each
+  `#define`'s name, which don't need line numbers or context lines at
+  all, and this time verified by actually running the generated command
+  against a scratch checkout.
 
 All six steps are implemented end to end: Dashboard → Setup → Get
 Started → Select Module → Configure Device → Test Product → Customise &
@@ -91,11 +107,11 @@ controlled on/off through Apple Home.
 - The switch's button only toggles its *own* OnOff attribute — it doesn't
   send a command to a bound device yet. See the TODO in
   `firmware/switch/main/app_main.cpp`.
-- The generated patch assumes the target `app_main.cpp` is still at its
-  shipped default (`GPIO_NUM_2` for the light, `GPIO_NUM_0` for the
-  switch); it won't apply cleanly against a checkout already hand-edited
-  elsewhere. The diff shown in Customise & Review tells you what to
-  change by hand if `patch` fails.
+- The generated `sed` commands match on the `#define`'s name, not its
+  current value, so they're idempotent — but if a line's been hand-edited
+  into some other shape entirely (not `#define NAME GPIO_NUM_<digits>`),
+  the command silently no-ops instead of erroring. Customise & Review
+  shows the exact command if you want to check or run it yourself.
 - The flash command's offsets are only *physically verified* for
   esp32 — the other four modules follow documented ESP-IDF convention
   (see the comment above `MODULES` in `index.html`) but haven't been

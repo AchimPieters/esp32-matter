@@ -13,7 +13,7 @@
  *
  * What this device actually does today: it's a Matter on/off switch endpoint
  * (client-side OnOff + Binding clusters, same as esp-matter's own
- * on_off_switch device type) whose local OnOff attribute toggles when you
+ * on_off_light_switch device type) whose local OnOff attribute toggles when you
  * press a physical button. That attribute change is visible to any
  * controller watching this device.
  *
@@ -30,6 +30,7 @@
 #include <esp_log.h>
 #include <nvs_flash.h>
 #include <driver/gpio.h>
+#include <esp_timer.h>
 
 #include <freertos/FreeRTOS.h>
 #include <freertos/queue.h>
@@ -46,12 +47,29 @@ static const char *TAG = "matter_switch";
  * your board. */
 #define SWITCH_BUTTON_GPIO GPIO_NUM_0
 
+/* Separate LED for the Matter "Identify" cluster — blinks so you can
+ * physically find this device when a controller asks it to identify
+ * itself. GPIO 2 is commonly the onboard/user LED on classic ESP32
+ * (WROOM-32) devkits and isn't otherwise used by this firmware. Adjust to
+ * match your board. */
+#define IDENTIFY_LED_GPIO GPIO_NUM_2
+#define IDENTIFY_BLINK_INTERVAL_MS 500
+
 using namespace esp_matter;
 using namespace esp_matter::endpoint;
 using namespace chip::app::Clusters;
 
 static uint16_t switch_endpoint_id = 0;
 static QueueHandle_t button_evt_queue = NULL;
+static esp_timer_handle_t identify_led_timer = NULL;
+
+/* Toggles the identify LED each time the timer fires — the actual blink. */
+static void identify_led_timer_cb(void *arg)
+{
+    static bool identify_led_state = false;
+    identify_led_state = !identify_led_state;
+    gpio_set_level(IDENTIFY_LED_GPIO, identify_led_state ? 1 : 0);
+}
 
 /* Runs in interrupt context — do the minimum: hand the event to a task. */
 static void IRAM_ATTR button_isr_handler(void *arg)
@@ -73,10 +91,51 @@ static void button_task(void *arg)
             continue;
         }
 
-        /* Simple debounce: wait a moment, then confirm the pin is still low. */
-        vTaskDelay(pdMS_TO_TICKS(30));
-        if (gpio_get_level((gpio_num_t)io_num) != 0) {
-            continue; // released again before we confirmed — ignore
+        ESP_LOGI(TAG, "Edge detected on GPIO %lu — debouncing", (unsigned long)io_num);
+
+        /* Debounce: require the pin to read continuously low for ~40ms
+         * (8 x 5ms samples) before treating this as a real press. A single
+         * check after one fixed delay is too fragile in practice — cheap
+         * tactile switches bounce (brief high blips right after the
+         * initial contact), and a lone sample can land on one of those
+         * blips and reject an entirely genuine press.
+         *
+         * Logs every sample's raw level instead of just the pass/fail
+         * outcome. Left in deliberately, not just for development: on the
+         * dev board this was written against, the physical BOOT/PROG
+         * button (GPIO 0) behaves inconsistently — one clean press
+         * produced a perfect "all low" read and a correct toggle, but
+         * most attempts since (including after a fully clean rebuild and
+         * reflash, with interrupt attachment and the debounce logic both
+         * confirmed correct) produced no interrupt at all. That points to
+         * a physical/mechanical issue with this specific button, not a
+         * software bug — these per-sample logs are what you want when
+         * investigating that with the board in hand. Safe to trim back to
+         * a plain pass/fail log once a button is confirmed reliable. */
+        bool confirmed = true;
+        char samples[9] = {0};
+        for (int i = 0; i < 8; i++) {
+            vTaskDelay(pdMS_TO_TICKS(5));
+            int level = gpio_get_level((gpio_num_t)io_num);
+            samples[i] = level ? 'H' : 'L';
+            if (level != 0) {
+                confirmed = false;
+            }
+        }
+        ESP_LOGI(TAG, "Samples (5ms apart): %s (%s)", samples, confirmed ? "ALL LOW" : "mixed/HIGH");
+        if (!confirmed) {
+            ESP_LOGI(TAG, "Debounce rejected — not continuously held low");
+            /* A single physical press can trigger several negedge
+             * interrupts as the contact bounces, queuing multiple edge
+             * events for what's really one action. Without this, we'd
+             * immediately dequeue and debounce-check the NEXT stale
+             * bounce-edge from the same burst — often long enough after
+             * the fact that the pin reads released (HIGH) by then, which
+             * looked identical to "the button doesn't work" from the
+             * logs. Drop the rest of the burst and only look at genuinely
+             * new interrupts from here. */
+            xQueueReset(button_evt_queue);
+            continue;
         }
 
         switch_state = !switch_state;
@@ -93,6 +152,10 @@ static void button_task(void *arg)
         while (gpio_get_level((gpio_num_t)io_num) == 0) {
             vTaskDelay(pdMS_TO_TICKS(20));
         }
+
+        /* Release can bounce too, queuing more edges for the same
+         * already-handled press — drop them the same way. */
+        xQueueReset(button_evt_queue);
     }
 }
 
@@ -119,11 +182,29 @@ static esp_err_t app_attribute_update_cb(attribute::callback_type_t type, uint16
     return ESP_OK;
 }
 
-/* Called when a controller asks the device to "identify" itself. */
+/* Called when a controller asks the device to "identify" itself — starts
+ * or stops the identify LED blinking accordingly. */
 static esp_err_t app_identification_cb(identification::callback_type_t type, uint16_t endpoint_id,
                                        uint8_t effect_id, uint8_t effect_variant, void *priv_data)
 {
-    ESP_LOGI(TAG, "Identify requested on endpoint %u", endpoint_id);
+    switch (type) {
+    case identification::START:
+        ESP_LOGI(TAG, "Identify started on endpoint %u", endpoint_id);
+        esp_timer_start_periodic(identify_led_timer, IDENTIFY_BLINK_INTERVAL_MS * 1000);
+        break;
+    case identification::STOP:
+        ESP_LOGI(TAG, "Identify stopped on endpoint %u", endpoint_id);
+        esp_timer_stop(identify_led_timer);
+        gpio_set_level(IDENTIFY_LED_GPIO, 0);
+        break;
+    case identification::EFFECT:
+        /* Effect variants (breathe, flash-twice, ...) aren't implemented —
+         * treat any of them the same as a plain blink rather than guessing
+         * at per-variant timing. */
+        ESP_LOGI(TAG, "Identify effect %u (variant %u) on endpoint %u — blinking as usual",
+                 effect_id, effect_variant, endpoint_id);
+        break;
+    }
     return ESP_OK;
 }
 
@@ -147,8 +228,35 @@ extern "C" void app_main(void)
     button_evt_queue = xQueueCreate(4, sizeof(uint32_t));
     xTaskCreate(button_task, "button_task", 4096, NULL, 10, NULL);
 
-    gpio_install_isr_service(0);
-    gpio_isr_handler_add(SWITCH_BUTTON_GPIO, button_isr_handler, (void *)(uintptr_t)SWITCH_BUTTON_GPIO);
+    ESP_LOGI(TAG, "Button GPIO %d idle level: %d (expect 1/HIGH — 0 here means the pull-up isn't winning, check wiring)",
+             SWITCH_BUTTON_GPIO, gpio_get_level(SWITCH_BUTTON_GPIO));
+
+    /* These two silently doing nothing was a real bug here: unchecked, a
+     * failure means no interrupt is ever attached and every button press
+     * produces zero log output, which looks identical to "nothing is
+     * wired up" from the outside. */
+    esp_err_t isr_svc_err = gpio_install_isr_service(0);
+    if (isr_svc_err != ESP_OK && isr_svc_err != ESP_ERR_INVALID_STATE) {
+        ESP_LOGE(TAG, "gpio_install_isr_service failed: %s", esp_err_to_name(isr_svc_err));
+    }
+    esp_err_t isr_add_err = gpio_isr_handler_add(SWITCH_BUTTON_GPIO, button_isr_handler, (void *)(uintptr_t)SWITCH_BUTTON_GPIO);
+    if (isr_add_err != ESP_OK) {
+        ESP_LOGE(TAG, "gpio_isr_handler_add failed: %s", esp_err_to_name(isr_add_err));
+    }
+
+    /* 2b. Configure the identify LED + its blink timer (not started yet —
+     * only runs while a controller has an identify request active). */
+    gpio_config_t identify_io_conf = {};
+    identify_io_conf.pin_bit_mask = (1ULL << IDENTIFY_LED_GPIO);
+    identify_io_conf.mode = GPIO_MODE_OUTPUT;
+    gpio_config(&identify_io_conf);
+    gpio_set_level(IDENTIFY_LED_GPIO, 0);
+
+    const esp_timer_create_args_t identify_timer_args = {
+        .callback = &identify_led_timer_cb,
+        .name = "identify_led",
+    };
+    esp_timer_create(&identify_timer_args, &identify_led_timer);
 
     /* 3. Build the Matter data model: one node, one On/Off Switch endpoint. */
     node::config_t node_config;
@@ -158,8 +266,8 @@ extern "C" void app_main(void)
         return;
     }
 
-    on_off_switch::config_t switch_config;
-    endpoint_t *endpoint = on_off_switch::create(node, &switch_config, ENDPOINT_FLAG_NONE, NULL);
+    on_off_light_switch::config_t switch_config;
+    endpoint_t *endpoint = on_off_light_switch::create(node, &switch_config, ENDPOINT_FLAG_NONE, NULL);
     if (!endpoint) {
         ESP_LOGE(TAG, "Failed to create switch endpoint");
         return;

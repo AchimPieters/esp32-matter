@@ -225,6 +225,12 @@
     margin-bottom: 16px;
   }
 
+  .field-warning {
+    color: #9a6700;
+    font-size: 12px;
+    margin-bottom: 16px;
+  }
+
   .setup-actions {
     display: flex;
     justify-content: space-between;
@@ -423,6 +429,19 @@
     font-size: 14px;
   }
 
+  .checkbox-label {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    cursor: pointer;
+  }
+
+  .checkbox-label input[type="checkbox"] {
+    width: 16px;
+    height: 16px;
+    cursor: pointer;
+  }
+
   input[type="number"] {
     width: 100%;
     max-width: 200px;
@@ -583,9 +602,6 @@
     white-space: pre;
   }
 
-  .diff-add { color: #3fb950; }
-  .diff-del { color: #f85149; }
-
   .copy-feedback {
     margin-left: 10px;
     font-size: 12px;
@@ -608,8 +624,8 @@
  * Plain client-side state machine, no build step, no external dependencies.
  * Product data lives only in the browser's localStorage — nothing is sent
  * anywhere. All six wizard steps (Get Started through Generate Firmware)
- * are implemented; "generating" means downloading a patch + shell script
- * you apply yourself — this tool never writes to the repo directly.
+ * are implemented; "generating" means producing ready-to-run commands you
+ * copy and run yourself — this tool never writes to the repo directly.
  */
 
 const STORAGE_KEY = "esp32matter.products";
@@ -656,6 +672,17 @@ const DEVICE_TYPES = [
       // devkits often use GPIO 8") — you still have to edit the file.
       defaultsByModule: { esp32: 2, esp32c3: 8, esp32c6: 8, esp32s3: 2, esp32h2: 8 },
     },
+    // Separate LED that blinks for the Matter "Identify" cluster — lets you
+    // physically find the device, independent of its on/off state.
+    identify: {
+      summary: "GPIO (digital output)",
+      fieldLabel: "Identify LED GPIO pin",
+      blockTitle: "Identify LED · digital output",
+      filePath: "firmware/light/main/app_main.cpp",
+      defineName: "IDENTIFY_LED_GPIO",
+      currentGpio: 4,
+      defaultsByModule: { esp32: 4, esp32c3: 4, esp32c6: 4, esp32s3: 4, esp32h2: 4 },
+    },
   },
   {
     id: "switch",
@@ -676,6 +703,15 @@ const DEVICE_TYPES = [
       // classic ESP32 DevKitC; C3/C6/H2 DevKits typically wire BOOT to
       // GPIO 9) — you still have to edit the file.
       defaultsByModule: { esp32: 0, esp32c3: 9, esp32c6: 9, esp32s3: 0, esp32h2: 9 },
+    },
+    identify: {
+      summary: "GPIO (digital output)",
+      fieldLabel: "Identify LED GPIO pin",
+      blockTitle: "Identify LED · digital output",
+      filePath: "firmware/switch/main/app_main.cpp",
+      defineName: "IDENTIFY_LED_GPIO",
+      currentGpio: 2,
+      defaultsByModule: { esp32: 2, esp32c3: 2, esp32c6: 2, esp32s3: 2, esp32h2: 2 },
     },
   },
 ];
@@ -908,13 +944,26 @@ function renderSelectModule(p) {
   `;
 }
 
+// Old saved products predate this field entirely, so "enabled" has to be
+// the default for undefined too — only an explicit false means off.
+function identifyIsEnabled(p) {
+  return p.identifyEnabled !== false;
+}
+
 function renderConfigureDevice(p) {
   const deviceType = findDeviceType(p.deviceType);
   const driver = deviceType ? deviceType.driver : null;
+  const identify = deviceType ? deviceType.identify : null;
   const defaultGpio = driver ? (driver.defaultsByModule[p.target] != null ? driver.defaultsByModule[p.target] : 2) : 2;
+  const defaultIdentifyGpio = identify ? (identify.defaultsByModule[p.target] != null ? identify.defaultsByModule[p.target] : 4) : 4;
+  const identifyOn = identifyIsEnabled(p);
 
   if (p.gpioPin == null) p.gpioPin = defaultGpio;
+  if (p.identifyGpioPin == null) p.identifyGpioPin = defaultIdentifyGpio;
   const gpioValid = Number.isInteger(p.gpioPin) && p.gpioPin >= 0;
+  const identifyGpioValid = !identifyOn || (Number.isInteger(p.identifyGpioPin) && p.identifyGpioPin >= 0);
+  const sameGpio = identifyOn && gpioValid && identifyGpioValid && p.gpioPin === p.identifyGpioPin;
+  const allValid = gpioValid && identifyGpioValid;
 
   return `
     <div class="configure-grid">
@@ -933,14 +982,42 @@ function renderConfigureDevice(p) {
           </p>
         </div>
 
+        <div class="driver-block">
+          <label class="checkbox-label" for="identify-enabled">
+            <input type="checkbox" id="identify-enabled" ${identifyOn ? "checked" : ""}>
+            <h3 style="display:inline; margin:0;">Add an Identify LED</h3>
+          </label>
+          <p class="field-note" style="margin-top:4px;">
+            Blinks when a controller sends an "Identify" command, so you
+            can physically find this device. On by default; untick to
+            leave it out of this product (the firmware's shipped default
+            stays as-is, this just means the wizard won't customise it).
+          </p>
+
+          ${identifyOn ? `
+            <label class="field-label" for="identify-gpio-pin" style="margin-top:12px;">${escapeHtml(identify ? identify.fieldLabel : "Identify LED GPIO pin")}</label>
+            <input type="number" id="identify-gpio-pin" min="0" max="48" value="${p.identifyGpioPin}">
+            <div class="field-error">${identifyGpioValid ? "" : "Enter a valid GPIO number (0 or higher)."}</div>
+            <p class="field-note">
+              Pick a GPIO different from
+              ${escapeHtml(driver ? driver.fieldLabel.replace(" pin", "").toLowerCase() : "the driver pin")}
+              above unless you deliberately want them to share one LED
+              (GPIO ${defaultIdentifyGpio} is this repo's default, not a
+              guarantee for your board).
+            </p>
+            ${sameGpio ? `<div class="field-warning">&#9888; Same GPIO as above — that LED will also blink during identify, on top of whatever it's already doing.</div>` : ""}
+          ` : ""}
+        </div>
+
         <p class="note-box">
-          This only records your choice for now — it doesn't edit
-          <code>${escapeHtml(driver ? driver.filePath : "app_main.cpp")}</code> yet. Applying it
-          (replacing <code>${escapeHtml(driver ? driver.defineName : "")}</code>) happens in the
-          Generate Firmware step.
+          This only records your choices for now — it doesn't edit
+          <code>${escapeHtml(driver ? driver.filePath : "app_main.cpp")}</code> yet. Applying them
+          (replacing <code>${escapeHtml(driver ? driver.defineName : "")}</code>${identifyOn ? ` and
+          <code>${escapeHtml(identify ? identify.defineName : "IDENTIFY_LED_GPIO")}</code>` : ""}) happens
+          in the Generate Firmware step.
         </p>
 
-        ${renderWizardFooter(p, gpioValid)}
+        ${renderWizardFooter(p, allValid)}
       </div>
 
       <div class="config-sidebar">
@@ -957,6 +1034,10 @@ function renderConfigureDevice(p) {
           <div class="summary-label">DRIVER</div>
           <div class="summary-value">${escapeHtml(driver ? driver.summary : "—")}</div>
           <div class="summary-detail">IO pin: GPIO ${gpioValid ? p.gpioPin : "?"}</div>
+        </div>
+        <div class="summary-row">
+          <div class="summary-label">IDENTIFY LED</div>
+          <div class="summary-detail">${identifyOn ? `IO pin: GPIO ${identifyGpioValid ? p.identifyGpioPin : "?"}` : "Not added"}</div>
         </div>
       </div>
     </div>
@@ -1080,36 +1161,24 @@ function updateSerialUI() {
   status.classList.toggle("connected", serialState.connected);
 }
 
-/* Selection completeness + generated set-target/diff text, shared by
- * Customise & Review and Generate Firmware so they can't drift apart. */
+/* Selection completeness, shared by Customise & Review and Generate
+ * Firmware so they can't drift apart. */
 function isProductComplete(p) {
-  return !!p.deviceType && !!p.target && Number.isInteger(p.gpioPin) && p.gpioPin >= 0;
+  const identifyOk = !identifyIsEnabled(p) ||
+    (Number.isInteger(p.identifyGpioPin) && p.identifyGpioPin >= 0);
+  return !!p.deviceType && !!p.target &&
+    Number.isInteger(p.gpioPin) && p.gpioPin >= 0 &&
+    identifyOk;
 }
 
 function buildConfigPreview(p) {
-  const deviceType = findDeviceType(p.deviceType);
-  const driver = deviceType ? deviceType.driver : null;
-  const filePath = driver ? driver.filePath : "app_main.cpp";
-  const defineName = driver ? driver.defineName : "GPIO_PIN";
-  // The diff's "-" line must match what's actually in the file today, not
-  // a per-module suggestion — those only prefill the input, they don't
-  // change what's shipped.
-  const currentGpio = driver ? driver.currentGpio : 2;
-
-  const setTargetCmd = `idf.py set-target ${p.target || "<module>"}`;
-  const diffPreview = [
-    `--- a/${filePath}`,
-    `+++ b/${filePath}`,
-    "@@",
-    `-#define ${defineName} GPIO_NUM_${currentGpio}`,
-    `+#define ${defineName} GPIO_NUM_${p.gpioPin != null ? p.gpioPin : "?"}`,
-  ].join("\n");
-  return { setTargetCmd, diffPreview, filePath };
+  return { setTargetCmd: `idf.py set-target ${p.target || "<module>"}` };
 }
 
 function renderCustomiseReview(p) {
   const complete = isProductComplete(p);
-  const { setTargetCmd, diffPreview } = buildConfigPreview(p);
+  const { setTargetCmd } = buildConfigPreview(p);
+  const sedCommands = buildSedCommands(p);
 
   return `
     <div class="step-panel">
@@ -1144,15 +1213,23 @@ function renderCustomiseReview(p) {
           </div>
           <button class="link" data-goto-step="2">Edit</button>
         </div>
+        <div class="review-row">
+          <div>
+            <div class="summary-label">IDENTIFY LED</div>
+            <div class="summary-value">${identifyIsEnabled(p) ? `GPIO ${p.identifyGpioPin != null ? p.identifyGpioPin : "?"}` : "Not added"}</div>
+          </div>
+          <button class="link" data-goto-step="2">Edit</button>
+        </div>
       </div>
 
       ${complete ? "" : `<div class="warn-box">Some selections are missing — use "Edit" above to go back and complete them.</div>`}
 
       <h3 style="margin-top:24px;">Generated configuration preview</h3>
       <p class="field-note">
-        A preview of the target switch and the one-line patch to
-        <code>app_main.cpp</code> — Generate Firmware (step 6) wraps both
-        of these into ready-to-run build and flash commands.
+        A preview of the target switch and the commands that edit
+        <code>app_main.cpp</code> (run from inside the device's
+        <code>firmware/&lt;type&gt;/</code> folder) — Generate Firmware
+        (step 6) wraps all of this into one ready-to-run build command.
       </p>
 
       <div class="code-block-wrap">
@@ -1160,26 +1237,16 @@ function renderCustomiseReview(p) {
         <pre class="code-block">${escapeHtml(setTargetCmd)}</pre>
       </div>
       <div class="code-block-wrap">
-        <div class="code-block-label">APP_MAIN.CPP PATCH</div>
-        <pre class="code-block">${renderDiffLines(diffPreview)}</pre>
+        <div class="code-block-label">APP_MAIN.CPP EDITS</div>
+        <pre class="code-block">${escapeHtml(sedCommands.join("\n"))}</pre>
       </div>
 
-      <button class="secondary" id="copy-preview-btn">Copy commands + patch</button>
+      <button class="secondary" id="copy-preview-btn">Copy commands</button>
       <span class="copy-feedback" id="copy-feedback"></span>
 
       ${renderWizardFooter(p, complete)}
     </div>
   `;
-}
-
-function renderDiffLines(text) {
-  return text
-    .split("\n")
-    .map((line) => {
-      const cls = line.startsWith("+") ? "diff-add" : line.startsWith("-") ? "diff-del" : "";
-      return cls ? `<span class="${cls}">${escapeHtml(line)}</span>` : escapeHtml(line);
-    })
-    .join("\n");
 }
 
 /* This page always lives at <repo>/tools/product-wizard/index.html when
@@ -1226,7 +1293,7 @@ function renderGenerateFirmware(p) {
       <p class="step-hint">
         For "${escapeHtml(p.name)}" —
         <strong>${escapeHtml(deviceTypeName(p.deviceType))}</strong> on
-        <strong>${escapeHtml(moduleName(p.target))}</strong>, GPIO ${p.gpioPin}.
+        <strong>${escapeHtml(moduleName(p.target))}</strong>, GPIO ${p.gpioPin}${identifyIsEnabled(p) ? ` (identify LED on GPIO ${p.identifyGpioPin})` : ""}.
         This is the exact two-step flow validated end to end on real
         hardware for this device type: build, then flash. Nothing runs
         automatically — you paste and run each command yourself.
@@ -1248,12 +1315,13 @@ function renderGenerateFirmware(p) {
 
       <h3>1. Build + generate factory data (Docker)</h3>
       <p class="field-note">
-        Applies the GPIO patch, builds the firmware, then generates a
-        factory partition + QR code (<code>tools/gen_factory.sh</code>) —
-        including a fresh self-signed test attestation certificate the
-        first time you run this, cached under
-        <code>tools/test-credentials/</code> for next time. No file to
-        download or move: the patch is embedded straight in the command.
+        Updates the GPIO <code>#define</code>s via <code>sed</code>,
+        builds the firmware, then generates a factory partition + QR code
+        (<code>tools/gen_factory.sh</code>) — including a fresh
+        self-signed test attestation certificate the first time you run
+        this, cached under <code>tools/test-credentials/</code> for next
+        time. No file to download or move: every step is inline in the
+        command itself.
       </p>
       <div class="code-block-wrap">
         <div class="code-block-label">DOCKER COMMAND</div>
@@ -1315,11 +1383,12 @@ function renderGenerateFirmware(p) {
       </p>
 
       <p class="note-box">
-        This wizard is a scaffold, not a code generator (yet) — it doesn't
-        verify the patch still applies cleanly against a checkout you've
-        modified elsewhere. If <code>patch</code> fails inside the
-        container, the diff in Customise &amp; Review tells you exactly
-        which line to change by hand.
+        This wizard is a scaffold, not a code generator (yet) — the
+        <code>sed</code> commands only match a line that still starts with
+        <code>#define NAME GPIO_NUM_&lt;digits&gt;</code>, so they no-op
+        silently if you've already hand-edited that line into some other
+        shape. Customise &amp; Review shows the exact commands if you want
+        to check or run them yourself.
       </p>
 
       ${renderWizardFooter(p, true)}
@@ -1335,18 +1404,38 @@ function shellSafeName(str) {
   return str.replace(/[^a-zA-Z0-9 _-]/g, "").trim() || "Device";
 }
 
+// Real `sed -i` commands that actually apply the GPIO changes — one per
+// #define. Using this instead of `patch` is a deliberate fix: the unified
+// diff shown in Customise & Review (buildConfigPreview) uses a bare `@@`
+// hunk header with no line numbers, which is display-only and turned out
+// NOT to be a format `patch` actually accepts (verified directly:
+// `patch: **** Only garbage was found in the patch input.` — this was
+// caught by actually running it, not by inspecting the text). A `sed`
+// substitution anchored on the #define's name has no such format to get
+// wrong, doesn't care what the current value is (`GPIO_NUM_[0-9]+`
+// matches whatever's there), and needs no line numbers at all.
+function buildSedCommands(p) {
+  const deviceType = findDeviceType(p.deviceType);
+  const driver = deviceType ? deviceType.driver : null;
+  const identify = deviceType ? deviceType.identify : null;
+  const filePath = driver ? driver.filePath.split("/").slice(2).join("/") : "main/app_main.cpp"; // relative to firmwareDir
+  const cmds = [];
+  if (driver) {
+    cmds.push(`sed -i 's/^#define ${driver.defineName} GPIO_NUM_[0-9][0-9]*/#define ${driver.defineName} GPIO_NUM_${p.gpioPin}/' ${filePath}`);
+  }
+  if (identify && identifyIsEnabled(p)) {
+    cmds.push(`sed -i 's/^#define ${identify.defineName} GPIO_NUM_[0-9][0-9]*/#define ${identify.defineName} GPIO_NUM_${p.identifyGpioPin}/' ${filePath}`);
+  }
+  return cmds;
+}
+
 function buildDockerRunCmd(p, repoRoot) {
-  const { setTargetCmd, diffPreview } = buildConfigPreview(p);
+  const { setTargetCmd } = buildConfigPreview(p);
   const deviceType = findDeviceType(p.deviceType);
   const driver = deviceType ? deviceType.driver : null;
   const firmwareDir = driver ? driver.filePath.replace(/\/main\/app_main\.cpp$/, "") : "firmware/light";
   const mountPath = repoRoot || "<path-to-esp32-matter>";
   const productNameSafe = shellSafeName(p.name);
-
-  // Base64-embed the patch so there's no separate file to download, move,
-  // or lose track of — no quoting hazards either, unlike piping raw diff
-  // text through a single-quoted -c '...' string.
-  const patchB64 = btoa(diffPreview + "\n");
 
   // No need to source export.sh: the espressif/esp-matter image's own
   // entrypoint already does that before handing off to this command. It
@@ -1358,15 +1447,25 @@ function buildDockerRunCmd(p, repoRoot) {
   // output at firmware/<type>/out/ — right where the flash command below
   // expects to find it.
   const inner = [
-    "cd /project",
-    `echo ${patchB64} | base64 -d | patch -p1`,
     `cd /project/${firmwareDir}`,
+    ...buildSedCommands(p),
     setTargetCmd,
     "idf.py build",
-    `PRODUCT_NAME="${productNameSafe}" /project/tools/gen_factory.sh`,
+    `PRODUCT_NAME='${productNameSafe}' /project/tools/gen_factory.sh`,
   ].join(" && ");
 
-  return `docker run --rm -it -v "${mountPath}:/project" -w /project ${ESP_MATTER_IMAGE} bash -c '${inner}'`;
+  // The outer wrapper has to be double-quoted, not single-quoted: each
+  // sed command above already uses single quotes around its own regex
+  // (sed -i 's/…/…/'), and those would otherwise close the outer '...'
+  // early the moment a human actually pastes this into a real shell —
+  // exactly the kind of nested-quote bug that's easy to miss just by
+  // reading the string, only caught here by generating one and running
+  // it for real. Nothing inside `inner` contains a literal " or a $ that
+  // needs to survive to the container, so double-quoting the outside is
+  // safe today — but if you add a $VAR reference meant for the
+  // container's shell later, remember the *host* shell expands $ inside
+  // double quotes before docker ever sees it.
+  return `docker run --rm -it -v "${mountPath}:/project" -w /project ${ESP_MATTER_IMAGE} bash -c "${inner}"`;
 }
 
 function buildFlashCmd(p, repoRoot) {
@@ -1500,6 +1599,8 @@ function bindEvents() {
         deviceType: null,
         target: null,
         gpioPin: null,
+        identifyEnabled: true,
+        identifyGpioPin: null,
       };
       state.products.push(product);
       state.currentProduct = product;
@@ -1524,6 +1625,26 @@ function bindEvents() {
       saveProducts();
       render();
       document.getElementById("gpio-pin").focus();
+    });
+  }
+
+  const identifyGpioPinInput = document.getElementById("identify-gpio-pin");
+  if (identifyGpioPinInput) {
+    identifyGpioPinInput.addEventListener("input", () => {
+      const raw = identifyGpioPinInput.value;
+      state.currentProduct.identifyGpioPin = raw === "" ? null : parseInt(raw, 10);
+      saveProducts();
+      render();
+      document.getElementById("identify-gpio-pin").focus();
+    });
+  }
+
+  const identifyEnabledInput = document.getElementById("identify-enabled");
+  if (identifyEnabledInput) {
+    identifyEnabledInput.addEventListener("change", () => {
+      state.currentProduct.identifyEnabled = identifyEnabledInput.checked;
+      saveProducts();
+      render();
     });
   }
 
