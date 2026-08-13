@@ -11,19 +11,24 @@
  * Works on other ESP32 chips too (C3, C6, S3, H2) — see the README for how to
  * switch target. Note: C6/H2 additionally support Thread; classic ESP32 is Wi-Fi.
  *
- * What this device actually does today: it's a Matter on/off switch endpoint
- * (client-side OnOff + Binding clusters, same as esp-matter's own
- * on_off_light_switch device type) whose local OnOff attribute toggles when you
- * press a physical button. That attribute change is visible to any
- * controller watching this device.
+ * What this device does: it's a Matter on/off switch endpoint (client-side
+ * OnOff + Binding clusters, esp-matter's on_off_light_switch device type).
+ * Pressing the button sends a real OnOff::Toggle command to whatever this
+ * switch is bound to via a controller-driven Binding-cluster setup (bind
+ * it to firmware/light/'s light through your Matter app, e.g. Home
+ * Assistant's "Bindings" or Apple/Google Home's equivalent).
  *
- * What it does NOT do yet: actually send an OnOff command to another Matter
- * device (e.g. the light in firmware/light/) when bound to one. Doing that
- * needs esp-matter's client invoke APIs (see esp_matter_client.h in your SDK
- * checkout) plus a controller-driven Binding-cluster setup, and the exact
- * function signatures vary a bit by esp-matter release — deliberately left
- * as a TODO below rather than guessed at, so nothing here is code that looks
- * right but silently doesn't compile or work.
+ * An earlier version of this file updated a *local* OnOff attribute
+ * instead, which looked plausible but silently failed
+ * ("esp_matter_attribute: Failed to get attribute handle") — on_off_light_
+ * switch's OnOff cluster is CLIENT-only (see
+ * esp_matter_endpoint.cpp:on_off_light_switch::add(), which calls
+ * on_off::create(endpoint, NULL, CLUSTER_FLAG_CLIENT) — no server
+ * instance, so no local attribute to update). The current implementation
+ * (client::cluster_update() + client::interaction::invoke::send_request())
+ * matches esp-matter's own examples/light_switch/main/app_driver.cpp,
+ * which is what it was checked against instead of guessing at the client
+ * invoke API's exact shape.
  */
 
 #include <esp_err.h>
@@ -37,15 +42,21 @@
 #include <freertos/task.h>
 
 #include <esp_matter.h>
+#include <esp_matter_client.h>
 
 static const char *TAG = "matter_switch";
 
-/* Change this to the GPIO your button is wired to (active-low, i.e. the
- * button pulls it to GND when pressed — internal pull-up keeps it HIGH
- * otherwise). GPIO 0 is the "BOOT" button on classic ESP32 DevKitC boards;
- * ESP32-C3/C6/H2 DevKits typically wire BOOT to GPIO 9. Adjust to match
- * your board. */
-#define SWITCH_BUTTON_GPIO GPIO_NUM_0
+/* Change this to the GPIO your button is wired to. Reference wiring is a
+ * breadboard pushbutton: GND -> button -> GPIO (no external resistor
+ * needed — the internal pull-up below keeps the pin HIGH until the button
+ * pulls it to GND on press). GPIO 4 is a plain, unreserved GPIO on classic
+ * ESP32 (WROOM-32) — deliberately NOT the onboard BOOT/PROG button
+ * (GPIO 0): that pin is also used for boot-mode selection and shares a
+ * lot of traffic during reset, and turned out to be an unreliable choice
+ * for an external switch input on the board this was tested against (see
+ * CLAUDE.md's open next steps). Adjust to match your board if you wire it
+ * elsewhere. */
+#define SWITCH_BUTTON_GPIO GPIO_NUM_4
 
 /* Separate LED for the Matter "Identify" cluster — blinks so you can
  * physically find this device when a controller asks it to identify
@@ -78,13 +89,43 @@ static void IRAM_ATTR button_isr_handler(void *arg)
     xQueueSendFromISR(button_evt_queue, &gpio_num, NULL);
 }
 
-/* Debounces the button and flips the switch's own OnOff attribute. A real
- * remote-control switch would also invoke a command on whatever device it's
- * bound to here — see the header comment above. */
+/* Called by the Matter stack once a bound peer has been resolved, for every
+ * outstanding request queued via client::cluster_update(). Only OnOff-cluster
+ * invoke requests are expected here (that's all this switch ever sends), so
+ * anything else is logged and ignored rather than guessed at. Matches the
+ * pattern in esp-matter's own examples/light_switch/main/app_driver.cpp. */
+static void app_client_invoke_success_cb(void *context, const chip::app::ConcreteCommandPath &command_path,
+                                         const chip::app::StatusIB &status, chip::TLV::TLVReader *response_data)
+{
+    ESP_LOGI(TAG, "Toggle command acknowledged by bound device");
+}
+
+static void app_client_invoke_failure_cb(void *context, CHIP_ERROR error)
+{
+    ESP_LOGW(TAG, "Toggle command failed: %" CHIP_ERROR_FORMAT, error.Format());
+}
+
+static void app_client_request_cb(client::peer_device_t *peer_device, client::request_handle_t *req_handle, void *priv_data)
+{
+    if (req_handle->type != client::INVOKE_CMD) {
+        return;
+    }
+    if (req_handle->command_path.mClusterId != OnOff::Id) {
+        ESP_LOGW(TAG, "Ignoring invoke request for unsupported cluster 0x%04lx",
+                 (unsigned long)req_handle->command_path.mClusterId);
+        return;
+    }
+    client::interaction::invoke::send_request(NULL, peer_device, req_handle->command_path, "{}",
+                                               app_client_invoke_success_cb, app_client_invoke_failure_cb,
+                                               chip::NullOptional);
+}
+
+/* Debounces the button, then sends a real OnOff::Toggle command to whatever
+ * this switch is bound to (see the header comment above for why this isn't
+ * a local attribute::update() call). */
 static void button_task(void *arg)
 {
     uint32_t io_num;
-    bool switch_state = false;
 
     for (;;) {
         if (xQueueReceive(button_evt_queue, &io_num, portMAX_DELAY) != pdTRUE) {
@@ -138,15 +179,20 @@ static void button_task(void *arg)
             continue;
         }
 
-        switch_state = !switch_state;
-        ESP_LOGI(TAG, "Button pressed — switch now %s", switch_state ? "ON" : "OFF");
+        ESP_LOGI(TAG, "Button pressed — sending Toggle to bound device(s)");
 
-        esp_matter_attr_val_t val = esp_matter_bool(switch_state);
-        attribute::update(switch_endpoint_id, OnOff::Id, OnOff::Attributes::OnOff::Id, &val);
+        client::request_handle_t req_handle;
+        req_handle.type = client::INVOKE_CMD;
+        req_handle.command_path.mClusterId = OnOff::Id;
+        req_handle.command_path.mCommandId = OnOff::Commands::Toggle::Id;
 
-        /* TODO: send an OnOff command to the bound device(s) here using
-         * esp-matter's client invoke API, once you've picked an SDK version
-         * and confirmed its exact call signature. */
+        {
+            /* We're running in a plain FreeRTOS task, not the Matter event
+             * loop — the stack lock is required before calling into
+             * esp-matter's client APIs from here. */
+            lock::ScopedChipStackLock stack_lock(portMAX_DELAY);
+            client::cluster_update(switch_endpoint_id, &req_handle);
+        }
 
         /* Wait for release before re-arming, so one press = one toggle. */
         while (gpio_get_level((gpio_num_t)io_num) == 0) {
@@ -275,6 +321,12 @@ extern "C" void app_main(void)
 
     switch_endpoint_id = endpoint::get_id(endpoint);
     ESP_LOGI(TAG, "Switch endpoint id: %u", switch_endpoint_id);
+
+    /* 3b. Register the callback that actually sends the Toggle command once
+     * a bound peer is resolved. binding_manager_init() (which resolves
+     * bindings set up via a controller's Binding cluster) runs on its own,
+     * inside esp_matter::start() below — no explicit call needed here. */
+    client::set_request_callback(app_client_request_cb, NULL, NULL);
 
     /* 4. Start Matter — begins BLE advertising so a controller can commission it. */
     err = esp_matter::start(app_event_cb);

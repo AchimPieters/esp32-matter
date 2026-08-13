@@ -697,12 +697,16 @@ const DEVICE_TYPES = [
       filePath: "firmware/switch/main/app_main.cpp",
       defineName: "SWITCH_BUTTON_GPIO",
       // The literal value app_main.cpp ships with today — this is the
-      // diff's baseline ("-" line).
-      currentGpio: 0,
-      // Suggested value to prefill per module (GPIO 0 = BOOT button on
-      // classic ESP32 DevKitC; C3/C6/H2 DevKits typically wire BOOT to
-      // GPIO 9) — you still have to edit the file.
-      defaultsByModule: { esp32: 0, esp32c3: 9, esp32c6: 9, esp32s3: 0, esp32h2: 9 },
+      // sed baseline. Reference wiring is a breadboard pushbutton: GND ->
+      // button -> GPIO. Deliberately not the onboard BOOT/PROG button
+      // (GPIO 0) — that pin doubles as boot-mode select and turned out
+      // unreliable as a switch input on real hardware (see CLAUDE.md's
+      // open next steps).
+      currentGpio: 4,
+      // Suggested value to prefill per module — GPIO 4 is a plain,
+      // unreserved pin on all of these; still worth checking against your
+      // specific board.
+      defaultsByModule: { esp32: 4, esp32c3: 4, esp32c6: 4, esp32s3: 4, esp32h2: 4 },
     },
     identify: {
       summary: "GPIO (digital output)",

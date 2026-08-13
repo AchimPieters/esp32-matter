@@ -60,6 +60,7 @@ dkms.conf
 # ESP-IDF build output + generated/fetched files (per firmware/*/ project)
 build/
 sdkconfig
+sdkconfig.old
 dependencies.lock
 managed_components/
 

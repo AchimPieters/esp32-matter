@@ -90,9 +90,15 @@ firmware/light/          On/Off light — the reference device
   partitions.csv          OTA A/B slots + separate fctry partition (fits 4 MB)
   sdkconfig.defaults      factory-data provider + custom partition table
 firmware/switch/          On/Off switch — second device type, copied from light/
-  main/app_main.cpp       button on GPIO 0 (WROOM-32) toggles the switch's own
-                           OnOff attribute; sending commands to a bound device
-                           is a documented TODO (needs esp-matter client APIs)
+  main/app_main.cpp       button on GPIO 4 (WROOM-32) sends a real OnOff
+                           Toggle command to bound device(s) via esp-matter's
+                           client invoke API (client::cluster_update() +
+                           client::interaction::invoke::send_request());
+                           reference wiring is a breadboard pushbutton
+                           (GND -> button -> GPIO), deliberately not the
+                           onboard BOOT/PROG button; requires a controller
+                           (e.g. Home Assistant) to set up a Binding-cluster
+                           entry to an actual target device first
   partitions.csv           same OTA + fctry layout as firmware/light/
   sdkconfig.defaults        same as firmware/light/
 tools/
@@ -132,9 +138,21 @@ SECURITY.md               flash encryption / secure boot / signed OTA guidance
 
 1. Add a third device type (temperature or contact sensor) — `firmware/light/`
    and `firmware/switch/` are both there now as duplication examples.
-2. Make the switch actually control a bound device: wire up esp-matter's
-   client invoke API in `firmware/switch/main/app_main.cpp` (see the TODO in
-   that file) instead of just toggling its own attribute locally.
+2. ~~Make the switch actually control a bound device~~ — done. Button presses
+   on `firmware/switch/` now send a real `OnOff::Toggle` via
+   `client::cluster_update()` / `client::interaction::invoke::send_request()`,
+   verified against esp-matter's own `examples/light_switch/main/app_driver.cpp`
+   and confirmed on real hardware (GPIO4 breadboard button, ESP32 WROOM-32):
+   the old `Failed to get attribute handle` error is gone (that was caused by
+   `on_off_light_switch`'s OnOff cluster being CLIENT-only — no local server
+   attribute exists to update, see `esp_matter_endpoint.cpp`). Without an
+   actual Binding-cluster entry, a press now logs `esp_matter_client: failed
+   to notify the bound cluster changed` instead, which is expected: it means
+   the command path works but no bound peer is configured yet. Binding a
+   switch to a real target device (e.g. `firmware/light/`) needs a
+   controller with a Bindings UI — Home Assistant has one, Apple/Google Home
+   don't — and hasn't been tested end-to-end yet (still open: does a press
+   actually toggle a bound light once bindings are configured?).
 3. Implement Matter **OTA** so devices update themselves over the air from a
    GitHub Release `.bin` (start from USB flashing, add signed OTA on top).
 4. Revisit CI: same build recipe as before, but pull the image once outside
@@ -142,13 +160,12 @@ SECURITY.md               flash encryption / secure boot / signed OTA guidance
    per-job, so it doesn't stall out again.
 5. Move to an ESP-IDF v6.0.x-based image once esp-matter publishes one
    (update `tools/dev.sh` and the wizard's `ESP_MATTER_IMAGE` together).
-6. `firmware/switch/`'s physical button is unreliable on the dev board this
-   was built against — the interrupt/debounce logic is confirmed correct
-   (one clean press produced a perfect read and toggle), but most presses
-   since produce no interrupt at all, even after a fully clean rebuild and
-   reflash. Looks like a mechanical issue with that specific button, not a
-   code bug. Needs the board in hand to investigate further (or try wiring
-   an external button to a non-strapping GPIO instead of GPIO 0/BOOT).
+6. ~~`firmware/switch/`'s onboard BOOT/PROG button (GPIO 0) was unreliable~~ —
+   fixed. Switching to an external breadboard pushbutton on GPIO 4
+   (GND -> button -> GPIO, confirmed not a boot-strapping pin) resolved it:
+   multiple clean presses tested reliably on real hardware, confirming
+   GPIO 0's dual role as boot-mode-select (not the debounce/ISR logic) was
+   the actual culprit.
 
 ## Note on hardware/USB
 
