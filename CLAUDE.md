@@ -194,104 +194,40 @@ SECURITY.md               flash encryption / secure boot / signed OTA guidance
    both, not just light.
 
    A fourth device type, `firmware/outlet/` (`on_off_plug_in_unit`), was
-   added after this — see its own repository-layout entry above and item 2
-   below for why it exists alongside `firmware/switch/` rather than
-   replacing it. A temperature sensor (analog/ADC-driven, unlike the four
+   added after this, alongside `firmware/switch/` rather than replacing
+   it — see its own repository-layout entry above for why, and
+   `tools/product-wizard/README.md` for the full Apple Home
+   icon/commissioning story for both. All four device types (light,
+   switch, contact sensor, outlet) have now been built, flashed, and
+   commissioned via Apple Home through the wizard's own generated
+   commands, run verbatim against the real repo — zero errors on any of
+   them. A temperature sensor (analog/ADC-driven, unlike the four
    GPIO-digital types that exist now) is the natural next type to add.
-2. ~~Make the switch actually control a bound device~~ — done. Button presses
-   on `firmware/switch/` now send a real `OnOff::Toggle` via
-   `client::cluster_update()` / `client::interaction::invoke::send_request()`,
-   verified against esp-matter's own `examples/light_switch/main/app_driver.cpp`
-   and confirmed on real hardware (GPIO4 breadboard button, ESP32 WROOM-32):
-   the old `Failed to get attribute handle` error is gone (that was caused by
-   `on_off_light_switch`'s OnOff cluster being CLIENT-only — no local server
-   attribute exists to update, see `esp_matter_endpoint.cpp`). Without an
-   actual Binding-cluster entry, a press now logs `esp_matter_client: failed
-   to notify the bound cluster changed` instead, which is expected: it means
-   the command path works but no bound peer is configured yet. The button's
-   local GPIO2 Identify LED now also doubles as an on/off indicator (flips
-   on every confirmed press), independent of any binding — stress-tested
-   with ~30 rapid taps, no missed/double presses.
-
-   Also since taken through the wizard's own commissioning path for real
-   (product "Living Room Switch", after `esptool erase_flash` — reflashing
-   over a previously-commissioned board leaves stale fabric data in NVS,
-   since write-flash never touches that partition, and the device comes
-   up already "Operational" instead of freshly commissionable if you
-   skip that). Commissioning itself succeeds cleanly
-   (`Commissioning complete — device is now paired`, no errors), but
-   Apple Home then shows it as a generic "Matter Accessory" / "Niet
-   geschikt" tile with a house icon — expected, not a bug: there's no
-   server attribute for Apple Home to display (CLIENT-only OnOff, see
-   above) and no Bindings UI to configure the one thing this device type
-   actually needs.
-
-   In response, added `firmware/outlet/` (see its repository-layout entry
-   above) as a fourth device type rather than changing this one: a
-   button that toggles its *own* server-side OnOff attribute, so it shows
-   up as a real controllable tile in Apple/Google Home (as "Outlet", not
-   "Switch" — checked directly against the Matter device type library:
-   there's no separate device type for a wall switch's own on/off state,
-   distinct from a plug-in outlet). `firmware/switch/`'s Binding-based
-   remote-control behavior stays as-is; the two now demonstrate the two
-   different things esp-matter's OnOff-adjacent device types can do.
-   Taken through the wizard's own commissioning path too (product "Living
-   Room Outlet") — commissions cleanly via Apple Home, no errors, and this
-   time the toggle actually works from both sides: the physical button
-   and the Home app tile stay in sync, confirmed on real hardware. All
-   four device types have now reached that same bar.
-
-   Still open: an actual end-to-end binding test (does a press really
-   toggle a bound light?) needs two devices commissioned onto the same
-   fabric plus a controller with a Bindings UI (Home Assistant has one,
-   Apple/Google Home don't). Only one physical board is available right
-   now, so the plan was to commission a Linux-simulated `chip-lighting-app`
-   (buildable from source already present in the esp-matter Docker image;
-   not prebuilt) as the second "device". That's blocked on something more
-   fundamental, discovered while scoping it: initial Matter commissioning
-   needs BLE, and **Docker Desktop on macOS has no Bluetooth passthrough**
-   into containers — the same class of limitation already documented above
-   for USB. `chip-tool` (prebuilt in the esp-matter image at
-   `/usr/local/bin/chip-tool`) is therefore unusable for commissioning from
-   inside that image on this host; it would need a native macOS build of
-   connectedhomeip (Xcode CLT + Python + GN/ninja, a multi-hour first
-   build), which was deferred rather than done speculatively. Revisit when
-   either a second physical board + a controller that already handles BLE
-   (e.g. the phone that did the original Apple Home pairing, if it grows
-   binding support) becomes available, or when a native macOS chip-tool
-   build is worth the investment.
-3. Implement Matter **OTA** — partially done. All three firmware types now
-   ship `CONFIG_ENABLE_OTA_REQUESTOR=y`, which adds the OTA Requestor
-   cluster to the root node endpoint entirely via Kconfig — esp-matter's
-   own core startup (`esp_matter_core.cpp`) calls
+2. Implement Matter **OTA** — partially done. All four firmware types ship
+   `CONFIG_ENABLE_OTA_REQUESTOR=y`, which adds the OTA Requestor cluster
+   to the root node endpoint entirely via Kconfig — esp-matter's own core
+   startup (`esp_matter_core.cpp`) calls
    `esp_matter_ota_requestor_init()`/`_start()` automatically once that
    flag is on, so no app code was needed. Confirmed on real hardware for
    `firmware/contact-sensor/` and `firmware/switch/` (clean boot, cluster
-   registered, zero errors); `firmware/light/` builds identically but
-   wasn't separately reflash-tested since the code path is generic to
-   every device type, not device-specific.
+   registered, zero errors); the other two build identically since the
+   code path is generic to every device type, not device-specific.
 
-   Still open, and blocked on the same wall as the binding test above: a
-   real OTA **transfer** needs an OTA Provider node commissioned onto the
-   same fabric, actually serving a `.bin` (e.g. `chip-ota-provider-app`,
-   source-only in the esp-matter image, not prebuilt) — which needs
-   `chip-tool`-class commissioning tooling, which needs BLE, which Docker
-   Desktop on macOS doesn't pass through. The original goal of updating
-   "from a GitHub Release `.bin`" also needs a small bridge piece that
-   doesn't exist yet: something that downloads the release asset and feeds
-   it to whatever OTA Provider is running (Matter OTA doesn't fetch
-   arbitrary URLs directly — only BDX from a Provider on the fabric).
-   Revisit alongside the binding test once native macOS `chip-tool` (or
-   equivalent commissioning tooling) exists. Signed/encrypted OTA
-   (`esp_matter_ota_requestor_encrypted_init()`, see
+   Still open: a real OTA **transfer** needs an OTA Provider node
+   commissioned onto the same fabric, actually serving a `.bin` (e.g.
+   `chip-ota-provider-app`, source-only in the esp-matter image, not
+   prebuilt) — which needs `chip-tool`-class commissioning tooling, which
+   needs BLE, which Docker Desktop on macOS doesn't pass through to
+   containers. The original goal of updating "from a GitHub Release
+   `.bin`" also needs a small bridge piece that doesn't exist yet:
+   something that downloads the release asset and feeds it to whatever
+   OTA Provider is running (Matter OTA doesn't fetch arbitrary URLs
+   directly — only BDX from a Provider on the fabric). Revisit once
+   native macOS `chip-tool` (or equivalent commissioning tooling) exists.
+   Signed/encrypted OTA (`esp_matter_ota_requestor_encrypted_init()`, see
    `examples/light/main/app_main.cpp` in the SDK) is a further step after
    that.
-4. Revisit CI: same build recipe as before, but pull the image once outside
-   the matrix (e.g. a setup job, or a self-hosted/larger runner) instead of
-   per-job, so it doesn't stall out again.
-5. Move to an ESP-IDF v6.0.x-based image once esp-matter publishes one
-   (update `tools/dev.sh` and the wizard's `ESP_MATTER_IMAGE` together).
-6. ~~`firmware/switch/`'s onboard BOOT/PROG button (GPIO 0) was unreliable~~ —
+3. ~~`firmware/switch/`'s onboard BOOT/PROG button (GPIO 0) was unreliable~~ —
    fixed. Switching to an external breadboard pushbutton on GPIO 4
    (GND -> button -> GPIO, confirmed not a boot-strapping pin) resolved it:
    multiple clean presses tested reliably on real hardware, confirming
