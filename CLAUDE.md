@@ -101,6 +101,26 @@ firmware/switch/          On/Off switch — second device type, copied from ligh
                            entry to an actual target device first
   partitions.csv           same OTA + fctry layout as firmware/light/
   sdkconfig.defaults        same as firmware/light/
+firmware/contact-sensor/  Contact sensor — third device type, copied from switch/
+  main/app_main.cpp       reed switch on GPIO 4 (WROOM-32) reports open/closed
+                           via the Boolean State cluster's StateValue
+                           attribute; reacts to both edges (ANYEDGE, not
+                           NEGEDGE) since it tracks live state, not discrete
+                           presses. StateValue can't be written through
+                           esp-matter's generic attribute::update() in this
+                           SDK version — BooleanState is a newer "code-driven"
+                           cluster class, not the generic ember attribute
+                           store — so it goes through
+                           BooleanStateCluster::SetStateValue() instead,
+                           looked up via the data model provider's registry
+                           (see the comment above update_contact_state() in
+                           app_main.cpp for the full story; this bug class is
+                           worth checking for in any other "server cluster
+                           attribute app code needs to write" case going
+                           forward — OnOff was a plain ember attribute and
+                           didn't hit it, BooleanState did)
+  partitions.csv           same OTA + fctry layout as firmware/light/
+  sdkconfig.defaults        same as firmware/light/
 tools/
   dev.sh                  opens the Docker dev environment
   gen_factory.sh          local QR + factory partition generator
@@ -136,8 +156,18 @@ SECURITY.md               flash encryption / secure boot / signed OTA guidance
 
 ## Open next steps (discussed, not yet done)
 
-1. Add a third device type (temperature or contact sensor) — `firmware/light/`
-   and `firmware/switch/` are both there now as duplication examples.
+1. ~~Add a third device type~~ — done: `firmware/contact-sensor/` (a reed-
+   switch-style Boolean State sensor), verified on real hardware. Building
+   it surfaced a new class of bug worth remembering for any future sensor
+   type: esp-matter's generic `attribute::update()` can't write every
+   server attribute in this SDK version — clusters implemented via the
+   newer "code-driven" cluster classes (BooleanState is one) need their
+   own setter API instead (`BooleanStateCluster::SetStateValue()` here),
+   looked up through the data model provider's registry. See the
+   repository layout entry above and the comment above
+   `update_contact_state()` in `firmware/contact-sensor/main/app_main.cpp`.
+   A temperature sensor (analog/ADC-driven, unlike the three GPIO-digital
+   types that exist now) is the natural next one to add.
 2. ~~Make the switch actually control a bound device~~ — done. Button presses
    on `firmware/switch/` now send a real `OnOff::Toggle` via
    `client::cluster_update()` / `client::interaction::invoke::send_request()`,

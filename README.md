@@ -97,11 +97,24 @@ esp32-matter/
 ## Adding more device types
 
 `firmware/switch/` is a second example, copied from `firmware/light/` with the
-endpoint type swapped to `on_off_light_switch` — its button toggles its own OnOff
-state, though sending a command to a bound device is still a TODO in its
-`app_main.cpp`. To add another type, copy either folder and swap the endpoint
+endpoint type swapped to `on_off_light_switch` — its button sends a real OnOff
+Toggle command to whatever it's bound to, via esp-matter's client invoke API.
+
+`firmware/contact-sensor/` is a third example (`contact_sensor` endpoint
+type): a digital input (e.g. a door/window reed switch) reported through the
+Boolean State cluster's StateValue attribute. Note for anyone copying it as a
+template for another sensor-style device: updating that attribute from app
+code needs esp-matter's cluster-specific setter API
+(`BooleanStateCluster::SetStateValue()`), not the generic `attribute::update()`
+that `firmware/light/` uses — BooleanState is implemented via a newer
+"code-driven" cluster class in this SDK version, and the generic attribute
+store returns `ESP_ERR_NOT_SUPPORTED` for it. See the comment above
+`update_contact_state()` in its `app_main.cpp` for the full explanation and
+the working pattern.
+
+To add another type, copy any of the three folders and swap the endpoint
 type in `app_main.cpp` — esp-matter provides ready-made types like
-`dimmable_light`, `temperature_sensor`, `contact_sensor`, and many more.
+`dimmable_light`, `temperature_sensor`, and many more.
 
 ## Updates
 

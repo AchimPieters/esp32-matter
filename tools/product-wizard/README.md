@@ -23,16 +23,18 @@ open tools/product-wizard/index.html
 - **Create a new product → Setup your product** — name your product and
   hit **Start**.
 - **Get Started (step 1)** — pick a device type: "On/Off Light"
-  (`firmware/light/`) or "On/Off Switch" (`firmware/switch/`). Both are
-  real, buildable firmware, not just UI placeholders.
+  (`firmware/light/`), "On/Off Switch" (`firmware/switch/`), or "Contact
+  Sensor" (`firmware/contact-sensor/`). All three are real, buildable
+  firmware, not just UI placeholders.
 - **Select Module (step 2)** — pick a target chip (ESP32 / C3 / C6 / S3 /
   H2), mirroring what `tools/dev.sh` + `idf.py set-target` actually
   support. Connectivity badges (Wi-Fi/BLE/Thread) reflect each chip's real
   radios — e.g. ESP32-H2 has no Wi-Fi.
 - **Configure Device (step 3)** — set the one GPIO each device type's
   digital-GPIO driver actually exposes: the LED pin for the light, the
-  button pin for the switch (no PWM/dimming or debounce config yet, unlike
-  the ESP ZeroCode screenshots this is modelled on). Defaults per module
+  button pin for the switch, the contact pin for the contact sensor (no
+  PWM/dimming or debounce config yet, unlike the ESP ZeroCode screenshots
+  this is modelled on). Defaults per module
   echo the comments in each `app_main.cpp`. Also an **Identify LED**
   checkbox, on by default — every device type has one, since it's a real
   Matter cluster (blinks in response to a controller's "Identify"
@@ -96,17 +98,21 @@ All six steps are implemented end to end: Dashboard → Setup → Get
 Started → Select Module → Configure Device → Test Product → Customise &
 Review → Generate Firmware. The On/Off Light path on classic ESP32 has
 been validated for real — built, flashed, commissioned via QR code, and
-controlled on/off through Apple Home.
+controlled on/off through Apple Home. The switch and contact sensor have
+each been built, flashed, and their GPIO input/debounce behavior verified
+on real hardware, but not yet taken through full commissioning.
 
 ## Known limitations
 
-- Two device types exist (`On/Off Light`, `On/Off Switch`), both digital
-  GPIO only — that's all `firmware/` has today. Adding a temperature or
-  contact sensor is the natural way to add a third `DEVICE_TYPES` entry
-  (see the comment above that array in `index.html`).
-- The switch's button only toggles its *own* OnOff attribute — it doesn't
-  send a command to a bound device yet. See the TODO in
-  `firmware/switch/main/app_main.cpp`.
+- Three device types exist (`On/Off Light`, `On/Off Switch`, `Contact
+  Sensor`), all digital GPIO only — that's all `firmware/` has today.
+  Adding a temperature sensor (analog/ADC-driven, unlike these three) is
+  the natural next `DEVICE_TYPES` entry (see the comment above that array
+  in `index.html`).
+- The switch's button sends a real OnOff Toggle to whatever it's bound to
+  (`client::cluster_update()`), but that binding itself has to be set up
+  through a controller with a Bindings UI (e.g. Home Assistant) — the
+  wizard doesn't help with that part.
 - The generated `sed` commands match on the `#define`'s name, not its
   current value, so they're idempotent — but if a line's been hand-edited
   into some other shape entirely (not `#define NAME GPIO_NUM_<digits>`),

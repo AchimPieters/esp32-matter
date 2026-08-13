@@ -718,6 +718,39 @@ const DEVICE_TYPES = [
       defaultsByModule: { esp32: 2, esp32c3: 2, esp32c6: 2, esp32s3: 2, esp32h2: 2 },
     },
   },
+  {
+    id: "contact",
+    name: "Contact Sensor",
+    desc: "Matter contact sensor: a digital input (e.g. a door/window reed switch) reports open/closed via the Boolean State cluster. Reference device in firmware/contact-sensor/.",
+    // Matches project(matter_contact_sensor) in firmware/contact-sensor/CMakeLists.txt.
+    binName: "matter_contact_sensor.bin",
+    driver: {
+      summary: "GPIO (digital input, active-low)",
+      fieldLabel: "Contact GPIO pin",
+      blockTitle: "Contact · digital GPIO input",
+      filePath: "firmware/contact-sensor/main/app_main.cpp",
+      defineName: "CONTACT_GPIO",
+      // The literal value app_main.cpp ships with today — this is the
+      // sed baseline. Reference wiring is a reed switch: GND -> switch ->
+      // GPIO, same active-low idiom as firmware/switch's button.
+      // Deliberately not the onboard BOOT/PROG button (GPIO 0) — see
+      // firmware/switch's comment / CLAUDE.md's open next steps for why.
+      currentGpio: 4,
+      // Suggested value to prefill per module — GPIO 4 is a plain,
+      // unreserved pin on all of these; still worth checking against your
+      // specific board.
+      defaultsByModule: { esp32: 4, esp32c3: 4, esp32c6: 4, esp32s3: 4, esp32h2: 4 },
+    },
+    identify: {
+      summary: "GPIO (digital output)",
+      fieldLabel: "Identify LED GPIO pin",
+      blockTitle: "Identify LED · digital output",
+      filePath: "firmware/contact-sensor/main/app_main.cpp",
+      defineName: "IDENTIFY_LED_GPIO",
+      currentGpio: 2,
+      defaultsByModule: { esp32: 2, esp32c3: 2, esp32c6: 2, esp32s3: 2, esp32h2: 2 },
+    },
+  },
 ];
 
 function findDeviceType(id) {
