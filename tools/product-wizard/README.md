@@ -96,11 +96,13 @@ open tools/product-wizard/index.html
 
 All six steps are implemented end to end: Dashboard → Setup → Get
 Started → Select Module → Configure Device → Test Product → Customise &
-Review → Generate Firmware. The On/Off Light path on classic ESP32 has
-been validated for real — built, flashed, commissioned via QR code, and
-controlled on/off through Apple Home. The switch and contact sensor have
-each been built, flashed, and their GPIO input/debounce behavior verified
-on real hardware, but not yet taken through full commissioning.
+Review → Generate Firmware. The On/Off Light and Contact Sensor paths on
+classic ESP32 have both been validated for real, through the wizard's own
+generated commands run verbatim — built, factory data + QR generated,
+flashed, and commissioned via Apple Home (full PASE/CASE handshake, no
+errors). The switch has been built, flashed, and its GPIO input/debounce
+behavior verified on real hardware, but not yet taken through full
+commissioning via the wizard's own commands.
 
 ## Known limitations
 

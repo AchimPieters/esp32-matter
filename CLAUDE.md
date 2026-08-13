@@ -166,8 +166,17 @@ SECURITY.md               flash encryption / secure boot / signed OTA guidance
    looked up through the data model provider's registry. See the
    repository layout entry above and the comment above
    `update_contact_state()` in `firmware/contact-sensor/main/app_main.cpp`.
-   A temperature sensor (analog/ADC-driven, unlike the three GPIO-digital
-   types that exist now) is the natural next one to add.
+   Since then, taken through the *entire* product-wizard flow for real
+   (product "Front Door Sensor"): the wizard's own generated Docker
+   command (sed + build + `gen_factory.sh`) and flash command, run
+   verbatim against the real repo, then the resulting QR code scanned and
+   commissioned via Apple Home — full PASE/CASE handshake, fabric add,
+   WiFi join, `Commissioning complete — device is now paired`, zero
+   errors. First device type besides the light to reach that bar; the
+   wizard's "validated end to end on real hardware" claim is now true for
+   both, not just light. A temperature sensor (analog/ADC-driven, unlike
+   the three GPIO-digital types that exist now) is the natural next type
+   to add.
 2. ~~Make the switch actually control a bound device~~ — done. Button presses
    on `firmware/switch/` now send a real `OnOff::Toggle` via
    `client::cluster_update()` / `client::interaction::invoke::send_request()`,
