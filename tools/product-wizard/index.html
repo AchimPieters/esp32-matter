@@ -687,7 +687,7 @@ const DEVICE_TYPES = [
   {
     id: "switch",
     name: "On/Off Switch",
-    desc: "Matter on/off switch: a physical button toggles the switch's own state. Reference device in firmware/switch/.",
+    desc: "Matter on/off switch: a physical button sends an OnOff Toggle command to whatever device(s) it's bound to. Reference device in firmware/switch/.",
     // Matches project(matter_switch) in firmware/switch/CMakeLists.txt.
     binName: "matter_switch.bin",
     driver: {
