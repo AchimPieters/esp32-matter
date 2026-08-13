@@ -993,7 +993,8 @@ function renderConfigureDevice(p) {
           </label>
           <p class="field-note" style="margin-top:4px;">
             Blinks when a controller sends an "Identify" command, so you
-            can physically find this device. On by default; untick to
+            can physically find this device.${p.deviceType === "switch" ? " On this switch it also doubles as a local on/off indicator, flipping with every confirmed button press — handy since the switch's actual Matter state lives on whatever device it's bound to, not on the switch itself." : ""}
+            On by default; untick to
             leave it out of this product (the firmware's shipped default
             stays as-is, this just means the wizard won't customise it).
           </p>

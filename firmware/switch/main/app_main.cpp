@@ -29,6 +29,15 @@
  * matches esp-matter's own examples/light_switch/main/app_driver.cpp,
  * which is what it was checked against instead of guessing at the client
  * invoke API's exact shape.
+ *
+ * The Identify LED (see IDENTIFY_LED_GPIO below) does double duty: besides
+ * blinking on a controller's Identify command, it also flips on/off with
+ * every confirmed button press, as a physical on/off indicator for this
+ * switch's own toggle state — handy since there's otherwise no local
+ * feedback that a press was registered (the actual Matter state lives on
+ * whatever device this switch is bound to, not here). If a controller
+ * happens to send Identify while you're pressing the button, the two will
+ * fight over the same LED; harmless, just cosmetic.
  */
 
 #include <esp_err.h>
@@ -58,11 +67,12 @@ static const char *TAG = "matter_switch";
  * elsewhere. */
 #define SWITCH_BUTTON_GPIO GPIO_NUM_4
 
-/* Separate LED for the Matter "Identify" cluster — blinks so you can
- * physically find this device when a controller asks it to identify
- * itself. GPIO 2 is commonly the onboard/user LED on classic ESP32
- * (WROOM-32) devkits and isn't otherwise used by this firmware. Adjust to
- * match your board. */
+/* LED for the Matter "Identify" cluster — blinks so you can physically find
+ * this device when a controller asks it to identify itself. Also doubles as
+ * a local on/off indicator for the switch's own toggle state (see the
+ * header comment above). GPIO 2 is commonly the onboard/user LED on classic
+ * ESP32 (WROOM-32) devkits and isn't otherwise used by this firmware.
+ * Adjust to match your board. */
 #define IDENTIFY_LED_GPIO GPIO_NUM_2
 #define IDENTIFY_BLINK_INTERVAL_MS 500
 
@@ -73,6 +83,10 @@ using namespace chip::app::Clusters;
 static uint16_t switch_endpoint_id = 0;
 static QueueHandle_t button_evt_queue = NULL;
 static esp_timer_handle_t identify_led_timer = NULL;
+/* Tracks the switch's own on/off indicator state, shown on the Identify
+ * LED — see the header comment above. Purely local; not a Matter
+ * attribute (this endpoint's OnOff cluster is client-only, see above). */
+static bool switch_indicator_state = false;
 
 /* Toggles the identify LED each time the timer fires — the actual blink. */
 static void identify_led_timer_cb(void *arg)
@@ -180,6 +194,14 @@ static void button_task(void *arg)
         }
 
         ESP_LOGI(TAG, "Button pressed — sending Toggle to bound device(s)");
+
+        /* Local on/off indicator — see the header comment and
+         * IDENTIFY_LED_GPIO's comment above for why this shares the
+         * Identify LED. */
+        switch_indicator_state = !switch_indicator_state;
+        gpio_set_level(IDENTIFY_LED_GPIO, switch_indicator_state ? 1 : 0);
+        ESP_LOGI(TAG, "Indicator LED (GPIO %d) now %s", IDENTIFY_LED_GPIO,
+                 switch_indicator_state ? "ON" : "OFF");
 
         client::request_handle_t req_handle;
         req_handle.type = client::INVOKE_CMD;
