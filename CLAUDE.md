@@ -148,11 +148,30 @@ SECURITY.md               flash encryption / secure boot / signed OTA guidance
    attribute exists to update, see `esp_matter_endpoint.cpp`). Without an
    actual Binding-cluster entry, a press now logs `esp_matter_client: failed
    to notify the bound cluster changed` instead, which is expected: it means
-   the command path works but no bound peer is configured yet. Binding a
-   switch to a real target device (e.g. `firmware/light/`) needs a
-   controller with a Bindings UI — Home Assistant has one, Apple/Google Home
-   don't — and hasn't been tested end-to-end yet (still open: does a press
-   actually toggle a bound light once bindings are configured?).
+   the command path works but no bound peer is configured yet. The button's
+   local GPIO2 Identify LED now also doubles as an on/off indicator (flips
+   on every confirmed press), independent of any binding — stress-tested
+   with ~30 rapid taps, no missed/double presses.
+
+   Still open: an actual end-to-end binding test (does a press really
+   toggle a bound light?) needs two devices commissioned onto the same
+   fabric plus a controller with a Bindings UI (Home Assistant has one,
+   Apple/Google Home don't). Only one physical board is available right
+   now, so the plan was to commission a Linux-simulated `chip-lighting-app`
+   (buildable from source already present in the esp-matter Docker image;
+   not prebuilt) as the second "device". That's blocked on something more
+   fundamental, discovered while scoping it: initial Matter commissioning
+   needs BLE, and **Docker Desktop on macOS has no Bluetooth passthrough**
+   into containers — the same class of limitation already documented above
+   for USB. `chip-tool` (prebuilt in the esp-matter image at
+   `/usr/local/bin/chip-tool`) is therefore unusable for commissioning from
+   inside that image on this host; it would need a native macOS build of
+   connectedhomeip (Xcode CLT + Python + GN/ninja, a multi-hour first
+   build), which was deferred rather than done speculatively. Revisit when
+   either a second physical board + a controller that already handles BLE
+   (e.g. the phone that did the original Apple Home pairing, if it grows
+   binding support) becomes available, or when a native macOS chip-tool
+   build is worth the investment.
 3. Implement Matter **OTA** so devices update themselves over the air from a
    GitHub Release `.bin` (start from USB flashing, add signed OTA on top).
 4. Revisit CI: same build recipe as before, but pull the image once outside
