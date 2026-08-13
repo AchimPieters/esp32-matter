@@ -235,6 +235,11 @@ SECURITY.md               flash encryption / secure boot / signed OTA guidance
    distinct from a plug-in outlet). `firmware/switch/`'s Binding-based
    remote-control behavior stays as-is; the two now demonstrate the two
    different things esp-matter's OnOff-adjacent device types can do.
+   Taken through the wizard's own commissioning path too (product "Living
+   Room Outlet") — commissions cleanly via Apple Home, no errors, and this
+   time the toggle actually works from both sides: the physical button
+   and the Home app tile stay in sync, confirmed on real hardware. All
+   four device types have now reached that same bar.
 
    Still open: an actual end-to-end binding test (does a press really
    toggle a bound light?) needs two devices commissioned onto the same

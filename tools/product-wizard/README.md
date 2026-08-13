@@ -98,13 +98,10 @@ open tools/product-wizard/index.html
 
 All six steps are implemented end to end: Dashboard → Setup → Get
 Started → Select Module → Configure Device → Test Product → Customise &
-Review → Generate Firmware. The light, switch, and contact sensor on
-classic ESP32 have all been validated for real, through the wizard's own
-generated commands run verbatim — built, factory data + QR generated,
-flashed, and commissioned via Apple Home (full PASE/CASE handshake, no
-errors). The outlet has been built, flashed, and its button/output
-behavior verified on real hardware, but not yet taken through
-commissioning via the wizard's own commands.
+Review → Generate Firmware. All four device types on classic ESP32 have
+now been validated for real, through the wizard's own generated commands
+run verbatim — built, factory data + QR generated, flashed, and
+commissioned via Apple Home (full PASE/CASE handshake, no errors).
 
 The switch commissions cleanly but then shows up in Apple Home as a
 generic "Matter Accessory" / "Niet geschikt" (not compatible) tile with a
