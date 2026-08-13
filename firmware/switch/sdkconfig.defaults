@@ -15,6 +15,16 @@ CONFIG_CHIP_FACTORY_NAMESPACE_PARTITION_LABEL="fctry"
 # --- Matter core ---
 CONFIG_ESP_MATTER_ENABLE_DATA_MODEL=y
 
+# --- Matter OTA: adds the OTA Requestor cluster to the root node endpoint,
+# so this device can be updated over the air once bound to an OTA Provider
+# node on the same fabric (that binding is set up by a controller, same as
+# this device's own Binding cluster for the client-invoke Toggle — see
+# CLAUDE.md). The ota_0/ota_1 A/B slots + otadata partition this needs are
+# already in partitions.csv. No app code required: esp-matter's core
+# startup wires the requestor up automatically once this Kconfig option is
+# on (see esp_matter_core.cpp).
+CONFIG_ENABLE_OTA_REQUESTOR=y
+
 # --- BLE (commissioning transport) ---
 CONFIG_BT_ENABLED=y
 CONFIG_BT_NIMBLE_ENABLED=y

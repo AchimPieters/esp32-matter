@@ -202,8 +202,32 @@ SECURITY.md               flash encryption / secure boot / signed OTA guidance
    (e.g. the phone that did the original Apple Home pairing, if it grows
    binding support) becomes available, or when a native macOS chip-tool
    build is worth the investment.
-3. Implement Matter **OTA** so devices update themselves over the air from a
-   GitHub Release `.bin` (start from USB flashing, add signed OTA on top).
+3. Implement Matter **OTA** — partially done. All three firmware types now
+   ship `CONFIG_ENABLE_OTA_REQUESTOR=y`, which adds the OTA Requestor
+   cluster to the root node endpoint entirely via Kconfig — esp-matter's
+   own core startup (`esp_matter_core.cpp`) calls
+   `esp_matter_ota_requestor_init()`/`_start()` automatically once that
+   flag is on, so no app code was needed. Confirmed on real hardware for
+   `firmware/contact-sensor/` and `firmware/switch/` (clean boot, cluster
+   registered, zero errors); `firmware/light/` builds identically but
+   wasn't separately reflash-tested since the code path is generic to
+   every device type, not device-specific.
+
+   Still open, and blocked on the same wall as the binding test above: a
+   real OTA **transfer** needs an OTA Provider node commissioned onto the
+   same fabric, actually serving a `.bin` (e.g. `chip-ota-provider-app`,
+   source-only in the esp-matter image, not prebuilt) — which needs
+   `chip-tool`-class commissioning tooling, which needs BLE, which Docker
+   Desktop on macOS doesn't pass through. The original goal of updating
+   "from a GitHub Release `.bin`" also needs a small bridge piece that
+   doesn't exist yet: something that downloads the release asset and feeds
+   it to whatever OTA Provider is running (Matter OTA doesn't fetch
+   arbitrary URLs directly — only BDX from a Provider on the fabric).
+   Revisit alongside the binding test once native macOS `chip-tool` (or
+   equivalent commissioning tooling) exists. Signed/encrypted OTA
+   (`esp_matter_ota_requestor_encrypted_init()`, see
+   `examples/light/main/app_main.cpp` in the SDK) is a further step after
+   that.
 4. Revisit CI: same build recipe as before, but pull the image once outside
    the matrix (e.g. a setup job, or a self-hosted/larger runner) instead of
    per-job, so it doesn't stall out again.

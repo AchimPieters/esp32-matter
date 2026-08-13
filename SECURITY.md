@@ -63,9 +63,17 @@ updates to secure-boot devices.
 
 ### 4. Signed OTA updates
 
-When you add Matter OTA, sign your OTA images and verify signatures on the
-device so only your firmware is ever accepted. Serve the image from your GitHub
-Release, or from a host you control.
+All three firmware types now ship with Matter's OTA Requestor cluster
+enabled (`CONFIG_ENABLE_OTA_REQUESTOR=y` — see CLAUDE.md's open next steps
+for what's done vs. still open). It's currently unsigned: any OTA Provider
+a device is bound to can push it a new image, over BDX (Matter's own
+transfer protocol — not a raw HTTP fetch, so "serve the image from a URL
+you control" isn't quite how this works; the image comes from whatever OTA
+Provider node the device is bound to on its fabric). Before relying on
+this for anything beyond your own LAN: sign your OTA images and verify
+signatures on the device via `esp_matter_ota_requestor_encrypted_init()`
+(see `examples/light/main/app_main.cpp` in the esp-matter SDK for the
+reference pattern) so only your firmware is ever accepted.
 
 ## Reporting issues
 

@@ -120,10 +120,21 @@ type in `app_main.cpp` — esp-matter provides ready-made types like
 
 No CI yet (see CLAUDE.md — an automated build/release workflow was tried
 but the multi-GB Docker image stalled out on GitHub-hosted runners, so it
-was reverted rather than left flaky). For now, build + flash a new version
-yourself following the Quick Start steps above whenever you change
-`app_main.cpp`, or build Matter OTA on top so devices update themselves
-over the air (start with USB; add OTA later).
+was reverted rather than left flaky). Build + flash a new version yourself
+following the Quick Start steps above whenever you change `app_main.cpp`.
+
+All three device types also ship with Matter's **OTA Requestor** cluster
+enabled (`CONFIG_ENABLE_OTA_REQUESTOR=y`), so once a device is bound to an
+OTA Provider node on the same fabric, it can fetch and install updates over
+the air using the existing `ota_0`/`ota_1` A/B partition slots — no app
+code needed, esp-matter wires the requestor up automatically. Setting up
+that binding needs a controller (same idea as `firmware/switch`'s Binding
+cluster for sending commands) and an OTA Provider node actually serving a
+`.bin` — this repo doesn't run one yet. The requestor side has been
+verified on real hardware (boots cleanly, registers the cluster, no
+errors); the provider side and a full transfer are open, tracked in
+CLAUDE.md's next steps alongside the binding test, which hits the same
+"needs a second commissioned device + tooling" wall.
 
 ## Honest expectations
 
