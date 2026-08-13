@@ -23,18 +23,20 @@ open tools/product-wizard/index.html
 - **Create a new product → Setup your product** — name your product and
   hit **Start**.
 - **Get Started (step 1)** — pick a device type: "On/Off Light"
-  (`firmware/light/`), "On/Off Switch" (`firmware/switch/`), or "Contact
-  Sensor" (`firmware/contact-sensor/`). All three are real, buildable
-  firmware, not just UI placeholders.
+  (`firmware/light/`), "On/Off Switch" (`firmware/switch/`), "Contact
+  Sensor" (`firmware/contact-sensor/`), or "Outlet" (`firmware/outlet/`).
+  All four are real, buildable firmware, not just UI placeholders.
 - **Select Module (step 2)** — pick a target chip (ESP32 / C3 / C6 / S3 /
   H2), mirroring what `tools/dev.sh` + `idf.py set-target` actually
   support. Connectivity badges (Wi-Fi/BLE/Thread) reflect each chip's real
   radios — e.g. ESP32-H2 has no Wi-Fi.
-- **Configure Device (step 3)** — set the one GPIO each device type's
+- **Configure Device (step 3)** — set the GPIO(s) each device type's
   digital-GPIO driver actually exposes: the LED pin for the light, the
-  button pin for the switch, the contact pin for the contact sensor (no
-  PWM/dimming or debounce config yet, unlike the ESP ZeroCode screenshots
-  this is modelled on). Defaults per module
+  button pin for the switch, the contact pin for the contact sensor, the
+  output + button pins for the outlet (the only device type needing two —
+  see `DEVICE_TYPES`' optional `button` field in `index.html`, alongside
+  `driver` and `identify`). No PWM/dimming or debounce config yet, unlike
+  the ESP ZeroCode screenshots this is modelled on. Defaults per module
   echo the comments in each `app_main.cpp`. Also an **Identify LED**
   checkbox, on by default — every device type has one, since it's a real
   Matter cluster (blinks in response to a controller's "Identify"
@@ -96,10 +98,13 @@ open tools/product-wizard/index.html
 
 All six steps are implemented end to end: Dashboard → Setup → Get
 Started → Select Module → Configure Device → Test Product → Customise &
-Review → Generate Firmware. All three device types on classic ESP32 have
-now been validated for real, through the wizard's own generated commands
-run verbatim — built, factory data + QR generated, flashed, and
-commissioned via Apple Home (full PASE/CASE handshake, no errors).
+Review → Generate Firmware. The light, switch, and contact sensor on
+classic ESP32 have all been validated for real, through the wizard's own
+generated commands run verbatim — built, factory data + QR generated,
+flashed, and commissioned via Apple Home (full PASE/CASE handshake, no
+errors). The outlet has been built, flashed, and its button/output
+behavior verified on real hardware, but not yet taken through
+commissioning via the wizard's own commands.
 
 The switch commissions cleanly but then shows up in Apple Home as a
 generic "Matter Accessory" / "Niet geschikt" (not compatible) tile with a
@@ -109,6 +114,17 @@ comment), so there's no server attribute for Apple Home to display or
 control, and Apple/Google Home have no UI for setting up the Binding
 cluster this device actually needs to do anything useful. Home Assistant
 or `chip-tool` are the way to actually use it (see CLAUDE.md).
+
+The outlet (`on_off_plug_in_unit`) was added specifically to give a
+device type that *does* show up as a real, controllable tile — it does,
+but as "Outlet"/"Stopcontact", not "Switch". That's also expected, not a
+bug: checked directly against the Matter device type library
+(`connectedhomeip/data_model/<version>/device_types/`) — every device
+type with "Switch" in the name is a client/input device (same category as
+`on_off_light_switch` above), none of them a controllable on/off output.
+`on_off_plug_in_unit` is the spec-correct type for a self-contained on/off
+device, icon included; see `firmware/outlet/main/app_main.cpp`'s header
+comment for the full explanation.
 
 Reflashing a board that was previously commissioned with different
 firmware/identity (as happened testing this) leaves stale fabric data in
@@ -121,11 +137,11 @@ like this repo's own testing does.
 
 ## Known limitations
 
-- Three device types exist (`On/Off Light`, `On/Off Switch`, `Contact
-  Sensor`), all digital GPIO only — that's all `firmware/` has today.
-  Adding a temperature sensor (analog/ADC-driven, unlike these three) is
-  the natural next `DEVICE_TYPES` entry (see the comment above that array
-  in `index.html`).
+- Four device types exist (`On/Off Light`, `On/Off Switch`, `Contact
+  Sensor`, `Outlet`), all digital GPIO only — that's all `firmware/` has
+  today. Adding a temperature sensor (analog/ADC-driven, unlike these
+  four) is the natural next `DEVICE_TYPES` entry (see the comment above
+  that array in `index.html`).
 - The switch's button sends a real OnOff Toggle to whatever it's bound to
   (`client::cluster_update()`), but that binding itself has to be set up
   through a controller with a Bindings UI (e.g. Home Assistant) — the

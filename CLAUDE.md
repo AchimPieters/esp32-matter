@@ -121,6 +121,23 @@ firmware/contact-sensor/  Contact sensor — third device type, copied from swit
                            didn't hit it, BooleanState did)
   partitions.csv           same OTA + fctry layout as firmware/light/
   sdkconfig.defaults        same as firmware/light/
+firmware/outlet/         On/Off Plug-in Unit — fourth device type, combines
+                           light/'s server-attribute pattern with switch/'s
+                           button/debounce pattern
+  main/app_main.cpp       button on GPIO 4 (WROOM-32) toggles its own Matter
+                           OnOff attribute directly (attribute::update(),
+                           same call as firmware/light/) driving an output
+                           on GPIO 2 — unlike firmware/switch/, this shows up
+                           as a real controllable tile in Apple/Google Home
+                           (labeled "Outlet"/"Stopcontact", not "Switch" —
+                           expected: Matter's device type library has no
+                           separate device type for a wall switch's own
+                           on/off state distinct from a plug-in outlet, see
+                           the header comment in app_main.cpp for the full
+                           explanation, checked directly against the spec's
+                           device_types/ folder)
+  partitions.csv           same OTA + fctry layout as firmware/light/
+  sdkconfig.defaults        same as firmware/light/
 tools/
   dev.sh                  opens the Docker dev environment
   gen_factory.sh          local QR + factory partition generator
@@ -174,9 +191,13 @@ SECURITY.md               flash encryption / secure boot / signed OTA guidance
    WiFi join, `Commissioning complete — device is now paired`, zero
    errors. First device type besides the light to reach that bar; the
    wizard's "validated end to end on real hardware" claim is now true for
-   both, not just light. A temperature sensor (analog/ADC-driven, unlike
-   the three GPIO-digital types that exist now) is the natural next type
-   to add.
+   both, not just light.
+
+   A fourth device type, `firmware/outlet/` (`on_off_plug_in_unit`), was
+   added after this — see its own repository-layout entry above and item 2
+   below for why it exists alongside `firmware/switch/` rather than
+   replacing it. A temperature sensor (analog/ADC-driven, unlike the four
+   GPIO-digital types that exist now) is the natural next type to add.
 2. ~~Make the switch actually control a bound device~~ — done. Button presses
    on `firmware/switch/` now send a real `OnOff::Toggle` via
    `client::cluster_update()` / `client::interaction::invoke::send_request()`,
@@ -204,6 +225,16 @@ SECURITY.md               flash encryption / secure boot / signed OTA guidance
    server attribute for Apple Home to display (CLIENT-only OnOff, see
    above) and no Bindings UI to configure the one thing this device type
    actually needs.
+
+   In response, added `firmware/outlet/` (see its repository-layout entry
+   above) as a fourth device type rather than changing this one: a
+   button that toggles its *own* server-side OnOff attribute, so it shows
+   up as a real controllable tile in Apple/Google Home (as "Outlet", not
+   "Switch" — checked directly against the Matter device type library:
+   there's no separate device type for a wall switch's own on/off state,
+   distinct from a plug-in outlet). `firmware/switch/`'s Binding-based
+   remote-control behavior stays as-is; the two now demonstrate the two
+   different things esp-matter's OnOff-adjacent device types can do.
 
    Still open: an actual end-to-end binding test (does a press really
    toggle a bound light?) needs two devices commissioned onto the same

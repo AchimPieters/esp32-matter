@@ -112,7 +112,19 @@ store returns `ESP_ERR_NOT_SUPPORTED` for it. See the comment above
 `update_contact_state()` in its `app_main.cpp` for the full explanation and
 the working pattern.
 
-To add another type, copy any of the three folders and swap the endpoint
+`firmware/outlet/` (`on_off_plug_in_unit` endpoint type) is a fourth
+example: a physical button that toggles its *own* Matter OnOff attribute
+directly (`attribute::update()`, same server-side pattern as
+`firmware/light/`), so — unlike `firmware/switch/` — it shows up as a
+real, controllable tile in Apple/Google Home. Apple Home labels it
+"Outlet"/"Stopcontact" rather than "Switch"; that's expected, not a bug —
+Matter's device type library has no separate device type for "a wall
+switch with its own on/off state" distinct from a plug-in outlet (every
+device type with "Switch" in the name is a client/input device, none of
+them a controllable output). See the header comment in its `app_main.cpp`
+for the full explanation.
+
+To add another type, copy any of the four folders and swap the endpoint
 type in `app_main.cpp` — esp-matter provides ready-made types like
 `dimmable_light`, `temperature_sensor`, and many more.
 

@@ -751,6 +751,48 @@ const DEVICE_TYPES = [
       defaultsByModule: { esp32: 2, esp32c3: 2, esp32c6: 2, esp32s3: 2, esp32h2: 2 },
     },
   },
+  {
+    id: "outlet",
+    name: "Outlet",
+    desc: "Matter On/Off Plug-in Unit: a physical button toggles the device's own on/off state, visible and controllable from Apple/Google Home (unlike the switch's client-only Binding approach). Reference device in firmware/outlet/.",
+    // Matches project(matter_outlet) in firmware/outlet/CMakeLists.txt.
+    binName: "matter_outlet.bin",
+    driver: {
+      summary: "GPIO (digital output)",
+      fieldLabel: "Output GPIO pin",
+      blockTitle: "Output · digital GPIO (LED/relay)",
+      filePath: "firmware/outlet/main/app_main.cpp",
+      defineName: "OUTLET_GPIO",
+      currentGpio: 2,
+      defaultsByModule: { esp32: 2, esp32c3: 2, esp32c6: 2, esp32s3: 2, esp32h2: 2 },
+    },
+    // Second GPIO this device type needs, alongside `driver` — the physical
+    // button that toggles the output above. Only "outlet" uses this field;
+    // renderConfigureDevice() etc. treat it as optional per device type.
+    button: {
+      summary: "GPIO (digital input, active-low)",
+      fieldLabel: "Button GPIO pin",
+      blockTitle: "Button · digital GPIO input",
+      filePath: "firmware/outlet/main/app_main.cpp",
+      defineName: "OUTLET_BUTTON_GPIO",
+      // Reference wiring is a breadboard pushbutton: GND -> button -> GPIO,
+      // same idiom as firmware/switch's button. Deliberately not GPIO 0 —
+      // see firmware/switch's comment / CLAUDE.md's open next steps for why.
+      currentGpio: 4,
+      defaultsByModule: { esp32: 4, esp32c3: 4, esp32c6: 4, esp32s3: 4, esp32h2: 4 },
+    },
+    identify: {
+      summary: "GPIO (digital output)",
+      fieldLabel: "Identify LED GPIO pin",
+      blockTitle: "Identify LED · digital output",
+      filePath: "firmware/outlet/main/app_main.cpp",
+      defineName: "IDENTIFY_LED_GPIO",
+      // Shares the output GPIO by default in the shipped firmware (see its
+      // header comment) — same GPIO here so the wizard's default matches.
+      currentGpio: 2,
+      defaultsByModule: { esp32: 2, esp32c3: 2, esp32c6: 2, esp32s3: 2, esp32h2: 2 },
+    },
+  },
 ];
 
 function findDeviceType(id) {
@@ -990,17 +1032,21 @@ function identifyIsEnabled(p) {
 function renderConfigureDevice(p) {
   const deviceType = findDeviceType(p.deviceType);
   const driver = deviceType ? deviceType.driver : null;
+  const button = deviceType ? deviceType.button : null;
   const identify = deviceType ? deviceType.identify : null;
   const defaultGpio = driver ? (driver.defaultsByModule[p.target] != null ? driver.defaultsByModule[p.target] : 2) : 2;
+  const defaultButtonGpio = button ? (button.defaultsByModule[p.target] != null ? button.defaultsByModule[p.target] : 4) : 4;
   const defaultIdentifyGpio = identify ? (identify.defaultsByModule[p.target] != null ? identify.defaultsByModule[p.target] : 4) : 4;
   const identifyOn = identifyIsEnabled(p);
 
   if (p.gpioPin == null) p.gpioPin = defaultGpio;
+  if (button && p.buttonGpioPin == null) p.buttonGpioPin = defaultButtonGpio;
   if (p.identifyGpioPin == null) p.identifyGpioPin = defaultIdentifyGpio;
   const gpioValid = Number.isInteger(p.gpioPin) && p.gpioPin >= 0;
+  const buttonGpioValid = !button || (Number.isInteger(p.buttonGpioPin) && p.buttonGpioPin >= 0);
   const identifyGpioValid = !identifyOn || (Number.isInteger(p.identifyGpioPin) && p.identifyGpioPin >= 0);
   const sameGpio = identifyOn && gpioValid && identifyGpioValid && p.gpioPin === p.identifyGpioPin;
-  const allValid = gpioValid && identifyGpioValid;
+  const allValid = gpioValid && buttonGpioValid && identifyGpioValid;
 
   return `
     <div class="configure-grid">
@@ -1018,6 +1064,19 @@ function renderConfigureDevice(p) {
             is a common default for ${escapeHtml(moduleName(p.target))} devkits, not a guarantee for yours.
           </p>
         </div>
+
+        ${button ? `
+          <div class="driver-block">
+            <h3>${escapeHtml(button.blockTitle)}</h3>
+            <label class="field-label" for="button-gpio-pin">${escapeHtml(button.fieldLabel)}</label>
+            <input type="number" id="button-gpio-pin" min="0" max="48" value="${p.buttonGpioPin}">
+            <div class="field-error">${buttonGpioValid ? "" : "Enter a valid GPIO number (0 or higher)."}</div>
+            <p class="field-note">
+              Adjust to match your board — GPIO ${defaultButtonGpio}
+              is a common default for ${escapeHtml(moduleName(p.target))} devkits, not a guarantee for yours.
+            </p>
+          </div>
+        ` : ""}
 
         <div class="driver-block">
           <label class="checkbox-label" for="identify-enabled">
@@ -1050,7 +1109,8 @@ function renderConfigureDevice(p) {
         <p class="note-box">
           This only records your choices for now — it doesn't edit
           <code>${escapeHtml(driver ? driver.filePath : "app_main.cpp")}</code> yet. Applying them
-          (replacing <code>${escapeHtml(driver ? driver.defineName : "")}</code>${identifyOn ? ` and
+          (replacing <code>${escapeHtml(driver ? driver.defineName : "")}</code>${button ? `,
+          <code>${escapeHtml(button.defineName)}</code>` : ""}${identifyOn ? ` and
           <code>${escapeHtml(identify ? identify.defineName : "IDENTIFY_LED_GPIO")}</code>` : ""}) happens
           in the Generate Firmware step.
         </p>
@@ -1073,6 +1133,13 @@ function renderConfigureDevice(p) {
           <div class="summary-value">${escapeHtml(driver ? driver.summary : "—")}</div>
           <div class="summary-detail">IO pin: GPIO ${gpioValid ? p.gpioPin : "?"}</div>
         </div>
+        ${button ? `
+          <div class="summary-row">
+            <div class="summary-label">BUTTON</div>
+            <div class="summary-value">${escapeHtml(button.summary)}</div>
+            <div class="summary-detail">IO pin: GPIO ${buttonGpioValid ? p.buttonGpioPin : "?"}</div>
+          </div>
+        ` : ""}
         <div class="summary-row">
           <div class="summary-label">IDENTIFY LED</div>
           <div class="summary-detail">${identifyOn ? `IO pin: GPIO ${identifyGpioValid ? p.identifyGpioPin : "?"}` : "Not added"}</div>
@@ -1202,11 +1269,14 @@ function updateSerialUI() {
 /* Selection completeness, shared by Customise & Review and Generate
  * Firmware so they can't drift apart. */
 function isProductComplete(p) {
+  const deviceType = findDeviceType(p.deviceType);
   const identifyOk = !identifyIsEnabled(p) ||
     (Number.isInteger(p.identifyGpioPin) && p.identifyGpioPin >= 0);
+  const buttonOk = !(deviceType && deviceType.button) ||
+    (Number.isInteger(p.buttonGpioPin) && p.buttonGpioPin >= 0);
   return !!p.deviceType && !!p.target &&
     Number.isInteger(p.gpioPin) && p.gpioPin >= 0 &&
-    identifyOk;
+    buttonOk && identifyOk;
 }
 
 function buildConfigPreview(p) {
@@ -1251,6 +1321,15 @@ function renderCustomiseReview(p) {
           </div>
           <button class="link" data-goto-step="2">Edit</button>
         </div>
+        ${findDeviceType(p.deviceType) && findDeviceType(p.deviceType).button ? `
+          <div class="review-row">
+            <div>
+              <div class="summary-label">BUTTON</div>
+              <div class="summary-value">${escapeHtml(findDeviceType(p.deviceType).button.summary)} &middot; IO pin GPIO ${p.buttonGpioPin != null ? p.buttonGpioPin : "?"}</div>
+            </div>
+            <button class="link" data-goto-step="2">Edit</button>
+          </div>
+        ` : ""}
         <div class="review-row">
           <div>
             <div class="summary-label">IDENTIFY LED</div>
@@ -1331,7 +1410,7 @@ function renderGenerateFirmware(p) {
       <p class="step-hint">
         For "${escapeHtml(p.name)}" —
         <strong>${escapeHtml(deviceTypeName(p.deviceType))}</strong> on
-        <strong>${escapeHtml(moduleName(p.target))}</strong>, GPIO ${p.gpioPin}${identifyIsEnabled(p) ? ` (identify LED on GPIO ${p.identifyGpioPin})` : ""}.
+        <strong>${escapeHtml(moduleName(p.target))}</strong>, GPIO ${p.gpioPin}${deviceType && deviceType.button ? ` (button on GPIO ${p.buttonGpioPin})` : ""}${identifyIsEnabled(p) ? ` (identify LED on GPIO ${p.identifyGpioPin})` : ""}.
         This is the exact two-step flow validated end to end on real
         hardware for this device type: build, then flash. Nothing runs
         automatically — you paste and run each command yourself.
@@ -1455,11 +1534,15 @@ function shellSafeName(str) {
 function buildSedCommands(p) {
   const deviceType = findDeviceType(p.deviceType);
   const driver = deviceType ? deviceType.driver : null;
+  const button = deviceType ? deviceType.button : null;
   const identify = deviceType ? deviceType.identify : null;
   const filePath = driver ? driver.filePath.split("/").slice(2).join("/") : "main/app_main.cpp"; // relative to firmwareDir
   const cmds = [];
   if (driver) {
     cmds.push(`sed -i 's/^#define ${driver.defineName} GPIO_NUM_[0-9][0-9]*/#define ${driver.defineName} GPIO_NUM_${p.gpioPin}/' ${filePath}`);
+  }
+  if (button) {
+    cmds.push(`sed -i 's/^#define ${button.defineName} GPIO_NUM_[0-9][0-9]*/#define ${button.defineName} GPIO_NUM_${p.buttonGpioPin}/' ${filePath}`);
   }
   if (identify && identifyIsEnabled(p)) {
     cmds.push(`sed -i 's/^#define ${identify.defineName} GPIO_NUM_[0-9][0-9]*/#define ${identify.defineName} GPIO_NUM_${p.identifyGpioPin}/' ${filePath}`);
@@ -1637,6 +1720,7 @@ function bindEvents() {
         deviceType: null,
         target: null,
         gpioPin: null,
+        buttonGpioPin: null,
         identifyEnabled: true,
         identifyGpioPin: null,
       };
@@ -1663,6 +1747,17 @@ function bindEvents() {
       saveProducts();
       render();
       document.getElementById("gpio-pin").focus();
+    });
+  }
+
+  const buttonGpioPinInput = document.getElementById("button-gpio-pin");
+  if (buttonGpioPinInput) {
+    buttonGpioPinInput.addEventListener("input", () => {
+      const raw = buttonGpioPinInput.value;
+      state.currentProduct.buttonGpioPin = raw === "" ? null : parseInt(raw, 10);
+      saveProducts();
+      render();
+      document.getElementById("button-gpio-pin").focus();
     });
   }
 
