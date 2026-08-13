@@ -192,6 +192,19 @@ SECURITY.md               flash encryption / secure boot / signed OTA guidance
    on every confirmed press), independent of any binding — stress-tested
    with ~30 rapid taps, no missed/double presses.
 
+   Also since taken through the wizard's own commissioning path for real
+   (product "Living Room Switch", after `esptool erase_flash` — reflashing
+   over a previously-commissioned board leaves stale fabric data in NVS,
+   since write-flash never touches that partition, and the device comes
+   up already "Operational" instead of freshly commissionable if you
+   skip that). Commissioning itself succeeds cleanly
+   (`Commissioning complete — device is now paired`, no errors), but
+   Apple Home then shows it as a generic "Matter Accessory" / "Niet
+   geschikt" tile with a house icon — expected, not a bug: there's no
+   server attribute for Apple Home to display (CLIENT-only OnOff, see
+   above) and no Bindings UI to configure the one thing this device type
+   actually needs.
+
    Still open: an actual end-to-end binding test (does a press really
    toggle a bound light?) needs two devices commissioned onto the same
    fabric plus a controller with a Bindings UI (Home Assistant has one,

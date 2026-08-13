@@ -96,13 +96,28 @@ open tools/product-wizard/index.html
 
 All six steps are implemented end to end: Dashboard → Setup → Get
 Started → Select Module → Configure Device → Test Product → Customise &
-Review → Generate Firmware. The On/Off Light and Contact Sensor paths on
-classic ESP32 have both been validated for real, through the wizard's own
-generated commands run verbatim — built, factory data + QR generated,
-flashed, and commissioned via Apple Home (full PASE/CASE handshake, no
-errors). The switch has been built, flashed, and its GPIO input/debounce
-behavior verified on real hardware, but not yet taken through full
-commissioning via the wizard's own commands.
+Review → Generate Firmware. All three device types on classic ESP32 have
+now been validated for real, through the wizard's own generated commands
+run verbatim — built, factory data + QR generated, flashed, and
+commissioned via Apple Home (full PASE/CASE handshake, no errors).
+
+The switch commissions cleanly but then shows up in Apple Home as a
+generic "Matter Accessory" / "Niet geschikt" (not compatible) tile with a
+house icon — that's expected, not a bug: `on_off_light_switch` is a
+CLIENT-only device type (see `firmware/switch/main/app_main.cpp`'s header
+comment), so there's no server attribute for Apple Home to display or
+control, and Apple/Google Home have no UI for setting up the Binding
+cluster this device actually needs to do anything useful. Home Assistant
+or `chip-tool` are the way to actually use it (see CLAUDE.md).
+
+Reflashing a board that was previously commissioned with different
+firmware/identity (as happened testing this) leaves stale fabric data in
+NVS — the write-flash command only touches the bootloader, partition
+table, app, and `fctry` partitions, not NVS, so the device comes up
+already "Operational" instead of freshly commissionable. `esptool erase_flash`
+before reflashing gives a genuinely fresh device; worth remembering for
+anyone re-purposing one physical board across multiple wizard products
+like this repo's own testing does.
 
 ## Known limitations
 
