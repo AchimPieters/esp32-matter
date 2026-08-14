@@ -138,6 +138,29 @@ firmware/outlet/         On/Off Plug-in Unit — fourth device type, combines
                            device_types/ folder)
   partitions.csv           same OTA + fctry layout as firmware/light/
   sdkconfig.defaults        same as firmware/light/
+firmware/temperature-sensor/  Temperature + humidity sensor — fifth device
+                           type, first over I2C (not plain GPIO) and first
+                           multi-endpoint device
+  main/app_main.cpp       reads a Sensirion SHT3x over I2C (SDA GPIO 21,
+                           SCL GPIO 22, WROOM-32) using ESP-IDF's
+                           driver/i2c_master.h; classic ESP32 has no
+                           internal temperature sensor peripheral (that
+                           arrived with later chips: S2/S3/C3/C6), hence
+                           an external sensor. Exposes temperature
+                           (temperature_sensor device type, endpoint 1)
+                           and humidity (humidity_sensor, endpoint 2) as
+                           two endpoints on one node, since Matter has no
+                           single device type combining both from one
+                           sensor chip. Both TemperatureMeasurement and
+                           RelativeHumidityMeasurement are the same kind
+                           of "code-driven" cluster class as
+                           firmware/contact-sensor/'s BooleanState — same
+                           fix needed (SetMeasuredValue() via the data
+                           model provider's registry, not the generic
+                           attribute::update()), confirmed the same way by
+                           reading esp_matter_data_model.cpp's set_val()
+  partitions.csv           same OTA + fctry layout as firmware/light/
+  sdkconfig.defaults        same as firmware/light/
 tools/
   dev.sh                  opens the Docker dev environment
   gen_factory.sh          local QR + factory partition generator
@@ -197,12 +220,39 @@ SECURITY.md               flash encryption / secure boot / signed OTA guidance
    added after this, alongside `firmware/switch/` rather than replacing
    it — see its own repository-layout entry above for why, and
    `tools/product-wizard/README.md` for the full Apple Home
-   icon/commissioning story for both. All four device types (light,
-   switch, contact sensor, outlet) have now been built, flashed, and
-   commissioned via Apple Home through the wizard's own generated
-   commands, run verbatim against the real repo — zero errors on any of
-   them. A temperature sensor (analog/ADC-driven, unlike the four
-   GPIO-digital types that exist now) is the natural next type to add.
+   icon/commissioning story for both.
+
+   A fifth, `firmware/temperature-sensor/`, followed: a Sensirion SHT3x
+   over I2C (this repo's first non-GPIO sensor and first multi-endpoint
+   device — temperature + humidity, since Matter has no single device
+   type for both from one sensor chip). Reading it needed ESP-IDF's newer
+   `driver/i2c_master.h` API (verified against this exact SDK version's
+   headers rather than assumed) and hit the identical "code-driven
+   cluster, not generic `attribute::update()`" issue contact-sensor's
+   BooleanState did — same fix (`SetMeasuredValue()` via the registry),
+   confirmed by reading `TemperatureMeasurementCluster.h` /
+   `RelativeHumidityMeasurementCluster.h` directly rather than guessing
+   the setter's name or signature. Verified on real hardware against a
+   physical SHT3x: readings stayed stable (27.1–27.9 °C) even after
+   moving the sensor away from the board, so the offset from a cheap
+   reference sensor nearby (26.1 °C / 48 %RH vs. our 27.2 °C / 56 %RH) is
+   most likely that reference's own lower accuracy, not a bug here — SHT3x
+   is spec'd tighter (±0.2 °C / ±2 %RH) than typical low-cost sensors.
+
+   The wizard's `DEVICE_TYPES` schema only supported one configurable
+   secondary GPIO (`button`, added for the outlet) before this — I2C needs
+   two pins (SDA + SCL), so that field was generalized to `secondary`
+   (label-driven UI text, not hardcoded to "button") rather than adding a
+   third bespoke field; the outlet's own behavior is unchanged; see the
+   comment on its `DEVICE_TYPES` entry in `index.html`.
+
+   All five device types (light, switch, contact sensor, outlet,
+   temperature sensor) have now been built, flashed, and commissioned via
+   Apple Home through the wizard's own generated commands, run verbatim
+   against the real repo — zero errors on any of them. A sixth type using
+   analog/ADC input (e.g. a potentiometer or light-dependent resistor,
+   still untouched by any existing device type here) is a reasonable next
+   one to add, to cover that remaining GPIO mode.
 2. Implement Matter **OTA** — partially done. All four firmware types ship
    `CONFIG_ENABLE_OTA_REQUESTOR=y`, which adds the OTA Requestor cluster
    to the root node endpoint entirely via Kconfig — esp-matter's own core

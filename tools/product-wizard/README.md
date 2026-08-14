@@ -24,19 +24,23 @@ open tools/product-wizard/index.html
   hit **Start**.
 - **Get Started (step 1)** — pick a device type: "On/Off Light"
   (`firmware/light/`), "On/Off Switch" (`firmware/switch/`), "Contact
-  Sensor" (`firmware/contact-sensor/`), or "Outlet" (`firmware/outlet/`).
-  All four are real, buildable firmware, not just UI placeholders.
+  Sensor" (`firmware/contact-sensor/`), "Outlet" (`firmware/outlet/`), or
+  "Temperature Sensor" (`firmware/temperature-sensor/`). All five are
+  real, buildable firmware, not just UI placeholders.
 - **Select Module (step 2)** — pick a target chip (ESP32 / C3 / C6 / S3 /
   H2), mirroring what `tools/dev.sh` + `idf.py set-target` actually
   support. Connectivity badges (Wi-Fi/BLE/Thread) reflect each chip's real
   radios — e.g. ESP32-H2 has no Wi-Fi.
 - **Configure Device (step 3)** — set the GPIO(s) each device type's
-  digital-GPIO driver actually exposes: the LED pin for the light, the
-  button pin for the switch, the contact pin for the contact sensor, the
-  output + button pins for the outlet (the only device type needing two —
-  see `DEVICE_TYPES`' optional `button` field in `index.html`, alongside
-  `driver` and `identify`). No PWM/dimming or debounce config yet, unlike
-  the ESP ZeroCode screenshots this is modelled on. Defaults per module
+  driver actually exposes: the LED pin for the light, the button pin for
+  the switch, the contact pin for the contact sensor, the output + button
+  pins for the outlet, the I2C SDA + SCL pins for the temperature sensor
+  (the two device types needing a second GPIO — see `DEVICE_TYPES`'
+  optional `secondary` field in `index.html`, alongside `driver` and
+  `identify`; label-driven so it reads as "Button" for the outlet and
+  "SCL" for the temperature sensor, not hardcoded either way). No
+  PWM/dimming or debounce config yet, unlike the ESP ZeroCode screenshots
+  this is modelled on. Defaults per module
   echo the comments in each `app_main.cpp`. Also an **Identify LED**
   checkbox, on by default — every device type has one, since it's a real
   Matter cluster (blinks in response to a controller's "Identify"
@@ -98,7 +102,7 @@ open tools/product-wizard/index.html
 
 All six steps are implemented end to end: Dashboard → Setup → Get
 Started → Select Module → Configure Device → Test Product → Customise &
-Review → Generate Firmware. All four device types on classic ESP32 have
+Review → Generate Firmware. All five device types on classic ESP32 have
 now been validated for real, through the wizard's own generated commands
 run verbatim — built, factory data + QR generated, flashed, and
 commissioned via Apple Home (full PASE/CASE handshake, no errors).
@@ -123,22 +127,34 @@ type with "Switch" in the name is a client/input device (same category as
 device, icon included; see `firmware/outlet/main/app_main.cpp`'s header
 comment for the full explanation.
 
+The temperature sensor (`temperature_sensor` + `humidity_sensor`, one
+node with two endpoints — Matter has no single device type for both from
+one sensor chip) reads a Sensirion SHT3x over I2C — this repo's first
+non-GPIO sensor. Verified against a physical SHT3x: readings stayed
+stable even after moving the sensor away from the ESP32 board (ruling out
+self-heating as the cause of an initial offset from a cheap reference
+sensor nearby); SHT3x's spec'd accuracy (±0.2 °C / ±2 %RH) is tighter than
+most low-cost reference sensors, so that offset is most likely the
+reference's own inaccuracy, not a bug here.
+
 Reflashing a board that was previously commissioned with different
-firmware/identity (as happened testing this) leaves stale fabric data in
-NVS — the write-flash command only touches the bootloader, partition
-table, app, and `fctry` partitions, not NVS, so the device comes up
-already "Operational" instead of freshly commissionable. `esptool erase_flash`
-before reflashing gives a genuinely fresh device; worth remembering for
-anyone re-purposing one physical board across multiple wizard products
-like this repo's own testing does.
+firmware/identity (as happened testing this, repeatedly, across several
+of these device types) leaves stale fabric data in NVS — the write-flash
+command only touches the bootloader, partition table, app, and `fctry`
+partitions, not NVS, so the device comes up already "Operational" instead
+of freshly commissionable. `esptool erase_flash` before reflashing gives
+a genuinely fresh device; worth remembering for anyone re-purposing one
+physical board across multiple wizard products like this repo's own
+testing does.
 
 ## Known limitations
 
-- Four device types exist (`On/Off Light`, `On/Off Switch`, `Contact
-  Sensor`, `Outlet`), all digital GPIO only — that's all `firmware/` has
-  today. Adding a temperature sensor (analog/ADC-driven, unlike these
-  four) is the natural next `DEVICE_TYPES` entry (see the comment above
-  that array in `index.html`).
+- Five device types exist (`On/Off Light`, `On/Off Switch`, `Contact
+  Sensor`, `Outlet`, `Temperature Sensor`) — light/switch/contact/outlet
+  are all digital GPIO, temperature is this repo's first I2C sensor.
+  Adding a device using analog/ADC input (untouched by any existing type)
+  is the natural next `DEVICE_TYPES` entry (see the comment above that
+  array in `index.html`).
 - The switch's button sends a real OnOff Toggle to whatever it's bound to
   (`client::cluster_update()`), but that binding itself has to be set up
   through a controller with a Bindings UI (e.g. Home Assistant) — the

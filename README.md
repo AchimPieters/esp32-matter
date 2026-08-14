@@ -124,9 +124,22 @@ device type with "Switch" in the name is a client/input device, none of
 them a controllable output). See the header comment in its `app_main.cpp`
 for the full explanation.
 
-To add another type, copy any of the four folders and swap the endpoint
+`firmware/temperature-sensor/` is a fifth example, and this repo's first
+sensor over I2C rather than plain GPIO (a Sensirion SHT3x) and its first
+multi-endpoint device: temperature (`temperature_sensor` device type) and
+humidity (`humidity_sensor`) each get their own endpoint, since Matter has
+no single device type combining both from one physical sensor chip. Both
+`TemperatureMeasurementCluster` and `RelativeHumidityMeasurementCluster`
+are the same kind of "code-driven" cluster class as `firmware/contact-
+sensor/`'s BooleanState — updating them needs `SetMeasuredValue()`, not
+the generic `attribute::update()`. See its `app_main.cpp` header comment
+for the full explanation, the I2C wiring, and why classic ESP32 needs an
+external sensor at all (it has no internal temperature sensor peripheral,
+unlike later chips such as S2/S3/C3/C6).
+
+To add another type, copy any of the five folders and swap the endpoint
 type in `app_main.cpp` — esp-matter provides ready-made types like
-`dimmable_light`, `temperature_sensor`, and many more.
+`dimmable_light`, `occupancy_sensor`, and many more.
 
 ## Updates
 
