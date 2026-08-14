@@ -196,7 +196,7 @@
     font-size: 13px;
   }
 
-  label.field-label {
+  .field-label {
     display: block;
     font-size: 13px;
     font-weight: 600;
@@ -413,8 +413,23 @@
     align-items: start;
   }
 
+  /* Device types with a sensor-model choice (componentOptions) get a
+     third column: the sensor picker sits to the left of the main panel,
+     mirroring the Configuration summary sidebar's position on the right,
+     at roughly the same width. */
+  .configure-grid.has-sensor-sidebar {
+    grid-template-columns: 240px 2fr 1fr;
+  }
+
+  @media (max-width: 960px) {
+    .configure-grid.has-sensor-sidebar { grid-template-columns: 1fr 1fr; }
+    .configure-grid.has-sensor-sidebar .step-panel { grid-column: 1 / -1; order: -1; }
+  }
+
   @media (max-width: 720px) {
-    .configure-grid { grid-template-columns: 1fr; }
+    .configure-grid,
+    .configure-grid.has-sensor-sidebar { grid-template-columns: 1fr; }
+    .configure-grid.has-sensor-sidebar .step-panel { grid-column: auto; order: 0; }
   }
 
   .driver-block {
@@ -464,20 +479,14 @@
     margin: 8px 0 0;
   }
 
-  /* Sensor model picker — a checkable list on the left, selected sensor's
-     detail text on the right, replacing a plain <select> so all options
-     and their verified/bus info are visible at a glance. */
-  .component-picker {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 16px;
-  }
-
+  /* Sensor model picker — a checkable list, replacing a plain <select> so
+     every option's bus/verified status is visible at a glance. Lives in
+     its own sidebar (.sensor-sidebar below), not inside .driver-block. */
   .component-list {
-    flex: 0 0 230px;
     border: 1px solid var(--border);
     border-radius: 8px;
     overflow: hidden;
+    margin-bottom: 12px;
   }
 
   .component-list-item {
@@ -536,11 +545,6 @@
   .component-bus {
     font-size: 11px;
     color: var(--text-muted);
-  }
-
-  .component-detail {
-    flex: 1 1 220px;
-    min-width: 200px;
   }
 
   .config-sidebar {
@@ -1302,40 +1306,36 @@ function renderConfigureDevice(p) {
   const secondaryFieldNeeded = !!secondary && !(selectedComponent && !selectedComponent.usesPin2);
 
   return `
-    <div class="configure-grid">
+    <div class="configure-grid ${componentOptions ? "has-sensor-sidebar" : ""}">
+      ${componentOptions ? `
+        <div class="config-sidebar sensor-sidebar">
+          <h3>Sensor model</h3>
+          <p class="field-label">Which sensor do you have wired up?</p>
+          <div class="component-list" role="radiogroup" aria-label="Sensor model">
+            ${componentOptions.map(findComponent).map((s) => `
+              <label class="component-list-item ${s.id === selectedComponent.id ? "selected" : ""}">
+                <input type="radio" name="sensor-model" value="${escapeHtml(s.id)}" ${s.id === selectedComponent.id ? "checked" : ""}>
+                <span class="tick">&#10003;</span>
+                <span class="component-list-item-text">
+                  <span class="component-name">${escapeHtml(s.name)}</span>
+                  <span class="component-bus">${escapeHtml(s.bus)}${s.verified ? "" : " · unverified"}</span>
+                </span>
+              </label>
+            `).join("")}
+          </div>
+          <p class="field-note">
+            ${selectedComponent.verified
+              ? `Verified on real hardware in this repo.`
+              : `Implemented from the sensor's datasheet/reference driver, but not personally tested on real hardware in this repo — see the comment above its section in ${escapeHtml(driver ? driver.filePath : "app_main.cpp")} for exactly what was checked.`}
+            ${!selectedComponent.usesPin2 ? ` This sensor only needs one data pin (${escapeHtml(selectedComponent.pin1Label)}) — the "pin 2" field is hidden since its driver doesn't use it.` : ""}
+            ${selectedComponent.note ? ` ${escapeHtml(selectedComponent.note)}` : ""}
+          </p>
+        </div>
+      ` : ""}
+
       <div class="step-panel">
         <h2>Configure device</h2>
         <p class="step-hint">Set the driver options for this ${escapeHtml(deviceTypeName(p.deviceType))} on ${escapeHtml(moduleName(p.target))}.</p>
-
-        ${componentOptions ? `
-          <div class="driver-block">
-            <h3>Sensor model</h3>
-            <p class="field-label">Which sensor do you have wired up?</p>
-            <div class="component-picker">
-              <div class="component-list" role="radiogroup" aria-label="Sensor model">
-                ${componentOptions.map(findComponent).map((s) => `
-                  <label class="component-list-item ${s.id === selectedComponent.id ? "selected" : ""}">
-                    <input type="radio" name="sensor-model" value="${escapeHtml(s.id)}" ${s.id === selectedComponent.id ? "checked" : ""}>
-                    <span class="tick">&#10003;</span>
-                    <span class="component-list-item-text">
-                      <span class="component-name">${escapeHtml(s.name)}</span>
-                      <span class="component-bus">${escapeHtml(s.bus)}${s.verified ? "" : " · unverified"}</span>
-                    </span>
-                  </label>
-                `).join("")}
-              </div>
-              <div class="component-detail">
-                <p class="field-note" style="margin-top:0;">
-                  ${selectedComponent.verified
-                    ? `Verified on real hardware in this repo.`
-                    : `Implemented from the sensor's datasheet/reference driver, but not personally tested on real hardware in this repo — see the comment above its section in ${escapeHtml(driver ? driver.filePath : "app_main.cpp")} for exactly what was checked.`}
-                  ${!selectedComponent.usesPin2 ? ` This sensor only needs one data pin (${escapeHtml(selectedComponent.pin1Label)}) — the "pin 2" field below is hidden since its driver doesn't use it.` : ""}
-                  ${selectedComponent.note ? ` ${escapeHtml(selectedComponent.note)}` : ""}
-                </p>
-              </div>
-            </div>
-          </div>
-        ` : ""}
 
         <div class="driver-block">
           <h3>${escapeHtml(driverBlockTitle)}</h3>

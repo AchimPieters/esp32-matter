@@ -55,11 +55,21 @@ open tools/product-wizard/index.html
   - Device types with `componentOptions` (temperature sensor, light
     sensor) show a **checkable hardware list** here instead of a plain
     dropdown: a bordered box of radio rows (one per sensor chip, each
-    with its bus type and verified/unverified status), with the selected
-    sensor's detail note shown alongside it. Replaced an earlier
-    `<select>` after real user feedback that a dropdown didn't make each
-    option's status ("SHT4x — I2C, unverified") visible at a glance the
-    way a list can.
+    with its bus type and verified/unverified status) plus the selected
+    sensor's detail note underneath. Replaced an earlier `<select>` after
+    real user feedback that a dropdown didn't make each option's status
+    ("SHT4x — I2C, unverified") visible at a glance the way a list can.
+    Lives in its own sidebar column to the *left* of the main panel
+    (`.config-sidebar.sensor-sidebar`, same visual treatment as
+    Configuration summary on the right — a `has-sensor-sidebar` modifier
+    turns `.configure-grid` into a three-column layout only for device
+    types that actually have a sensor choice), again from direct
+    feedback: it originally lived inside the main panel as just another
+    stacked `.driver-block`, which buried it below the fold next to
+    fields that matter less. Collapses to a single column under 720px,
+    with an intermediate two-column layout (list+main stacked above
+    the summary) between 720–960px so the page doesn't get uncomfortably
+    narrow on a mid-size window.
   - Real bug fixed alongside that redesign: for single-data-pin sensors
     (DHT11/DHT22/DS18B20's single-wire DATA line, the LDR's ADC pin —
     anything with `usesPin2: false` in `COMPONENT_LIBRARY`), the "pin 2"
