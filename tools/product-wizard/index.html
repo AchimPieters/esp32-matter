@@ -1422,12 +1422,7 @@ function renderConfigureDevice(p) {
             <div class="summary-value">${escapeHtml(selectedComponent ? selectedComponent.pin2Label : secondary.summary)}</div>
             <div class="summary-detail">IO pin: GPIO ${secondaryGpioValid ? p.secondaryGpioPin : "?"}</div>
           </div>
-        ` : (selectedComponent && secondary ? `
-          <div class="summary-row">
-            <div class="summary-label">${escapeHtml((secondary.label || "SECONDARY").toUpperCase())}</div>
-            <div class="summary-detail">Not used by ${escapeHtml(selectedComponent.name)} (single data pin only)</div>
-          </div>
-        ` : "")}
+        ` : ""}
         <div class="summary-row">
           <div class="summary-label">IDENTIFY LED</div>
           <div class="summary-detail">${identifyOn ? `IO pin: GPIO ${identifyGpioValid ? p.identifyGpioPin : "?"}` : "Not added"}</div>
