@@ -181,22 +181,31 @@ throughout to match. `firmware/temperature-sensor/` is still the only
 device type actually using `componentOptions` today.
 
 The light sensor (`firmware/light-sensor/`, `light_sensor` device type)
-is this repo's first analog/ADC device — an LDR/photoresistor read
-through ESP-IDF's ADC oneshot + calibration APIs, converted to lux via
-the standard photoresistor characteristic curve and then into Matter's
-logarithmic Illuminance Measurement encoding. It doesn't use
-`componentOptions` — different LDR models mostly just mean different
-values for two constants in `app_main.cpp`, not a different driver.
-Unlike every other device type here, it hasn't been tested against
-physical hardware in this repo (no LDR on hand) — build- and boot-tested
-only (clean compile, clean boot, sane-looking fallback readings with
-nothing wired to the ADC pin). This is tracked with a new device-type-
-level `hardwareVerified: false` flag on its `DEVICE_TYPES` entry (every
-other device type omits the flag, which defaults to verified) — distinct
-from `componentOptions`' per-component `verified` flag, since light
-sensor has no component list to attach a per-item flag to. Customise &
-Review and Generate Firmware both surface a warning box when this flag is
-false, same visual treatment as an unverified sensor-model pick.
+supports two sensor drivers, picked the same way the temperature sensor's
+seven chips are: a "Sensor model" dropdown in Configure Device, driving a
+`componentOptions: ["LDR", "BH1750"]` list on its `DEVICE_TYPES` entry
+plus the same `#define SENSOR_TYPE ...` sed target. **LDR/photoresistor**
+was the original, this repo's only analog/ADC driver (every other
+sensor/type here is digital) — read through ESP-IDF's ADC oneshot +
+calibration APIs, converted to lux via the standard photoresistor
+characteristic curve. **BH1750** was added afterward: a digital ambient
+light sensor over I2C (almost always sold as a "GY-30"/"GY-302"
+breakout) that reports lux directly, no voltage-divider math or
+per-unit LDR characterization needed. Both feed into the same Matter
+logarithmic Illuminance Measurement encoding. Neither is hardware-tested
+in this repo (no LDR or BH1750 module on hand) — both `SENSOR_TYPE`
+values are build-verified in Docker; only the LDR path has been
+boot-tested on real hardware (clean compile, clean boot, sane-looking
+fallback readings with nothing wired to the ADC pin). Marked unverified
+via `COMPONENT_LIBRARY`'s per-component `verified: false`, same mechanism
+the temperature sensor's chips use — the light sensor originally had its
+own device-type-level `hardwareVerified: false` flag instead, added back
+when it only had one driver and no component list to attach a per-item
+flag to; that flag was removed once a second driver made
+`componentOptions` the better fit, and the whole-device-type warning
+paths in Customise & Review / Generate Firmware went with it (the
+per-component warning already covers the same case, one level more
+precisely).
 
 Reflashing a board that was previously commissioned with different
 firmware/identity (as happened testing this, repeatedly, across several
@@ -219,11 +228,14 @@ testing does.
   on/off (e.g. a dimmable/color light, or a cover/blind) is a reasonable
   next `DEVICE_TYPES` entry (see the comment above that array in
   `index.html`).
-- The light sensor's `hardwareVerified: false` flag means it's the one
-  device type in this list not actually confirmed against real hardware
-  — no LDR was on hand when it was built. Everything upstream of the
-  physical sensor reading (build, factory data, flash, boot) has been
-  verified; only the lux conversion against a real photoresistor hasn't.
+- The light sensor is the one device type in this list not actually
+  confirmed against real hardware for both of its sensor options — no
+  LDR or BH1750 module was on hand when either was built. Everything
+  upstream of the physical sensor reading (build, factory data, flash)
+  has been verified for both `SENSOR_TYPE` values; only the LDR path has
+  additionally been boot-tested on a real board. `COMPONENT_LIBRARY`'s
+  `verified: false` on both `LDR` and `BH1750` surfaces this in the
+  Configure Device dropdown and the Generate Firmware warning box.
 - The switch's button sends a real OnOff Toggle to whatever it's bound to
   (`client::cluster_update()`), but that binding itself has to be set up
   through a controller with a Bindings UI (e.g. Home Assistant) — the

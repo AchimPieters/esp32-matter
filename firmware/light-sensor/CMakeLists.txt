@@ -22,8 +22,9 @@ set(MATTER_SDK_PATH ${ESP_MATTER_PATH}/connectedhomeip/connectedhomeip)
 # component (espressif/button from the component registry) that isn't
 # declared anywhere in this minimal project. Since app_main.cpp doesn't use
 # anything from examples/common (this device reads its sensor via plain
-# esp_adc/adc_oneshot.h, not any example-only helper components), leaving
-# it out avoids that unresolved dependency entirely.
+# esp_adc/adc_oneshot.h or driver/i2c_master.h depending on SENSOR_TYPE, not
+# any example-only helper components), leaving it out avoids that unresolved
+# dependency entirely.
 set(EXTRA_COMPONENT_DIRS
     "${ESP_MATTER_PATH}/components"
     "${MATTER_SDK_PATH}/config/esp32/components")

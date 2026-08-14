@@ -147,27 +147,34 @@ for the full explanation, each sensor's wiring, and why classic ESP32
 needs an external sensor at all (it has no internal temperature sensor
 peripheral, unlike later chips such as S2/S3/C3/C6).
 
-`firmware/light-sensor/` is a sixth example, and this repo's first
-analog/ADC device — every other type is digital (GPIO, I2C, single-wire,
-or 1-Wire). An LDR/photoresistor forms a voltage divider read via
-ESP-IDF's `esp_adc/adc_oneshot.h`, converted through ADC calibration
-(`esp_adc/adc_cali.h` — classic ESP32 only supports the "line fitting"
-scheme, not "curve fitting"; the code uses ESP-IDF's own documented
-`#if`/`#elif` portable pattern so the same source still builds correctly
-on chips that only have the other one) into millivolts, then into lux via
-the standard photoresistor characteristic curve
+`firmware/light-sensor/` is a sixth example, and this repo's second
+device with a choice of sensor chip (after temperature): change
+`SENSOR_TYPE` in `app_main.cpp` (or let the wizard's sed command do it)
+to pick between an **LDR/photoresistor** (this repo's only analog/ADC
+device — every other type is digital: GPIO, I2C, single-wire, or 1-Wire)
+and a **BH1750** digital ambient light sensor over I2C (almost always
+sold as a "GY-30"/"GY-302" breakout). The LDR forms a voltage divider
+read via ESP-IDF's `esp_adc/adc_oneshot.h`, converted through ADC
+calibration (`esp_adc/adc_cali.h` — classic ESP32 only supports the
+"line fitting" scheme, not "curve fitting"; the code uses ESP-IDF's own
+documented `#if`/`#elif` portable pattern so the same source still
+builds correctly on chips that only have the other one) into millivolts,
+then into lux via the standard photoresistor characteristic curve
 (`R_LDR = R10 * (10/lux)^gamma`, using the common GL5528's typical
-datasheet values). Matter's Illuminance Measurement cluster stores
+datasheet values). BH1750 reports lux directly over I2C — no
+voltage-divider math needed — using its documented "One Time
+H-Resolution Mode" command (`0x20`) and `lux = raw / 1.2` conversion.
+Either way, Matter's Illuminance Measurement cluster stores
 `MeasuredValue` logarithmically (`10000 * log10(lux) + 1`, the same
 encoding Zigbee's ZCL illuminance cluster uses), not raw lux.
 `IlluminanceMeasurementCluster` is the same kind of "code-driven" cluster
-class as the temperature sensor's clusters — same `SetMeasuredValue()` fix
-needed. Unlike every other device type here, this one hasn't been tested
-against a physical LDR in this repo (none was on hand when it was
-written) — implemented carefully from datasheet sources and flagged as
-such (in the code, and in the wizard), same standard as the temperature
-sensor's unverified sensor chips. See its `app_main.cpp` header comment
-for the full explanation and wiring.
+class as the temperature sensor's clusters — same `SetMeasuredValue()`
+fix needed. Unlike every other device type here, neither sensor has been
+tested against physical hardware in this repo (none was on hand when it
+was written) — implemented carefully from datasheet sources and flagged
+as such (in the code, and in the wizard), same standard as the
+temperature sensor's unverified sensor chips. See its `app_main.cpp`
+header comment for the full explanation and wiring for both sensors.
 
 To add another type, copy any of the six folders and swap the endpoint
 type in `app_main.cpp` — esp-matter provides ready-made types like

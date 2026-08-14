@@ -187,16 +187,22 @@ firmware/temperature-sensor/  Temperature + humidity sensor — fifth device
                            calibration coefficients read from its NVM.
   partitions.csv           same OTA + fctry layout as firmware/light/
   sdkconfig.defaults        same as firmware/light/
-firmware/light-sensor/    Ambient light sensor — sixth device type, first
-                           analog/ADC device (every other type is digital:
-                           GPIO, I2C, single-wire, or 1-Wire)
+firmware/light-sensor/    Ambient light sensor — sixth device type, and
+                           this repo's second sensor with a choice of
+                           chip (after temperature-sensor): one
+                           #define SENSOR_TYPE selects LIGHT_SENSOR_LDR
+                           (this repo's only analog/ADC driver — every
+                           other type/sensor here is digital: GPIO, I2C,
+                           single-wire, or 1-Wire) or LIGHT_SENSOR_BH1750
+                           (digital ambient light sensor over I2C, almost
+                           always sold as a "GY-30"/"GY-302" breakout)
   main/app_main.cpp       LDR/photoresistor voltage divider on GPIO 34
-                           (ADC1 channel 6, WROOM-32 — deliberately ADC1,
-                           not ADC2, since ADC2 is unreliable once Wi-Fi
-                           is active, which this device needs to be
-                           commissioned at all). Reads via ESP-IDF's
-                           driver/adc_oneshot.h, calibrated via
-                           esp_adc/adc_cali.h using ESP-IDF's own
+                           by default (ADC1 channel 6, WROOM-32 —
+                           deliberately ADC1, not ADC2, since ADC2 is
+                           unreliable once Wi-Fi is active, which this
+                           device needs to be commissioned at all). Reads
+                           via ESP-IDF's driver/adc_oneshot.h, calibrated
+                           via esp_adc/adc_cali.h using ESP-IDF's own
                            documented #if ADC_CALI_SCHEME_CURVE_FITTING_
                            SUPPORTED / #elif ..._LINE_FITTING_SUPPORTED
                            portable pattern (classic ESP32 only has line
@@ -205,17 +211,32 @@ firmware/light-sensor/    Ambient light sensor — sixth device type, first
                            Converts millivolts -> lux via the standard
                            photoresistor characteristic curve
                            (R_LDR = R10 * (10/lux)^gamma, GL5528 typical
-                           datasheet values as the reference), then lux ->
-                           Matter's logarithmic MeasuredValue encoding
-                           (10000 * log10(lux) + 1 — same encoding
-                           Zigbee's ZCL illuminance cluster uses).
-                           IlluminanceMeasurementCluster is the same kind
-                           of "code-driven" cluster class as the
-                           temperature sensor's clusters, same
+                           datasheet values as the reference). BH1750 is
+                           read via driver/i2c_master.h (same new-style
+                           I2C API as firmware/temperature-sensor/'s I2C
+                           sensors) using its documented "One Time
+                           H-Resolution Mode" command (0x20, 1 lx
+                           resolution, sensor self-powers-down after each
+                           reading — Power On (0x01) is resent before
+                           every measurement) and returns lux directly
+                           via the sensor's own raw/1.2 conversion — no
+                           voltage-divider math needed, unlike the LDR.
+                           Both then feed lux into Matter's logarithmic
+                           MeasuredValue encoding (10000 * log10(lux) + 1
+                           — same encoding Zigbee's ZCL illuminance
+                           cluster uses). IlluminanceMeasurementCluster is
+                           the same kind of "code-driven" cluster class as
+                           the temperature sensor's clusters, same
                            SetMeasuredValue() fix needed. Unlike every
-                           other device type here, not hardware-verified
-                           in this repo (no LDR on hand when written) —
-                           flagged as such in the code and the wizard.
+                           other device type here, neither sensor is
+                           hardware-verified in this repo (none on hand
+                           when written) — both build-verified in Docker
+                           for both SENSOR_TYPE values, flagged as
+                           unverified in the code and the wizard (via the
+                           same per-component COMPONENT_LIBRARY `verified`
+                           flag the temperature sensor uses, not a
+                           separate whole-device-type flag — see the
+                           wizard entry below).
   partitions.csv           same OTA + fctry layout as firmware/light/
   sdkconfig.defaults        same as firmware/light/
 tools/
@@ -354,22 +375,48 @@ SECURITY.md               flash encryption / secure boot / signed OTA guidance
    one device type can offer it (e.g. a relay module usable by both the
    outlet and a possible future lamp-style device type with a choice of
    light source). `firmware/light-sensor/` itself doesn't use
-   `componentOptions` — different LDR models mostly differ by two numeric
-   constants (`LDR_R10_OHMS`/`LDR_GAMMA` in its `app_main.cpp`, adjustable
-   by hand per its own comment) rather than genuinely different drivers,
-   so a selector wasn't warranted the way it was for temperature's
-   different protocols.
+   `componentOptions` at first — different LDR models mostly differ by
+   two numeric constants (`LDR_R10_OHMS`/`LDR_GAMMA` in its
+   `app_main.cpp`, adjustable by hand per its own comment) rather than
+   genuinely different drivers, so a selector didn't seem warranted the
+   way it was for temperature's different protocols.
+
+   That changed once a second, genuinely different light sensor was
+   added: `firmware/light-sensor/` now also supports the **BH1750**, a
+   digital ambient light sensor over I2C (almost always sold as a
+   "GY-30"/"GY-302" breakout) that reports lux directly — no
+   voltage-divider math or per-unit LDR characterization needed, and no
+   ADC-capable pin required either. Implemented from the ROHM BH1750FVI
+   datasheet's documented instruction set (One Time H-Resolution Mode,
+   command `0x20`; `lux = raw / 1.2`), cross-checked against the
+   widely-used claws/BH1750 Arduino library's own header before writing
+   any code, same verification standard as every other sensor driver in
+   this repo. This is exactly the case the `COMPONENT_LIBRARY` refactor
+   above was built for: `firmware/light-sensor/` now uses
+   `componentOptions: ["LDR", "BH1750"]` + a third sed target
+   (`#define SENSOR_TYPE ...`), the identical mechanism
+   `firmware/temperature-sensor/` already used, needing zero new wizard
+   *architecture* — only a second `COMPONENT_LIBRARY` entry and one
+   device-type entry update. The device-type-level `hardwareVerified`
+   flag added for the LDR-only version was removed accordingly, since
+   the per-component `verified` flag (already `false` for both LDR and
+   BH1750 in `COMPONENT_LIBRARY`) now covers the same case at finer
+   granularity, same as temperature-sensor's chips.
 
    All six device types (light, switch, contact sensor, outlet,
    temperature sensor, light sensor) now exist. Five of six have been
    built, flashed, and commissioned via Apple Home through the wizard's
    own generated commands, run verbatim against the real repo — zero
-   errors on any of them; the light sensor has been build- and boot-
-   verified (clean compile, clean boot, sensible-looking readings even
-   without an LDR connected) but not taken through commissioning yet.
-   Adding a device type with a physical actuator beyond simple on/off
-   (e.g. a dimmable/color light, or a cover/blind) is a reasonable next
-   one, to cover ground no existing device type here does.
+   errors on any of them. The light sensor has been build-verified in
+   Docker for both `SENSOR_TYPE` values (LDR and BH1750) and boot-tested
+   on real hardware for the LDR path (clean compile, clean boot,
+   sensible-looking fallback readings with nothing wired to the ADC pin)
+   but not taken through commissioning yet, and BH1750 hasn't been
+   boot-tested on real hardware at all (no BH1750 module on hand when it
+   was added) — flagged accordingly. Adding a device type with a physical
+   actuator beyond simple on/off (e.g. a dimmable/color light, or a
+   cover/blind) is a reasonable next one, to cover ground no existing
+   device type here does.
 2. Implement Matter **OTA** — partially done. All six firmware types ship
    `CONFIG_ENABLE_OTA_REQUESTOR=y`, which adds the OTA Requestor cluster
    to the root node endpoint entirely via Kconfig — esp-matter's own core

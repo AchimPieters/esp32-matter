@@ -669,6 +669,8 @@ const COMPONENT_LIBRARY = {
   DHT22: { name: "DHT22", category: "temp-humidity", bus: "single-wire", pin1Label: "DATA", pin2Label: null, usesPin2: false, verified: true, defineValue: "SENSOR_DHT22" },
   DS18B20: { name: "DS18B20 (temperature only)", category: "temp-humidity", bus: "1-Wire", pin1Label: "DATA", pin2Label: null, usesPin2: false, verified: false, defineValue: "SENSOR_DS18B20" },
   BME280: { name: "BME280", category: "temp-humidity", bus: "I2C", pin1Label: "SDA", pin2Label: "SCL", usesPin2: true, verified: false, defineValue: "SENSOR_BME280" },
+  LDR: { name: "LDR / photoresistor", category: "light", bus: "ADC", pin1Label: "ADC", pin2Label: null, usesPin2: false, verified: false, defineValue: "LIGHT_SENSOR_LDR", note: "Needs an ADC1-capable GPIO (32-39 on classic ESP32) — the driver is hardcoded to GPIO 34/ADC1 channel 6; see LIGHT_SENSOR_ADC_CHANNEL in app_main.cpp if you use a different ADC1 pin." },
+  BH1750: { name: "BH1750", category: "light", bus: "I2C", pin1Label: "SDA", pin2Label: "SCL", usesPin2: true, verified: false, defineValue: "LIGHT_SENSOR_BH1750", note: "Needs bidirectional I2C-capable GPIOs — avoid GPIO 32-39 (input-only on classic ESP32, can't do I2C). GPIO 21/22 are good defaults, same as the temperature sensor's I2C pins." },
 };
 
 /* Device types this repo actually has firmware for (see firmware/). Each
@@ -882,36 +884,48 @@ const DEVICE_TYPES = [
   {
     id: "light-sensor",
     name: "Light Sensor",
-    desc: "Matter ambient light sensor: an LDR/photoresistor on an ADC pin reports illuminance via the Illuminance Measurement cluster. This repo's first analog/ADC device (light/switch/contact/outlet/temperature are all digital). Reference device in firmware/light-sensor/.",
-    // Unlike every other device type here, this one hasn't been tested
-    // against a physical LDR in this repo (none was on hand when it was
-    // written) — implemented carefully from datasheet sources, same
-    // standard as the temperature sensor's unverified chips, just
-    // flagged at the whole-device-type level since there's no per-
-    // component choice to attach a per-item warning to. Checked by
-    // renderGenerateFirmware() / renderCustomiseReview() below.
-    hardwareVerified: false,
+    desc: "Matter ambient light sensor — pick which sensor you actually have wired up below. Reports illuminance via the Illuminance Measurement cluster. Reference device in firmware/light-sensor/.",
+    // Second device type (after temperature) with a real component
+    // choice: an LDR/photoresistor on the ADC (this repo's only analog
+    // input device) or a BH1750 digital light sensor over I2C. Neither is
+    // hardware-verified in this repo yet — see COMPONENT_LIBRARY above.
     // Matches project(matter_light_sensor) in
-    // firmware/light-sensor/CMakeLists.txt. Only one reference driver
-    // (a GL5528-characterized LDR voltage divider) unlike the
-    // temperature sensor's multi-chip choice — different photoresistors
-    // mostly differ by two numeric constants (LDR_R10_OHMS/LDR_GAMMA in
-    // app_main.cpp), adjustable by hand per its own comment, rather than
-    // genuinely different protocols/drivers, so a componentOptions
-    // selector isn't warranted here the way it was for temperature.
+    // firmware/light-sensor/CMakeLists.txt. A third sed target
+    // (#define SENSOR_TYPE ...) alongside the driver/secondary GPIO
+    // fields, same mechanism as the temperature sensor — see its own
+    // comment for why (genuinely different drivers, not just different
+    // pins).
+    componentOptions: ["LDR", "BH1750"],
+    componentDefineName: "SENSOR_TYPE",
     binName: "matter_light_sensor.bin",
     driver: {
-      summary: "ADC (analog input)",
-      fieldLabel: "LDR ADC GPIO pin",
-      blockTitle: "LDR sensor · ADC input",
+      summary: "Sensor pin 1 (ADC / SDA)",
+      fieldLabel: "Sensor pin 1 (ADC / SDA) GPIO",
+      blockTitle: "Sensor · pin 1",
       filePath: "firmware/light-sensor/main/app_main.cpp",
-      defineName: "LIGHT_SENSOR_ADC_GPIO",
-      // GPIO 34 = ADC1 channel 6 on classic ESP32 (WROOM-32) — deliberately
-      // an ADC1 pin, not ADC2 (ADC2 is unreliable once Wi-Fi is active,
-      // which this device needs to be commissioned/reachable at all). This
-      // is the sed baseline.
+      defineName: "SENSOR_PIN_1",
+      // GPIO 34 = ADC1 channel 6 on classic ESP32 (WROOM-32) — the LDR's
+      // own default and this field's sed baseline. Deliberately an ADC1
+      // pin, not ADC2 (ADC2 is unreliable once Wi-Fi is active). Not a
+      // sensible default if you switch to BH1750 above — GPIO 32-39 are
+      // input-only on classic ESP32 and can't do I2C, so change this to
+      // 21 (see BH1750's own note in COMPONENT_LIBRARY) if you pick it.
       currentGpio: 34,
       defaultsByModule: { esp32: 34, esp32c3: 34, esp32c6: 34, esp32s3: 34, esp32h2: 34 },
+    },
+    // Second GPIO — only meaningful for BH1750 (SCL); unused (but
+    // harmless to still set) for the LDR. Same optional `secondary` field
+    // firmware/outlet/ and firmware/temperature-sensor/ use; see the
+    // comment on outlet's entry for why it isn't called `button`.
+    secondary: {
+      label: "Pin 2",
+      summary: "Sensor pin 2 (SCL, BH1750 only)",
+      fieldLabel: "Sensor pin 2 (SCL) GPIO",
+      blockTitle: "Sensor · pin 2",
+      filePath: "firmware/light-sensor/main/app_main.cpp",
+      defineName: "SENSOR_PIN_2",
+      currentGpio: 22,
+      defaultsByModule: { esp32: 22, esp32c3: 22, esp32c6: 22, esp32s3: 22, esp32h2: 22 },
     },
     identify: {
       summary: "GPIO (digital output)",
@@ -1215,8 +1229,9 @@ function renderConfigureDevice(p) {
             <p class="field-note">
               ${selectedComponent.verified
                 ? `Verified on real hardware in this repo.`
-                : `Implemented from the sensor's datasheet/reference driver, but not personally tested on real hardware in this repo — see the comment above its section in firmware/temperature-sensor/main/app_main.cpp for exactly what was checked.`}
+                : `Implemented from the sensor's datasheet/reference driver, but not personally tested on real hardware in this repo — see the comment above its section in ${escapeHtml(driver ? driver.filePath : "app_main.cpp")} for exactly what was checked.`}
               ${!selectedComponent.usesPin2 ? ` This sensor only needs one data pin — the second GPIO field below still gets set but isn't used by its driver.` : ""}
+              ${selectedComponent.note ? ` ${escapeHtml(selectedComponent.note)}` : ""}
             </p>
           </div>
         ` : ""}
@@ -1470,7 +1485,7 @@ function renderCustomiseReview(p) {
         <div class="review-row">
           <div>
             <div class="summary-label">DEVICE TYPE</div>
-            <div class="summary-value">${escapeHtml(deviceTypeName(p.deviceType))}${findDeviceType(p.deviceType) && findDeviceType(p.deviceType).hardwareVerified === false ? " — not hardware-verified in this repo" : ""}</div>
+            <div class="summary-value">${escapeHtml(deviceTypeName(p.deviceType))}</div>
           </div>
           <button class="link" data-goto-step="0">Edit</button>
         </div>
@@ -1594,13 +1609,8 @@ function renderGenerateFirmware(p) {
         For "${escapeHtml(p.name)}" —
         <strong>${escapeHtml(deviceTypeName(p.deviceType))}</strong>${selectedSensor ? ` (<strong>${escapeHtml(selectedSensor.name)}</strong>)` : ""} on
         <strong>${escapeHtml(moduleName(p.target))}</strong>, GPIO ${p.gpioPin}${deviceType && deviceType.secondary ? ` (${escapeHtml((deviceType.secondary.label || "secondary").toLowerCase())} on GPIO ${p.secondaryGpioPin})` : ""}${identifyIsEnabled(p) ? ` (identify LED on GPIO ${p.identifyGpioPin})` : ""}.
-        ${deviceType && deviceType.hardwareVerified === false
-          ? `The build/flash/commissioning flow itself is the same
-             proven one used by every other device type here — only this
-             specific device's sensor reading hasn't been checked against
-             real hardware yet (see the warning below).`
-          : `This is the exact two-step flow validated end to end on real
-             hardware for this device type: build, then flash.`} Nothing runs
+        This is the exact two-step flow validated end to end on real
+        hardware for this device type: build, then flash. Nothing runs
         automatically — you paste and run each command yourself.
       </p>
 
@@ -1608,22 +1618,10 @@ function renderGenerateFirmware(p) {
         <div class="warn-box">
           &#9888; ${escapeHtml(selectedSensor.name)}'s driver was implemented
           from its datasheet/reference source but hasn't been personally
-          tested on real hardware in this repo (unlike SHT3x/DHT11/DHT22,
-          which have). The build/flash/commissioning flow itself is the
-          same proven one either way — see the comment above
-          ${escapeHtml(selectedSensor.name)}'s section in
-          firmware/temperature-sensor/main/app_main.cpp for exactly what
-          was checked and against which source.
-        </div>
-      ` : ""}
-
-      ${deviceType && deviceType.hardwareVerified === false ? `
-        <div class="warn-box">
-          &#9888; This device type's sensor reading hasn't been tested
-          against a physical LDR in this repo (none was on hand when it
-          was written) — implemented carefully from datasheet sources,
-          same standard as the temperature sensor's unverified chips. See
-          the header comment in firmware/light-sensor/main/app_main.cpp
+          tested on real hardware in this repo. The build/flash/
+          commissioning flow itself is the same proven one either way —
+          see the comment above ${escapeHtml(selectedSensor.name)}'s
+          section in ${escapeHtml(deviceType ? deviceType.driver.filePath : "app_main.cpp")}
           for exactly what was checked and against which source.
         </div>
       ` : ""}
