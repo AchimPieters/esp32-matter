@@ -1778,7 +1778,23 @@ function bindEvents() {
 
   document.querySelectorAll("[data-select-device-type]").forEach((el) => {
     el.addEventListener("click", () => {
-      state.currentProduct.deviceType = el.getAttribute("data-select-device-type");
+      const newType = el.getAttribute("data-select-device-type");
+      if (state.currentProduct.deviceType !== newType) {
+        // Each device type has its own GPIO defaults (see DEVICE_TYPES in
+        // this file) — an old value left over from a previously-selected
+        // type is wrong for the new one, but renderConfigureDevice() only
+        // fills these in when they're null, so a stale non-null value
+        // would otherwise silently stick around and show the wrong
+        // number without any indication it's wrong (caught by hand:
+        // switching from a type defaulting to GPIO 2 to one defaulting to
+        // GPIO 21 kept showing 2, silently, until spotted on real
+        // hardware). Reset on every actual type change so the new type's
+        // real defaults populate fresh.
+        state.currentProduct.gpioPin = null;
+        state.currentProduct.secondaryGpioPin = null;
+        state.currentProduct.identifyGpioPin = null;
+      }
+      state.currentProduct.deviceType = newType;
       saveProducts();
       render();
     });
