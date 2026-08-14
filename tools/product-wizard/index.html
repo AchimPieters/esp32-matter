@@ -800,31 +800,56 @@ const DEVICE_TYPES = [
   {
     id: "temperature",
     name: "Temperature Sensor",
-    desc: "Matter temperature + humidity sensor (Sensirion SHT3x, I2C): reports both via two endpoints (temperature_sensor + humidity_sensor device types — Matter has no single device type combining them). Reference device in firmware/temperature-sensor/.",
+    desc: "Matter temperature + humidity sensor — pick which sensor chip you actually have wired up below. Reports via two endpoints (temperature_sensor + humidity_sensor device types — Matter has no single device type combining them; DS18B20 is temperature-only, so it only gets the one endpoint). Reference device in firmware/temperature-sensor/.",
     // Matches project(matter_temperature_sensor) in
     // firmware/temperature-sensor/CMakeLists.txt.
     binName: "matter_temperature_sensor.bin",
+    // Which sensor chip's driver gets compiled in — a third sed target
+    // (#define SENSOR_TYPE ...) alongside the driver/secondary GPIO
+    // fields below, since app_main.cpp carries all seven drivers behind
+    // #if SENSOR_TYPE == ... and only one compiles in at a time (see its
+    // header comment for why: genuinely different protocols/command
+    // sets, not just different GPIO numbers or I2C addresses). Chosen
+    // set follows what's actually most common from beginner through
+    // professional use, checked against current sources rather than
+    // assumed. `verified` reflects whether this repo has hardware-tested
+    // it, not whether the code is "less trustworthy" — see each driver's
+    // section in app_main.cpp for exactly what was checked and against
+    // which datasheet/reference source.
+    sensorModels: [
+      { id: "SHT3X", name: "SHT3x", defineValue: "SENSOR_SHT3X", bus: "I2C", pin1Label: "SDA", pin2Label: "SCL", usesPin2: true, verified: true },
+      { id: "SHT4X", name: "SHT4x", defineValue: "SENSOR_SHT4X", bus: "I2C", pin1Label: "SDA", pin2Label: "SCL", usesPin2: true, verified: false },
+      { id: "AHT20", name: "AHT20", defineValue: "SENSOR_AHT20", bus: "I2C", pin1Label: "SDA", pin2Label: "SCL", usesPin2: true, verified: false },
+      { id: "DHT11", name: "DHT11", defineValue: "SENSOR_DHT11", bus: "single-wire", pin1Label: "DATA", pin2Label: null, usesPin2: false, verified: true },
+      { id: "DHT22", name: "DHT22", defineValue: "SENSOR_DHT22", bus: "single-wire", pin1Label: "DATA", pin2Label: null, usesPin2: false, verified: true },
+      { id: "DS18B20", name: "DS18B20 (temperature only)", defineValue: "SENSOR_DS18B20", bus: "1-Wire", pin1Label: "DATA", pin2Label: null, usesPin2: false, verified: false },
+      { id: "BME280", name: "BME280", defineValue: "SENSOR_BME280", bus: "I2C", pin1Label: "SDA", pin2Label: "SCL", usesPin2: true, verified: false },
+    ],
+    sensorDefineName: "SENSOR_TYPE",
     driver: {
-      summary: "I2C (SDA)",
-      fieldLabel: "I2C SDA GPIO pin",
-      blockTitle: "SHT3x sensor · I2C SDA",
+      summary: "Sensor pin 1 (SDA / DATA)",
+      fieldLabel: "Sensor pin 1 (SDA / DATA) GPIO",
+      blockTitle: "Sensor · pin 1",
       filePath: "firmware/temperature-sensor/main/app_main.cpp",
-      defineName: "SHT3X_SDA_GPIO",
+      defineName: "SENSOR_PIN_1",
       // GPIO 21/22 are the common ESP32 WROOM-32 default I2C pins (used by
-      // most breakout board examples) — this is the sed baseline.
+      // most breakout board examples) — this is the sed baseline. Reused
+      // as the single DATA line for single-wire sensors (DHT11/DHT22/
+      // DS18B20), which don't need pin 2 at all.
       currentGpio: 21,
       defaultsByModule: { esp32: 21, esp32c3: 21, esp32c6: 21, esp32s3: 21, esp32h2: 21 },
     },
-    // I2C needs two pins, not one — SCL alongside SDA above. Same optional
+    // Second GPIO — only meaningful for the I2C sensors (SCL); unused
+    // (but harmless to still set) for the single-wire ones. Same optional
     // `secondary` field firmware/outlet/ uses for its button; see the
     // comment on that entry for why it isn't called `button`.
     secondary: {
-      label: "SCL",
-      summary: "I2C (SCL)",
-      fieldLabel: "I2C SCL GPIO pin",
-      blockTitle: "SHT3x sensor · I2C SCL",
+      label: "Pin 2",
+      summary: "Sensor pin 2 (SCL, I2C only)",
+      fieldLabel: "Sensor pin 2 (SCL) GPIO",
+      blockTitle: "Sensor · pin 2",
       filePath: "firmware/temperature-sensor/main/app_main.cpp",
-      defineName: "SHT3X_SCL_GPIO",
+      defineName: "SENSOR_PIN_2",
       currentGpio: 22,
       defaultsByModule: { esp32: 22, esp32c3: 22, esp32c6: 22, esp32s3: 22, esp32h2: 22 },
     },
@@ -1079,10 +1104,14 @@ function renderConfigureDevice(p) {
   const driver = deviceType ? deviceType.driver : null;
   const secondary = deviceType ? deviceType.secondary : null;
   const identify = deviceType ? deviceType.identify : null;
+  const sensorModels = deviceType ? deviceType.sensorModels : null;
   const defaultGpio = driver ? (driver.defaultsByModule[p.target] != null ? driver.defaultsByModule[p.target] : 2) : 2;
   const defaultSecondaryGpio = secondary ? (secondary.defaultsByModule[p.target] != null ? secondary.defaultsByModule[p.target] : 4) : 4;
   const defaultIdentifyGpio = identify ? (identify.defaultsByModule[p.target] != null ? identify.defaultsByModule[p.target] : 4) : 4;
   const identifyOn = identifyIsEnabled(p);
+
+  if (sensorModels && p.sensorModel == null) p.sensorModel = sensorModels[0].id;
+  const selectedSensor = sensorModels ? (sensorModels.find((s) => s.id === p.sensorModel) || sensorModels[0]) : null;
 
   if (p.gpioPin == null) p.gpioPin = defaultGpio;
   if (secondary && p.secondaryGpioPin == null) p.secondaryGpioPin = defaultSecondaryGpio;
@@ -1093,15 +1122,40 @@ function renderConfigureDevice(p) {
   const sameGpio = identifyOn && gpioValid && identifyGpioValid && p.gpioPin === p.identifyGpioPin;
   const allValid = gpioValid && secondaryGpioValid && identifyGpioValid;
 
+  // Sensor-model-aware field labels: falls back to the device type's own
+  // static text when there's no sensorModels list (every device type
+  // except the temperature sensor) so this doesn't change anything for
+  // the others.
+  const driverLabel = selectedSensor ? `${selectedSensor.pin1Label} GPIO pin` : (driver ? driver.fieldLabel : "GPIO pin");
+  const driverBlockTitle = selectedSensor ? `${selectedSensor.name} · ${selectedSensor.pin1Label}` : (driver ? driver.blockTitle : "GPIO");
+  const secondaryLabel = selectedSensor ? `${selectedSensor.pin2Label || "Pin 2"} GPIO pin` : (secondary ? secondary.fieldLabel : "");
+  const secondaryBlockTitle = selectedSensor ? `${selectedSensor.name} · ${selectedSensor.pin2Label || "pin 2"}` : (secondary ? secondary.blockTitle : "");
+
   return `
     <div class="configure-grid">
       <div class="step-panel">
         <h2>Configure device</h2>
         <p class="step-hint">Set the driver options for this ${escapeHtml(deviceTypeName(p.deviceType))} on ${escapeHtml(moduleName(p.target))}.</p>
 
+        ${sensorModels ? `
+          <div class="driver-block">
+            <h3>Sensor model</h3>
+            <label class="field-label" for="sensor-model">Which sensor do you have wired up?</label>
+            <select id="sensor-model">
+              ${sensorModels.map((s) => `<option value="${escapeHtml(s.id)}" ${s.id === selectedSensor.id ? "selected" : ""}>${escapeHtml(s.name)} (${escapeHtml(s.bus)})${s.verified ? "" : " — not hardware-verified in this repo"}</option>`).join("")}
+            </select>
+            <p class="field-note">
+              ${selectedSensor.verified
+                ? `Verified on real hardware in this repo.`
+                : `Implemented from the sensor's datasheet/reference driver, but not personally tested on real hardware in this repo — see the comment above its section in firmware/temperature-sensor/main/app_main.cpp for exactly what was checked.`}
+              ${!selectedSensor.usesPin2 ? ` This sensor only needs one data pin — the second GPIO field below still gets set but isn't used by its driver.` : ""}
+            </p>
+          </div>
+        ` : ""}
+
         <div class="driver-block">
-          <h3>${escapeHtml(driver ? driver.blockTitle : "GPIO")}</h3>
-          <label class="field-label" for="gpio-pin">${escapeHtml(driver ? driver.fieldLabel : "GPIO pin")}</label>
+          <h3>${escapeHtml(driverBlockTitle)}</h3>
+          <label class="field-label" for="gpio-pin">${escapeHtml(driverLabel)}</label>
           <input type="number" id="gpio-pin" min="0" max="48" value="${p.gpioPin}">
           <div class="field-error">${gpioValid ? "" : "Enter a valid GPIO number (0 or higher)."}</div>
           <p class="field-note">
@@ -1112,8 +1166,8 @@ function renderConfigureDevice(p) {
 
         ${secondary ? `
           <div class="driver-block">
-            <h3>${escapeHtml(secondary.blockTitle)}</h3>
-            <label class="field-label" for="secondary-gpio-pin">${escapeHtml(secondary.fieldLabel)}</label>
+            <h3>${escapeHtml(secondaryBlockTitle)}</h3>
+            <label class="field-label" for="secondary-gpio-pin">${escapeHtml(secondaryLabel)}</label>
             <input type="number" id="secondary-gpio-pin" min="0" max="48" value="${p.secondaryGpioPin}">
             <div class="field-error">${secondaryGpioValid ? "" : "Enter a valid GPIO number (0 or higher)."}</div>
             <p class="field-note">
@@ -1359,6 +1413,19 @@ function renderCustomiseReview(p) {
           </div>
           <button class="link" data-goto-step="1">Edit</button>
         </div>
+        ${findDeviceType(p.deviceType) && findDeviceType(p.deviceType).sensorModels ? `
+          <div class="review-row">
+            <div>
+              <div class="summary-label">SENSOR MODEL</div>
+              <div class="summary-value">${(() => {
+                const dt = findDeviceType(p.deviceType);
+                const s = dt.sensorModels.find((x) => x.id === p.sensorModel) || dt.sensorModels[0];
+                return `${escapeHtml(s.name)} (${escapeHtml(s.bus)})${s.verified ? "" : " — not hardware-verified in this repo"}`;
+              })()}</div>
+            </div>
+            <button class="link" data-goto-step="2">Edit</button>
+          </div>
+        ` : ""}
         <div class="review-row">
           <div>
             <div class="summary-label">DRIVER</div>
@@ -1448,18 +1515,34 @@ function renderGenerateFirmware(p) {
   const offsetCaveat = module && !module.offsetsVerified;
   const deviceType = findDeviceType(p.deviceType);
   const firmwareDir = deviceType ? deviceType.driver.filePath.replace(/\/main\/app_main\.cpp$/, "") : "firmware/light";
+  const selectedSensor = deviceType && deviceType.sensorModels
+    ? (deviceType.sensorModels.find((s) => s.id === p.sensorModel) || deviceType.sensorModels[0])
+    : null;
 
   return `
     <div class="step-panel">
       <h2>Generate firmware</h2>
       <p class="step-hint">
         For "${escapeHtml(p.name)}" —
-        <strong>${escapeHtml(deviceTypeName(p.deviceType))}</strong> on
+        <strong>${escapeHtml(deviceTypeName(p.deviceType))}</strong>${selectedSensor ? ` (<strong>${escapeHtml(selectedSensor.name)}</strong>)` : ""} on
         <strong>${escapeHtml(moduleName(p.target))}</strong>, GPIO ${p.gpioPin}${deviceType && deviceType.secondary ? ` (${escapeHtml((deviceType.secondary.label || "secondary").toLowerCase())} on GPIO ${p.secondaryGpioPin})` : ""}${identifyIsEnabled(p) ? ` (identify LED on GPIO ${p.identifyGpioPin})` : ""}.
         This is the exact two-step flow validated end to end on real
         hardware for this device type: build, then flash. Nothing runs
         automatically — you paste and run each command yourself.
       </p>
+
+      ${selectedSensor && !selectedSensor.verified ? `
+        <div class="warn-box">
+          &#9888; ${escapeHtml(selectedSensor.name)}'s driver was implemented
+          from its datasheet/reference source but hasn't been personally
+          tested on real hardware in this repo (unlike SHT3x/DHT11/DHT22,
+          which have). The build/flash/commissioning flow itself is the
+          same proven one either way — see the comment above
+          ${escapeHtml(selectedSensor.name)}'s section in
+          firmware/temperature-sensor/main/app_main.cpp for exactly what
+          was checked and against which source.
+        </div>
+      ` : ""}
 
       ${repoRoot ? `
         <p class="field-note">
@@ -1581,8 +1664,16 @@ function buildSedCommands(p) {
   const driver = deviceType ? deviceType.driver : null;
   const secondary = deviceType ? deviceType.secondary : null;
   const identify = deviceType ? deviceType.identify : null;
+  const sensorModels = deviceType ? deviceType.sensorModels : null;
   const filePath = driver ? driver.filePath.split("/").slice(2).join("/") : "main/app_main.cpp"; // relative to firmwareDir
   const cmds = [];
+  if (sensorModels && deviceType.sensorDefineName) {
+    const selectedSensor = sensorModels.find((s) => s.id === p.sensorModel) || sensorModels[0];
+    // Not a GPIO_NUM_<n> value like the others below — this selects which
+    // sensor driver compiles in at all (#define SENSOR_TYPE SENSOR_xxx),
+    // so it needs its own pattern rather than reusing the GPIO one.
+    cmds.push(`sed -i 's/^#define ${deviceType.sensorDefineName} .*/#define ${deviceType.sensorDefineName} ${selectedSensor.defineValue}/' ${filePath}`);
+  }
   if (driver) {
     cmds.push(`sed -i 's/^#define ${driver.defineName} GPIO_NUM_[0-9][0-9]*/#define ${driver.defineName} GPIO_NUM_${p.gpioPin}/' ${filePath}`);
   }
@@ -1766,6 +1857,7 @@ function bindEvents() {
         target: null,
         gpioPin: null,
         secondaryGpioPin: null,
+        sensorModel: null,
         identifyEnabled: true,
         identifyGpioPin: null,
       };
@@ -1793,6 +1885,7 @@ function bindEvents() {
         state.currentProduct.gpioPin = null;
         state.currentProduct.secondaryGpioPin = null;
         state.currentProduct.identifyGpioPin = null;
+        state.currentProduct.sensorModel = null;
       }
       state.currentProduct.deviceType = newType;
       saveProducts();
@@ -1808,6 +1901,15 @@ function bindEvents() {
       saveProducts();
       render();
       document.getElementById("gpio-pin").focus();
+    });
+  }
+
+  const sensorModelSelect = document.getElementById("sensor-model");
+  if (sensorModelSelect) {
+    sensorModelSelect.addEventListener("change", () => {
+      state.currentProduct.sensorModel = sensorModelSelect.value;
+      saveProducts();
+      render();
     });
   }
 

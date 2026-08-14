@@ -125,17 +125,27 @@ them a controllable output). See the header comment in its `app_main.cpp`
 for the full explanation.
 
 `firmware/temperature-sensor/` is a fifth example, and this repo's first
-sensor over I2C rather than plain GPIO (a Sensirion SHT3x) and its first
-multi-endpoint device: temperature (`temperature_sensor` device type) and
-humidity (`humidity_sensor`) each get their own endpoint, since Matter has
-no single device type combining both from one physical sensor chip. Both
+sensor device with more than one supported chip: change `SENSOR_TYPE` in
+`app_main.cpp` (or let the wizard's sed command do it) to pick from **SHT3x,
+SHT4x, AHT20, DHT11, DHT22, DS18B20, or BME280** — whichever you actually
+have wired up. Each is a genuinely different protocol/command set (I2C,
+single-wire bit-banged, or 1-Wire), not just a different pin, so all seven
+drivers live behind `#if SENSOR_TYPE == ...` in the one file rather than
+being a runtime setting. SHT3x, DHT11, and DHT22 are verified on real
+hardware in this repo; the other four are implemented from their
+datasheets/reference drivers but not personally hardware-tested here —
+each driver's own comment in `app_main.cpp` says which and why. It's also
+this repo's first multi-endpoint device: temperature (`temperature_sensor`
+device type) and humidity (`humidity_sensor`) each get their own endpoint,
+since Matter has no single device type combining both (DS18B20 is
+temperature-only, so it skips the humidity endpoint entirely). Both
 `TemperatureMeasurementCluster` and `RelativeHumidityMeasurementCluster`
 are the same kind of "code-driven" cluster class as `firmware/contact-
 sensor/`'s BooleanState — updating them needs `SetMeasuredValue()`, not
 the generic `attribute::update()`. See its `app_main.cpp` header comment
-for the full explanation, the I2C wiring, and why classic ESP32 needs an
-external sensor at all (it has no internal temperature sensor peripheral,
-unlike later chips such as S2/S3/C3/C6).
+for the full explanation, each sensor's wiring, and why classic ESP32
+needs an external sensor at all (it has no internal temperature sensor
+peripheral, unlike later chips such as S2/S3/C3/C6).
 
 To add another type, copy any of the five folders and swap the endpoint
 type in `app_main.cpp` — esp-matter provides ready-made types like

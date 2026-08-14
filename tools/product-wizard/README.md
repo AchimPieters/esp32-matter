@@ -100,6 +100,19 @@ open tools/product-wizard/index.html
   all, and this time verified by actually running the generated command
   against a scratch checkout.
 
+- A second real bug, found later on real hardware rather than by
+  inspection: switching device type on an already-configured product
+  (e.g. Outlet → Temperature Sensor) left `gpioPin`/`secondaryGpioPin`/
+  `identifyGpioPin` at the *previous* type's values — Configure Device
+  only fills those in when they're `null`, so a stale non-null value
+  silently stuck around showing the wrong GPIO number with no indication
+  anything was wrong (a product switched from a driver-default-GPIO-2
+  type kept showing GPIO 2 as the temperature sensor's SDA pin instead of
+  the correct 21, even though the field's own hint text correctly said
+  "GPIO 21 is a common default"). Fixed by resetting all the type-specific
+  fields (now including `sensorModel` too) whenever the selected device
+  type actually changes.
+
 All six steps are implemented end to end: Dashboard → Setup → Get
 Started → Select Module → Configure Device → Test Product → Customise &
 Review → Generate Firmware. All five device types on classic ESP32 have
@@ -129,13 +142,32 @@ comment for the full explanation.
 
 The temperature sensor (`temperature_sensor` + `humidity_sensor`, one
 node with two endpoints — Matter has no single device type for both from
-one sensor chip) reads a Sensirion SHT3x over I2C — this repo's first
-non-GPIO sensor. Verified against a physical SHT3x: readings stayed
-stable even after moving the sensor away from the ESP32 board (ruling out
-self-heating as the cause of an initial offset from a cheap reference
-sensor nearby); SHT3x's spec'd accuracy (±0.2 °C / ±2 %RH) is tighter than
-most low-cost reference sensors, so that offset is most likely the
-reference's own inaccuracy, not a bug here.
+one sensor chip) supports 7 sensor chips (SHT3x, SHT4x, AHT20, DHT11,
+DHT22, DS18B20, BME280), picked via a "Sensor model" dropdown in
+Configure Device — this repo's first non-GPIO sensor and first device
+with a choice of driver at all. Chosen to cover what's actually most
+common from beginner through professional use (checked against current
+sources, not assumed — an earlier draft only had the sensors already on
+hand for testing, which nearly excluded BME280 despite it being the
+ESP32/ESPHome/Home Assistant community's most-recommended all-rounder).
+SHT3x, DHT11, and DHT22 are verified on real hardware; the other four are
+implemented from their datasheets/reference drivers but not personally
+tested here — the dropdown says so per sensor, and Generate Firmware
+repeats the caveat for whichever one you pick. Verified against a
+physical SHT3x: readings stayed stable even after moving the sensor away
+from the ESP32 board (ruling out self-heating as the cause of an initial
+offset from a cheap reference sensor nearby); SHT3x's spec'd accuracy
+(±0.2 °C / ±2 %RH) is tighter than most low-cost reference sensors, so
+that offset is most likely the reference's own inaccuracy, not a bug
+here. DHT11 and DHT22 (sharing one bit-banged driver, just different byte
+interpretation) worked correctly on the first flash each, no debugging
+needed.
+
+Adding this sensor-model choice needed a bit more than the outlet's
+`secondary` GPIO field: a `sensorModels` list per device type plus a
+third sed target (`#define SENSOR_TYPE ...`) alongside the two GPIO
+fields, since which driver compiles in at all is now a real choice, not
+just a pin number.
 
 Reflashing a board that was previously commissioned with different
 firmware/identity (as happened testing this, repeatedly, across several
@@ -151,10 +183,11 @@ testing does.
 
 - Five device types exist (`On/Off Light`, `On/Off Switch`, `Contact
   Sensor`, `Outlet`, `Temperature Sensor`) — light/switch/contact/outlet
-  are all digital GPIO, temperature is this repo's first I2C sensor.
-  Adding a device using analog/ADC input (untouched by any existing type)
-  is the natural next `DEVICE_TYPES` entry (see the comment above that
-  array in `index.html`).
+  are all digital GPIO, temperature is this repo's first non-GPIO sensor
+  (I2C, single-wire, or 1-Wire depending which of its 7 supported chips
+  you pick). Adding a device using analog/ADC input (untouched by any
+  existing type) is the natural next `DEVICE_TYPES` entry (see the
+  comment above that array in `index.html`).
 - The switch's button sends a real OnOff Toggle to whatever it's bound to
   (`client::cluster_update()`), but that binding itself has to be set up
   through a controller with a Bindings UI (e.g. Home Assistant) — the

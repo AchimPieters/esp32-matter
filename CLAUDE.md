@@ -139,26 +139,52 @@ firmware/outlet/         On/Off Plug-in Unit — fourth device type, combines
   partitions.csv           same OTA + fctry layout as firmware/light/
   sdkconfig.defaults        same as firmware/light/
 firmware/temperature-sensor/  Temperature + humidity sensor — fifth device
-                           type, first over I2C (not plain GPIO) and first
-                           multi-endpoint device
-  main/app_main.cpp       reads a Sensirion SHT3x over I2C (SDA GPIO 21,
-                           SCL GPIO 22, WROOM-32) using ESP-IDF's
-                           driver/i2c_master.h; classic ESP32 has no
-                           internal temperature sensor peripheral (that
-                           arrived with later chips: S2/S3/C3/C6), hence
-                           an external sensor. Exposes temperature
+                           type, first over I2C/single-wire/1-Wire (not
+                           plain GPIO) and first multi-endpoint device
+  main/app_main.cpp       one #define SENSOR_TYPE selects which of 7
+                           sensor drivers compiles in — SHT3x, SHT4x,
+                           AHT20, DHT11, DHT22, DS18B20, BME280 (list
+                           chosen as what's actually most common
+                           beginner-through-pro, checked against current
+                           sources — an earlier draft only had the
+                           sensors this repo's own testing happened to
+                           have on hand, which nearly missed BME280
+                           despite it being the community's most-
+                           recommended all-rounder). SHT3x/DHT11/DHT22
+                           verified on real hardware; SHT4x/AHT20/
+                           DS18B20/BME280 implemented from datasheet/
+                           reference driver, not personally hardware-
+                           tested here (documented as such per-driver,
+                           and surfaced in the wizard's Configure Device
+                           step too). SENSOR_PIN_1/SENSOR_PIN_2 are
+                           generic on purpose (I2C SDA/SCL or single-wire
+                           DATA, unused-but-harmless second pin for the
+                           single-wire sensors) so the wizard doesn't
+                           need per-sensor field variants. Classic ESP32
+                           has no internal temperature sensor peripheral
+                           (arrived with later chips: S2/S3/C3/C6), hence
+                           external sensors at all. Exposes temperature
                            (temperature_sensor device type, endpoint 1)
                            and humidity (humidity_sensor, endpoint 2) as
-                           two endpoints on one node, since Matter has no
-                           single device type combining both from one
-                           sensor chip. Both TemperatureMeasurement and
+                           two endpoints on one node — skips the humidity
+                           endpoint for DS18B20, which is temperature-
+                           only — since Matter has no single device type
+                           combining both from one sensor chip.
+                           TemperatureMeasurement and
                            RelativeHumidityMeasurement are the same kind
                            of "code-driven" cluster class as
                            firmware/contact-sensor/'s BooleanState — same
                            fix needed (SetMeasuredValue() via the data
                            model provider's registry, not the generic
                            attribute::update()), confirmed the same way by
-                           reading esp_matter_data_model.cpp's set_val()
+                           reading esp_matter_data_model.cpp's set_val().
+                           BME280's compensation math is Bosch's own
+                           reference fixed-point algorithm, reproduced
+                           verbatim (fetched from their public
+                           BME280_driver repo) rather than approximated —
+                           this sensor's raw ADC counts are meaningless
+                           without applying it against per-chip
+                           calibration coefficients read from its NVM.
   partitions.csv           same OTA + fctry layout as firmware/light/
   sdkconfig.defaults        same as firmware/light/
 tools/
@@ -222,29 +248,62 @@ SECURITY.md               flash encryption / secure boot / signed OTA guidance
    `tools/product-wizard/README.md` for the full Apple Home
    icon/commissioning story for both.
 
-   A fifth, `firmware/temperature-sensor/`, followed: a Sensirion SHT3x
-   over I2C (this repo's first non-GPIO sensor and first multi-endpoint
-   device — temperature + humidity, since Matter has no single device
-   type for both from one sensor chip). Reading it needed ESP-IDF's newer
-   `driver/i2c_master.h` API (verified against this exact SDK version's
-   headers rather than assumed) and hit the identical "code-driven
-   cluster, not generic `attribute::update()`" issue contact-sensor's
-   BooleanState did — same fix (`SetMeasuredValue()` via the registry),
-   confirmed by reading `TemperatureMeasurementCluster.h` /
-   `RelativeHumidityMeasurementCluster.h` directly rather than guessing
-   the setter's name or signature. Verified on real hardware against a
-   physical SHT3x: readings stayed stable (27.1–27.9 °C) even after
-   moving the sensor away from the board, so the offset from a cheap
-   reference sensor nearby (26.1 °C / 48 %RH vs. our 27.2 °C / 56 %RH) is
-   most likely that reference's own lower accuracy, not a bug here — SHT3x
-   is spec'd tighter (±0.2 °C / ±2 %RH) than typical low-cost sensors.
+   A fifth, `firmware/temperature-sensor/`, followed: originally a
+   Sensirion SHT3x over I2C only (this repo's first non-GPIO sensor and
+   first multi-endpoint device — temperature + humidity, since Matter has
+   no single device type for both from one sensor chip). Reading it
+   needed ESP-IDF's newer `driver/i2c_master.h` API (verified against
+   this exact SDK version's headers rather than assumed) and hit the
+   identical "code-driven cluster, not generic `attribute::update()`"
+   issue contact-sensor's BooleanState did — same fix
+   (`SetMeasuredValue()` via the registry), confirmed by reading
+   `TemperatureMeasurementCluster.h` / `RelativeHumidityMeasurementCluster.h`
+   directly rather than guessing the setter's name or signature.
+
+   Extended afterwards to 7 selectable sensors (`#define SENSOR_TYPE`):
+   SHT3x, SHT4x, AHT20, DHT11, DHT22, DS18B20, BME280 — prompted by
+   realizing the first list only covered sensors this repo's own testing
+   happened to have on hand, which nearly excluded BME280 despite it
+   being confirmed (via web search, not assumed) as the ESP32/ESPHome/
+   Home Assistant community's most-recommended all-rounder. Each is a
+   genuinely different protocol (I2C with different command sets,
+   single-wire bit-banged, or 1-Wire), verified against multiple
+   independent sources before writing any timing-critical code (DHT/
+   DS18B20 bit timings, AHT20/SHT4x I2C command bytes and conversion
+   formulas, BME280's calibration register map) rather than trusted from
+   memory. SHT3x, DHT11, and DHT22 are verified on real hardware — DHT11
+   and DHT22 worked correctly on the first flash, no debugging needed,
+   confirming the shared bit-banged driver's timing is right. SHT4x,
+   AHT20, DS18B20, and BME280 are implemented from their datasheets/
+   reference drivers but not personally hardware-tested here — flagged as
+   such in the code, the wizard's Configure Device step, and its Generate
+   Firmware step.
+
+   Also fixed while testing this: SHT3x's readings (27.1–27.9 °C) stayed
+   stable even after moving the sensor away from the board, so an initial
+   offset from a cheap reference sensor nearby (26.1 °C / 48 %RH vs. our
+   27.2 °C / 56 %RH) is most likely that reference's own lower accuracy,
+   not a bug — SHT3x is spec'd tighter (±0.2 °C / ±2 %RH) than typical
+   low-cost sensors.
 
    The wizard's `DEVICE_TYPES` schema only supported one configurable
    secondary GPIO (`button`, added for the outlet) before this — I2C needs
    two pins (SDA + SCL), so that field was generalized to `secondary`
    (label-driven UI text, not hardcoded to "button") rather than adding a
-   third bespoke field; the outlet's own behavior is unchanged; see the
-   comment on its `DEVICE_TYPES` entry in `index.html`.
+   third bespoke field; the outlet's own behavior is unchanged. A new
+   `sensorModels` list + dropdown was added on top of that for this
+   device type specifically, driving a third sed target
+   (`#define SENSOR_TYPE ...`) alongside the driver/secondary GPIO
+   fields; see the comment on the `DEVICE_TYPES` entry in `index.html`.
+
+   Also caught and fixed a real, previously-unnoticed wizard bug while
+   testing this: switching device type on an already-configured product
+   left the old type's GPIO values behind instead of resetting them — a
+   product configured as the outlet (driver default GPIO 2) and then
+   switched to the temperature sensor kept silently showing GPIO 2 as the
+   SDA pin instead of the correct default of 21, with no indication
+   anything was wrong. Fixed by resetting gpioPin/secondaryGpioPin/
+   identifyGpioPin/sensorModel whenever the type actually changes.
 
    All five device types (light, switch, contact sensor, outlet,
    temperature sensor) have now been built, flashed, and commissioned via
@@ -253,14 +312,14 @@ SECURITY.md               flash encryption / secure boot / signed OTA guidance
    analog/ADC input (e.g. a potentiometer or light-dependent resistor,
    still untouched by any existing device type here) is a reasonable next
    one to add, to cover that remaining GPIO mode.
-2. Implement Matter **OTA** — partially done. All four firmware types ship
+2. Implement Matter **OTA** — partially done. All five firmware types ship
    `CONFIG_ENABLE_OTA_REQUESTOR=y`, which adds the OTA Requestor cluster
    to the root node endpoint entirely via Kconfig — esp-matter's own core
    startup (`esp_matter_core.cpp`) calls
    `esp_matter_ota_requestor_init()`/`_start()` automatically once that
    flag is on, so no app code was needed. Confirmed on real hardware for
    `firmware/contact-sensor/` and `firmware/switch/` (clean boot, cluster
-   registered, zero errors); the other two build identically since the
+   registered, zero errors); the other three build identically since the
    code path is generic to every device type, not device-specific.
 
    Still open: a real OTA **transfer** needs an OTA Provider node
