@@ -879,6 +879,50 @@ const DEVICE_TYPES = [
       defaultsByModule: { esp32: 2, esp32c3: 2, esp32c6: 2, esp32s3: 2, esp32h2: 2 },
     },
   },
+  {
+    id: "light-sensor",
+    name: "Light Sensor",
+    desc: "Matter ambient light sensor: an LDR/photoresistor on an ADC pin reports illuminance via the Illuminance Measurement cluster. This repo's first analog/ADC device (light/switch/contact/outlet/temperature are all digital). Reference device in firmware/light-sensor/.",
+    // Unlike every other device type here, this one hasn't been tested
+    // against a physical LDR in this repo (none was on hand when it was
+    // written) — implemented carefully from datasheet sources, same
+    // standard as the temperature sensor's unverified chips, just
+    // flagged at the whole-device-type level since there's no per-
+    // component choice to attach a per-item warning to. Checked by
+    // renderGenerateFirmware() / renderCustomiseReview() below.
+    hardwareVerified: false,
+    // Matches project(matter_light_sensor) in
+    // firmware/light-sensor/CMakeLists.txt. Only one reference driver
+    // (a GL5528-characterized LDR voltage divider) unlike the
+    // temperature sensor's multi-chip choice — different photoresistors
+    // mostly differ by two numeric constants (LDR_R10_OHMS/LDR_GAMMA in
+    // app_main.cpp), adjustable by hand per its own comment, rather than
+    // genuinely different protocols/drivers, so a componentOptions
+    // selector isn't warranted here the way it was for temperature.
+    binName: "matter_light_sensor.bin",
+    driver: {
+      summary: "ADC (analog input)",
+      fieldLabel: "LDR ADC GPIO pin",
+      blockTitle: "LDR sensor · ADC input",
+      filePath: "firmware/light-sensor/main/app_main.cpp",
+      defineName: "LIGHT_SENSOR_ADC_GPIO",
+      // GPIO 34 = ADC1 channel 6 on classic ESP32 (WROOM-32) — deliberately
+      // an ADC1 pin, not ADC2 (ADC2 is unreliable once Wi-Fi is active,
+      // which this device needs to be commissioned/reachable at all). This
+      // is the sed baseline.
+      currentGpio: 34,
+      defaultsByModule: { esp32: 34, esp32c3: 34, esp32c6: 34, esp32s3: 34, esp32h2: 34 },
+    },
+    identify: {
+      summary: "GPIO (digital output)",
+      fieldLabel: "Identify LED GPIO pin",
+      blockTitle: "Identify LED · digital output",
+      filePath: "firmware/light-sensor/main/app_main.cpp",
+      defineName: "IDENTIFY_LED_GPIO",
+      currentGpio: 2,
+      defaultsByModule: { esp32: 2, esp32c3: 2, esp32c6: 2, esp32s3: 2, esp32h2: 2 },
+    },
+  },
 ];
 
 function findDeviceType(id) {
@@ -1426,7 +1470,7 @@ function renderCustomiseReview(p) {
         <div class="review-row">
           <div>
             <div class="summary-label">DEVICE TYPE</div>
-            <div class="summary-value">${escapeHtml(deviceTypeName(p.deviceType))}</div>
+            <div class="summary-value">${escapeHtml(deviceTypeName(p.deviceType))}${findDeviceType(p.deviceType) && findDeviceType(p.deviceType).hardwareVerified === false ? " — not hardware-verified in this repo" : ""}</div>
           </div>
           <button class="link" data-goto-step="0">Edit</button>
         </div>
@@ -1550,8 +1594,13 @@ function renderGenerateFirmware(p) {
         For "${escapeHtml(p.name)}" —
         <strong>${escapeHtml(deviceTypeName(p.deviceType))}</strong>${selectedSensor ? ` (<strong>${escapeHtml(selectedSensor.name)}</strong>)` : ""} on
         <strong>${escapeHtml(moduleName(p.target))}</strong>, GPIO ${p.gpioPin}${deviceType && deviceType.secondary ? ` (${escapeHtml((deviceType.secondary.label || "secondary").toLowerCase())} on GPIO ${p.secondaryGpioPin})` : ""}${identifyIsEnabled(p) ? ` (identify LED on GPIO ${p.identifyGpioPin})` : ""}.
-        This is the exact two-step flow validated end to end on real
-        hardware for this device type: build, then flash. Nothing runs
+        ${deviceType && deviceType.hardwareVerified === false
+          ? `The build/flash/commissioning flow itself is the same
+             proven one used by every other device type here — only this
+             specific device's sensor reading hasn't been checked against
+             real hardware yet (see the warning below).`
+          : `This is the exact two-step flow validated end to end on real
+             hardware for this device type: build, then flash.`} Nothing runs
         automatically — you paste and run each command yourself.
       </p>
 
@@ -1565,6 +1614,17 @@ function renderGenerateFirmware(p) {
           ${escapeHtml(selectedSensor.name)}'s section in
           firmware/temperature-sensor/main/app_main.cpp for exactly what
           was checked and against which source.
+        </div>
+      ` : ""}
+
+      ${deviceType && deviceType.hardwareVerified === false ? `
+        <div class="warn-box">
+          &#9888; This device type's sensor reading hasn't been tested
+          against a physical LDR in this repo (none was on hand when it
+          was written) — implemented carefully from datasheet sources,
+          same standard as the temperature sensor's unverified chips. See
+          the header comment in firmware/light-sensor/main/app_main.cpp
+          for exactly what was checked and against which source.
         </div>
       ` : ""}
 

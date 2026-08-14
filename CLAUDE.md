@@ -187,6 +187,37 @@ firmware/temperature-sensor/  Temperature + humidity sensor — fifth device
                            calibration coefficients read from its NVM.
   partitions.csv           same OTA + fctry layout as firmware/light/
   sdkconfig.defaults        same as firmware/light/
+firmware/light-sensor/    Ambient light sensor — sixth device type, first
+                           analog/ADC device (every other type is digital:
+                           GPIO, I2C, single-wire, or 1-Wire)
+  main/app_main.cpp       LDR/photoresistor voltage divider on GPIO 34
+                           (ADC1 channel 6, WROOM-32 — deliberately ADC1,
+                           not ADC2, since ADC2 is unreliable once Wi-Fi
+                           is active, which this device needs to be
+                           commissioned at all). Reads via ESP-IDF's
+                           driver/adc_oneshot.h, calibrated via
+                           esp_adc/adc_cali.h using ESP-IDF's own
+                           documented #if ADC_CALI_SCHEME_CURVE_FITTING_
+                           SUPPORTED / #elif ..._LINE_FITTING_SUPPORTED
+                           portable pattern (classic ESP32 only has line
+                           fitting; the pattern still builds correctly on
+                           chips that only have curve fitting instead).
+                           Converts millivolts -> lux via the standard
+                           photoresistor characteristic curve
+                           (R_LDR = R10 * (10/lux)^gamma, GL5528 typical
+                           datasheet values as the reference), then lux ->
+                           Matter's logarithmic MeasuredValue encoding
+                           (10000 * log10(lux) + 1 — same encoding
+                           Zigbee's ZCL illuminance cluster uses).
+                           IlluminanceMeasurementCluster is the same kind
+                           of "code-driven" cluster class as the
+                           temperature sensor's clusters, same
+                           SetMeasuredValue() fix needed. Unlike every
+                           other device type here, not hardware-verified
+                           in this repo (no LDR on hand when written) —
+                           flagged as such in the code and the wizard.
+  partitions.csv           same OTA + fctry layout as firmware/light/
+  sdkconfig.defaults        same as firmware/light/
 tools/
   dev.sh                  opens the Docker dev environment
   gen_factory.sh          local QR + factory partition generator
@@ -303,23 +334,50 @@ SECURITY.md               flash encryption / secure boot / signed OTA guidance
    switched to the temperature sensor kept silently showing GPIO 2 as the
    SDA pin instead of the correct default of 21, with no indication
    anything was wrong. Fixed by resetting gpioPin/secondaryGpioPin/
-   identifyGpioPin/sensorModel whenever the type actually changes.
+   identifyGpioPin/component whenever the type actually changes.
 
-   All five device types (light, switch, contact sensor, outlet,
-   temperature sensor) have now been built, flashed, and commissioned via
-   Apple Home through the wizard's own generated commands, run verbatim
-   against the real repo — zero errors on any of them. A sixth type using
-   analog/ADC input (e.g. a potentiometer or light-dependent resistor,
-   still untouched by any existing device type here) is a reasonable next
-   one to add, to cover that remaining GPIO mode.
-2. Implement Matter **OTA** — partially done. All five firmware types ship
+   A sixth device type, `firmware/light-sensor/` (`light_sensor`
+   device type, Illuminance Measurement cluster), followed: this repo's
+   first analog/ADC device — an LDR/photoresistor voltage divider on
+   ESP32's ADC, converted to lux via the standard photoresistor
+   characteristic curve and then to Matter's logarithmic MeasuredValue
+   encoding. See its own repository-layout entry above for the details.
+   Not hardware-verified in this repo (no LDR on hand when written),
+   flagged as such throughout, same standard as the temperature sensor's
+   unverified chips.
+
+   Also prompted by this: the wizard's `sensorModels`/`sensorModel`
+   naming (added for the temperature sensor) was generalized into a
+   shared top-level `COMPONENT_LIBRARY` (keyed by id) plus a generic
+   `component`/`componentOptions` naming throughout, per the user's own
+   suggestion — avoids duplicating a component's metadata if more than
+   one device type can offer it (e.g. a relay module usable by both the
+   outlet and a possible future lamp-style device type with a choice of
+   light source). `firmware/light-sensor/` itself doesn't use
+   `componentOptions` — different LDR models mostly differ by two numeric
+   constants (`LDR_R10_OHMS`/`LDR_GAMMA` in its `app_main.cpp`, adjustable
+   by hand per its own comment) rather than genuinely different drivers,
+   so a selector wasn't warranted the way it was for temperature's
+   different protocols.
+
+   All six device types (light, switch, contact sensor, outlet,
+   temperature sensor, light sensor) now exist. Five of six have been
+   built, flashed, and commissioned via Apple Home through the wizard's
+   own generated commands, run verbatim against the real repo — zero
+   errors on any of them; the light sensor has been build- and boot-
+   verified (clean compile, clean boot, sensible-looking readings even
+   without an LDR connected) but not taken through commissioning yet.
+   Adding a device type with a physical actuator beyond simple on/off
+   (e.g. a dimmable/color light, or a cover/blind) is a reasonable next
+   one, to cover ground no existing device type here does.
+2. Implement Matter **OTA** — partially done. All six firmware types ship
    `CONFIG_ENABLE_OTA_REQUESTOR=y`, which adds the OTA Requestor cluster
    to the root node endpoint entirely via Kconfig — esp-matter's own core
    startup (`esp_matter_core.cpp`) calls
    `esp_matter_ota_requestor_init()`/`_start()` automatically once that
    flag is on, so no app code was needed. Confirmed on real hardware for
    `firmware/contact-sensor/` and `firmware/switch/` (clean boot, cluster
-   registered, zero errors); the other three build identically since the
+   registered, zero errors); the other four build identically since the
    code path is generic to every device type, not device-specific.
 
    Still open: a real OTA **transfer** needs an OTA Provider node

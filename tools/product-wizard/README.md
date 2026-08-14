@@ -24,9 +24,10 @@ open tools/product-wizard/index.html
   hit **Start**.
 - **Get Started (step 1)** — pick a device type: "On/Off Light"
   (`firmware/light/`), "On/Off Switch" (`firmware/switch/`), "Contact
-  Sensor" (`firmware/contact-sensor/`), "Outlet" (`firmware/outlet/`), or
-  "Temperature Sensor" (`firmware/temperature-sensor/`). All five are
-  real, buildable firmware, not just UI placeholders.
+  Sensor" (`firmware/contact-sensor/`), "Outlet" (`firmware/outlet/`),
+  "Temperature Sensor" (`firmware/temperature-sensor/`), or "Light
+  Sensor" (`firmware/light-sensor/`). All six are real, buildable
+  firmware, not just UI placeholders.
 - **Select Module (step 2)** — pick a target chip (ESP32 / C3 / C6 / S3 /
   H2), mirroring what `tools/dev.sh` + `idf.py set-target` actually
   support. Connectivity badges (Wi-Fi/BLE/Thread) reflect each chip's real
@@ -115,10 +116,12 @@ open tools/product-wizard/index.html
 
 All six steps are implemented end to end: Dashboard → Setup → Get
 Started → Select Module → Configure Device → Test Product → Customise &
-Review → Generate Firmware. All five device types on classic ESP32 have
-now been validated for real, through the wizard's own generated commands
-run verbatim — built, factory data + QR generated, flashed, and
-commissioned via Apple Home (full PASE/CASE handshake, no errors).
+Review → Generate Firmware. Five of the six device types on classic ESP32
+have now been validated for real, through the wizard's own generated
+commands run verbatim — built, factory data + QR generated, flashed, and
+commissioned via Apple Home (full PASE/CASE handshake, no errors). The
+light sensor has been built and boot-tested through the same commands but
+not yet commissioned (see below).
 
 The switch commissions cleanly but then shows up in Apple Home as a
 generic "Matter Accessory" / "Niet geschikt" (not compatible) tile with a
@@ -164,10 +167,36 @@ interpretation) worked correctly on the first flash each, no debugging
 needed.
 
 Adding this sensor-model choice needed a bit more than the outlet's
-`secondary` GPIO field: a `sensorModels` list per device type plus a
-third sed target (`#define SENSOR_TYPE ...`) alongside the two GPIO
-fields, since which driver compiles in at all is now a real choice, not
-just a pin number.
+`secondary` GPIO field: a per-device-type component list plus a third sed
+target (`#define SENSOR_TYPE ...`) alongside the two GPIO fields, since
+which driver compiles in at all is now a real choice, not just a pin
+number. Originally this list lived inline as each device type's own
+`sensorModels` array; once a second device type could plausibly reuse the
+same kind of component (e.g. a relay module usable by more than one
+future actuator type), it was pulled out into a shared top-level
+`COMPONENT_LIBRARY` dictionary keyed by component id, with device types
+referencing it via `componentOptions: [id, ...]` and a `findComponent(id)`
+lookup helper — `sensorModel` was renamed to the generic `component`
+throughout to match. `firmware/temperature-sensor/` is still the only
+device type actually using `componentOptions` today.
+
+The light sensor (`firmware/light-sensor/`, `light_sensor` device type)
+is this repo's first analog/ADC device — an LDR/photoresistor read
+through ESP-IDF's ADC oneshot + calibration APIs, converted to lux via
+the standard photoresistor characteristic curve and then into Matter's
+logarithmic Illuminance Measurement encoding. It doesn't use
+`componentOptions` — different LDR models mostly just mean different
+values for two constants in `app_main.cpp`, not a different driver.
+Unlike every other device type here, it hasn't been tested against
+physical hardware in this repo (no LDR on hand) — build- and boot-tested
+only (clean compile, clean boot, sane-looking fallback readings with
+nothing wired to the ADC pin). This is tracked with a new device-type-
+level `hardwareVerified: false` flag on its `DEVICE_TYPES` entry (every
+other device type omits the flag, which defaults to verified) — distinct
+from `componentOptions`' per-component `verified` flag, since light
+sensor has no component list to attach a per-item flag to. Customise &
+Review and Generate Firmware both surface a warning box when this flag is
+false, same visual treatment as an unverified sensor-model pick.
 
 Reflashing a board that was previously commissioned with different
 firmware/identity (as happened testing this, repeatedly, across several
@@ -181,13 +210,20 @@ testing does.
 
 ## Known limitations
 
-- Five device types exist (`On/Off Light`, `On/Off Switch`, `Contact
-  Sensor`, `Outlet`, `Temperature Sensor`) — light/switch/contact/outlet
-  are all digital GPIO, temperature is this repo's first non-GPIO sensor
-  (I2C, single-wire, or 1-Wire depending which of its 7 supported chips
-  you pick). Adding a device using analog/ADC input (untouched by any
-  existing type) is the natural next `DEVICE_TYPES` entry (see the
-  comment above that array in `index.html`).
+- Six device types exist (`On/Off Light`, `On/Off Switch`, `Contact
+  Sensor`, `Outlet`, `Temperature Sensor`, `Light Sensor`) —
+  light/switch/contact/outlet are all digital GPIO, temperature is this
+  repo's first non-GPIO sensor (I2C, single-wire, or 1-Wire depending
+  which of its 7 supported chips you pick), and light sensor is the first
+  analog/ADC one. A device type with a physical actuator beyond simple
+  on/off (e.g. a dimmable/color light, or a cover/blind) is a reasonable
+  next `DEVICE_TYPES` entry (see the comment above that array in
+  `index.html`).
+- The light sensor's `hardwareVerified: false` flag means it's the one
+  device type in this list not actually confirmed against real hardware
+  — no LDR was on hand when it was built. Everything upstream of the
+  physical sensor reading (build, factory data, flash, boot) has been
+  verified; only the lux conversion against a real photoresistor hasn't.
 - The switch's button sends a real OnOff Toggle to whatever it's bound to
   (`client::cluster_update()`), but that binding itself has to be set up
   through a controller with a Bindings UI (e.g. Home Assistant) — the

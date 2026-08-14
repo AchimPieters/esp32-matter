@@ -147,7 +147,29 @@ for the full explanation, each sensor's wiring, and why classic ESP32
 needs an external sensor at all (it has no internal temperature sensor
 peripheral, unlike later chips such as S2/S3/C3/C6).
 
-To add another type, copy any of the five folders and swap the endpoint
+`firmware/light-sensor/` is a sixth example, and this repo's first
+analog/ADC device — every other type is digital (GPIO, I2C, single-wire,
+or 1-Wire). An LDR/photoresistor forms a voltage divider read via
+ESP-IDF's `esp_adc/adc_oneshot.h`, converted through ADC calibration
+(`esp_adc/adc_cali.h` — classic ESP32 only supports the "line fitting"
+scheme, not "curve fitting"; the code uses ESP-IDF's own documented
+`#if`/`#elif` portable pattern so the same source still builds correctly
+on chips that only have the other one) into millivolts, then into lux via
+the standard photoresistor characteristic curve
+(`R_LDR = R10 * (10/lux)^gamma`, using the common GL5528's typical
+datasheet values). Matter's Illuminance Measurement cluster stores
+`MeasuredValue` logarithmically (`10000 * log10(lux) + 1`, the same
+encoding Zigbee's ZCL illuminance cluster uses), not raw lux.
+`IlluminanceMeasurementCluster` is the same kind of "code-driven" cluster
+class as the temperature sensor's clusters — same `SetMeasuredValue()` fix
+needed. Unlike every other device type here, this one hasn't been tested
+against a physical LDR in this repo (none was on hand when it was
+written) — implemented carefully from datasheet sources and flagged as
+such (in the code, and in the wizard), same standard as the temperature
+sensor's unverified sensor chips. See its `app_main.cpp` header comment
+for the full explanation and wiring.
+
+To add another type, copy any of the six folders and swap the endpoint
 type in `app_main.cpp` — esp-matter provides ready-made types like
 `dimmable_light`, `occupancy_sensor`, and many more.
 
@@ -158,7 +180,7 @@ but the multi-GB Docker image stalled out on GitHub-hosted runners, so it
 was reverted rather than left flaky). Build + flash a new version yourself
 following the Quick Start steps above whenever you change `app_main.cpp`.
 
-All three device types also ship with Matter's **OTA Requestor** cluster
+All six device types also ship with Matter's **OTA Requestor** cluster
 enabled (`CONFIG_ENABLE_OTA_REQUESTOR=y`), so once a device is bound to an
 OTA Provider node on the same fabric, it can fetch and install updates over
 the air using the existing `ota_0`/`ota_1` A/B partition slots — no app
