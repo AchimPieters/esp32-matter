@@ -35,23 +35,45 @@ open tools/product-wizard/index.html
 - **Configure Device (step 3)** — set the GPIO(s) each device type's
   driver actually exposes: the LED pin for the light, the button pin for
   the switch, the contact pin for the contact sensor, the output + button
-  pins for the outlet, the I2C SDA + SCL pins for the temperature sensor
-  (the two device types needing a second GPIO — see `DEVICE_TYPES`'
+  pins for the outlet, and pin 1/pin 2 for the temperature and light
+  sensors (the device types needing a second GPIO — see `DEVICE_TYPES`'
   optional `secondary` field in `index.html`, alongside `driver` and
   `identify`; label-driven so it reads as "Button" for the outlet and
-  "SCL" for the temperature sensor, not hardcoded either way). No
-  PWM/dimming or debounce config yet, unlike the ESP ZeroCode screenshots
-  this is modelled on. Defaults per module
-  echo the comments in each `app_main.cpp`. Also an **Identify LED**
-  checkbox, on by default — every device type has one, since it's a real
-  Matter cluster (blinks in response to a controller's "Identify"
-  command) implemented in both firmware files, not just a wizard-only
-  option. Untick it and the wizard leaves that `#define` alone, so the
-  firmware's shipped default GPIO stays in effect — the LED still exists
-  in the compiled firmware either way, this only controls whether the
-  wizard customises its pin. A "Configuration summary" sidebar mirrors
-  the reference UI. Purely a value capture for now — it does **not** edit
-  the firmware file yet; that's Generate Firmware's job.
+  "SCL" for a sensor's pin 2, not hardcoded either way). No PWM/dimming
+  or debounce config yet, unlike the ESP ZeroCode screenshots this is
+  modelled on. Defaults per module echo the comments in each
+  `app_main.cpp`. Also an **Identify LED** checkbox, on by default —
+  every device type has one, since it's a real Matter cluster (blinks in
+  response to a controller's "Identify" command) implemented in every
+  firmware file, not just a wizard-only option. Untick it and the wizard
+  leaves that `#define` alone, so the firmware's shipped default GPIO
+  stays in effect — the LED still exists in the compiled firmware either
+  way, this only controls whether the wizard customises its pin. A
+  "Configuration summary" sidebar mirrors the reference UI. Purely a
+  value capture for now — it does **not** edit the firmware file yet;
+  that's Generate Firmware's job.
+  - Device types with `componentOptions` (temperature sensor, light
+    sensor) show a **checkable hardware list** here instead of a plain
+    dropdown: a bordered box of radio rows (one per sensor chip, each
+    with its bus type and verified/unverified status), with the selected
+    sensor's detail note shown alongside it. Replaced an earlier
+    `<select>` after real user feedback that a dropdown didn't make each
+    option's status ("SHT4x — I2C, unverified") visible at a glance the
+    way a list can.
+  - Real bug fixed alongside that redesign: for single-data-pin sensors
+    (DHT11/DHT22/DS18B20's single-wire DATA line, the LDR's ADC pin —
+    anything with `usesPin2: false` in `COMPONENT_LIBRARY`), the "pin 2"
+    GPIO field used to still render as a normal, seemingly-required
+    input labelled "SCL, I2C only" even though nothing in that sensor's
+    driver reads it — reported directly as confusing ("als ik DHT22 kies
+    heb ik geen pin 2 nodig?"). Now that field (and its row in the
+    Configuration summary sidebar) is hidden outright whenever the
+    selected component doesn't use it, replaced by a one-line "Not used
+    by DHT22 (single data pin only)" note in the sidebar. The underlying
+    `secondaryGpioPin` value is untouched — it's still defaulted and
+    still gets written into `app_main.cpp` by Generate Firmware's sed
+    command (harmlessly, since the driver never reads it) — this is a
+    display-only fix, not a change to what firmware gets generated.
 - **Test Product (step 4)** — a real Web Serial monitor (Chrome/Edge
   only, with a warning banner elsewhere). Connect to a board, pick a baud
   rate (115200 by default, matching `idf.py monitor`), and watch its live

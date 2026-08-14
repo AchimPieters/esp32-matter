@@ -464,6 +464,85 @@
     margin: 8px 0 0;
   }
 
+  /* Sensor model picker — a checkable list on the left, selected sensor's
+     detail text on the right, replacing a plain <select> so all options
+     and their verified/bus info are visible at a glance. */
+  .component-picker {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 16px;
+  }
+
+  .component-list {
+    flex: 0 0 230px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    overflow: hidden;
+  }
+
+  .component-list-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 12px;
+    cursor: pointer;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .component-list-item:last-child { border-bottom: none; }
+  .component-list-item:hover { background: #f8fafc; }
+  .component-list-item.selected { background: #f5f8ff; }
+
+  .component-list-item input[type="radio"] {
+    position: absolute;
+    opacity: 0;
+    width: 0;
+    height: 0;
+  }
+
+  .component-list-item .tick {
+    flex-shrink: 0;
+    width: 18px;
+    height: 18px;
+    border-radius: 5px;
+    border: 1.5px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 12px;
+    line-height: 1;
+    color: transparent;
+    background: #fff;
+  }
+
+  .component-list-item.selected .tick {
+    border-color: var(--blue);
+    background: var(--blue);
+    color: #fff;
+  }
+
+  .component-list-item-text {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+  }
+
+  .component-name {
+    font-size: 13px;
+    font-weight: 600;
+  }
+
+  .component-bus {
+    font-size: 11px;
+    color: var(--text-muted);
+  }
+
+  .component-detail {
+    flex: 1 1 220px;
+    min-width: 200px;
+  }
+
   .config-sidebar {
     background: var(--card-bg);
     border: 1px solid var(--border);
@@ -1141,10 +1220,10 @@ function renderGetStarted(p) {
       <p class="step-hint">What kind of Matter device is "${escapeHtml(p.name)}"?</p>
       <div class="option-grid">${cards}</div>
       <p class="note-box">
-        Only On/Off Light and On/Off Switch are implemented so far — each
-        maps to a real folder under <code>firmware/</code>. Adding a
-        temperature or contact sensor is an open next step, copying either
-        one per CLAUDE.md.
+        Every option above maps to a real, buildable folder under
+        <code>firmware/</code> — none of these are UI placeholders. Adding
+        another device type means copying one of those folders and
+        swapping its endpoint type, per CLAUDE.md.
       </p>
       ${renderWizardFooter(p, !!p.deviceType)}
     </div>
@@ -1212,6 +1291,15 @@ function renderConfigureDevice(p) {
   const driverBlockTitle = selectedComponent ? `${selectedComponent.name} · ${selectedComponent.pin1Label}` : (driver ? driver.blockTitle : "GPIO");
   const secondaryLabel = selectedComponent ? `${selectedComponent.pin2Label || "Pin 2"} GPIO pin` : (secondary ? secondary.fieldLabel : "");
   const secondaryBlockTitle = selectedComponent ? `${selectedComponent.name} · ${selectedComponent.pin2Label || "pin 2"}` : (secondary ? secondary.blockTitle : "");
+  // Sensors picked via componentOptions that only need one data pin
+  // (single-wire/1-Wire/ADC — usesPin2: false in COMPONENT_LIBRARY) don't
+  // need the "pin 2" field shown at all — showing an editable GPIO field
+  // for a pin the driver never reads was confusing (real bug report: it
+  // looked required). Device types with a `secondary` field but no
+  // componentOptions (e.g. outlet's Button) are unaffected — there's no
+  // selectedComponent to consult, so this only hides the field, it never
+  // changes whether secondaryGpioPin itself gets defaulted/validated.
+  const secondaryFieldNeeded = !!secondary && !(selectedComponent && !selectedComponent.usesPin2);
 
   return `
     <div class="configure-grid">
@@ -1222,17 +1310,30 @@ function renderConfigureDevice(p) {
         ${componentOptions ? `
           <div class="driver-block">
             <h3>Sensor model</h3>
-            <label class="field-label" for="sensor-model">Which sensor do you have wired up?</label>
-            <select id="sensor-model">
-              ${componentOptions.map(findComponent).map((s) => `<option value="${escapeHtml(s.id)}" ${s.id === selectedComponent.id ? "selected" : ""}>${escapeHtml(s.name)} (${escapeHtml(s.bus)})${s.verified ? "" : " — not hardware-verified in this repo"}</option>`).join("")}
-            </select>
-            <p class="field-note">
-              ${selectedComponent.verified
-                ? `Verified on real hardware in this repo.`
-                : `Implemented from the sensor's datasheet/reference driver, but not personally tested on real hardware in this repo — see the comment above its section in ${escapeHtml(driver ? driver.filePath : "app_main.cpp")} for exactly what was checked.`}
-              ${!selectedComponent.usesPin2 ? ` This sensor only needs one data pin — the second GPIO field below still gets set but isn't used by its driver.` : ""}
-              ${selectedComponent.note ? ` ${escapeHtml(selectedComponent.note)}` : ""}
-            </p>
+            <p class="field-label">Which sensor do you have wired up?</p>
+            <div class="component-picker">
+              <div class="component-list" role="radiogroup" aria-label="Sensor model">
+                ${componentOptions.map(findComponent).map((s) => `
+                  <label class="component-list-item ${s.id === selectedComponent.id ? "selected" : ""}">
+                    <input type="radio" name="sensor-model" value="${escapeHtml(s.id)}" ${s.id === selectedComponent.id ? "checked" : ""}>
+                    <span class="tick">&#10003;</span>
+                    <span class="component-list-item-text">
+                      <span class="component-name">${escapeHtml(s.name)}</span>
+                      <span class="component-bus">${escapeHtml(s.bus)}${s.verified ? "" : " · unverified"}</span>
+                    </span>
+                  </label>
+                `).join("")}
+              </div>
+              <div class="component-detail">
+                <p class="field-note" style="margin-top:0;">
+                  ${selectedComponent.verified
+                    ? `Verified on real hardware in this repo.`
+                    : `Implemented from the sensor's datasheet/reference driver, but not personally tested on real hardware in this repo — see the comment above its section in ${escapeHtml(driver ? driver.filePath : "app_main.cpp")} for exactly what was checked.`}
+                  ${!selectedComponent.usesPin2 ? ` This sensor only needs one data pin (${escapeHtml(selectedComponent.pin1Label)}) — the "pin 2" field below is hidden since its driver doesn't use it.` : ""}
+                  ${selectedComponent.note ? ` ${escapeHtml(selectedComponent.note)}` : ""}
+                </p>
+              </div>
+            </div>
           </div>
         ` : ""}
 
@@ -1247,7 +1348,7 @@ function renderConfigureDevice(p) {
           </p>
         </div>
 
-        ${secondary ? `
+        ${secondaryFieldNeeded ? `
           <div class="driver-block">
             <h3>${escapeHtml(secondaryBlockTitle)}</h3>
             <label class="field-label" for="secondary-gpio-pin">${escapeHtml(secondaryLabel)}</label>
@@ -1292,7 +1393,7 @@ function renderConfigureDevice(p) {
           This only records your choices for now — it doesn't edit
           <code>${escapeHtml(driver ? driver.filePath : "app_main.cpp")}</code> yet. Applying them
           (replacing <code>${escapeHtml(driver ? driver.defineName : "")}</code>${secondary ? `,
-          <code>${escapeHtml(secondary.defineName)}</code>` : ""}${identifyOn ? ` and
+          <code>${escapeHtml(secondary.defineName)}</code>${secondaryFieldNeeded ? "" : " (kept at its default — unused by this sensor)"}` : ""}${identifyOn ? ` and
           <code>${escapeHtml(identify ? identify.defineName : "IDENTIFY_LED_GPIO")}</code>` : ""}) happens
           in the Generate Firmware step.
         </p>
@@ -1312,16 +1413,21 @@ function renderConfigureDevice(p) {
         </div>
         <div class="summary-row">
           <div class="summary-label">DRIVER</div>
-          <div class="summary-value">${escapeHtml(driver ? driver.summary : "—")}</div>
+          <div class="summary-value">${escapeHtml(selectedComponent ? `${selectedComponent.pin1Label} (${selectedComponent.bus})` : (driver ? driver.summary : "—"))}</div>
           <div class="summary-detail">IO pin: GPIO ${gpioValid ? p.gpioPin : "?"}</div>
         </div>
-        ${secondary ? `
+        ${secondaryFieldNeeded ? `
           <div class="summary-row">
             <div class="summary-label">${escapeHtml((secondary.label || "SECONDARY").toUpperCase())}</div>
-            <div class="summary-value">${escapeHtml(secondary.summary)}</div>
+            <div class="summary-value">${escapeHtml(selectedComponent ? selectedComponent.pin2Label : secondary.summary)}</div>
             <div class="summary-detail">IO pin: GPIO ${secondaryGpioValid ? p.secondaryGpioPin : "?"}</div>
           </div>
-        ` : ""}
+        ` : (selectedComponent && secondary ? `
+          <div class="summary-row">
+            <div class="summary-label">${escapeHtml((secondary.label || "SECONDARY").toUpperCase())}</div>
+            <div class="summary-detail">Not used by ${escapeHtml(selectedComponent.name)} (single data pin only)</div>
+          </div>
+        ` : "")}
         <div class="summary-row">
           <div class="summary-label">IDENTIFY LED</div>
           <div class="summary-detail">${identifyOn ? `IO pin: GPIO ${identifyGpioValid ? p.identifyGpioPin : "?"}` : "Not added"}</div>
@@ -1986,14 +2092,14 @@ function bindEvents() {
     });
   }
 
-  const sensorModelSelect = document.getElementById("sensor-model");
-  if (sensorModelSelect) {
-    sensorModelSelect.addEventListener("change", () => {
-      state.currentProduct.component = sensorModelSelect.value;
+  document.querySelectorAll('input[name="sensor-model"]').forEach((el) => {
+    el.addEventListener("change", () => {
+      if (!el.checked) return;
+      state.currentProduct.component = el.value;
       saveProducts();
       render();
     });
-  }
+  });
 
   const secondaryGpioPinInput = document.getElementById("secondary-gpio-pin");
   if (secondaryGpioPinInput) {
