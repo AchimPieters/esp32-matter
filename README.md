@@ -134,16 +134,17 @@ device type with "Switch" in the name is a client/input device, none of
 them a controllable output). See the header comment in its `app_main.cpp`
 for the full explanation.
 
-`OUTLET_OUTPUT_TYPE` switches its output between a relay module (default —
-active-LOW, matching what an actual power outlet/smart plug normally
-switches with; always check your specific module's own wiring, since
-polarity isn't universal) and a plain LED (active-HIGH, mainly useful for
-breadboard testing without a relay on hand). A separate,
-independently-optional `OUTLET_STATUS_LED_GPIO` (off by default) adds a
-third LED some real plug hardware has: a small indicator that continuously
-mirrors on/off state, wired to its own GPIO — different from the required
-Identify LED, which only blinks temporarily on a controller's Identify
-command. And `OUTLET_POWER_MONITOR` optionally
+`OUTLET_OUTPUT_TYPE` defaults to a relay module (active-LOW, matching what
+an actual power outlet/smart plug normally switches with; always check
+your specific module's own wiring, since polarity isn't universal) — not a
+wizard-exposed choice, since offering a plain LED as an equally-weighted
+alternative was misleading rather than useful; LED (active-HIGH) is still
+there in the source for breadboard testing, just edit the `#define`
+directly. A separate, independently-optional `OUTLET_STATUS_LED_GPIO` (off
+by default) adds a third LED some real plug hardware has: a small
+indicator that continuously mirrors on/off state, wired to its own GPIO —
+different from the required Identify LED, which only blinks temporarily on
+a controller's Identify command. And `OUTLET_POWER_MONITOR` optionally
 compiles in one of **six** power-monitoring chips — **BL0942** and
 **CSE7766** (UART), **BL0937**, **HLW8012**, and **CSE7759** (GPIO
 pulse-frequency), and **ADE7953** (I2C) — feeding a second Matter

@@ -626,6 +626,28 @@ SECURITY.md               flash encryption / secure boot / signed OTA guidance
    Docker for the default config, status LED enabled, and LED output +
    status LED together; smoke-tested in the wizard across the full
    2 output x 7 power-monitor x 2 status-LED-state matrix, 0 failures.
+
+   A second round of feedback on the same feature followed immediately:
+   offering LED as an equally-weighted choice next to Relay in the
+   wizard's Output picker was itself misleading, not just wrongly
+   defaulted — a relay is simply what an actual outlet/smart plug
+   switches with, so the picker was removed outright rather than just
+   re-defaulted. `OUTLET_OUTPUT_TYPE` now always builds as the firmware's
+   own default (`OUTLET_OUTPUT_RELAY`), un-sed'd, exactly like any other
+   `#define` the wizard doesn't expose a field for; LED remains available
+   by hand-editing the source for breadboard testing, just not as a
+   wizard choice. This left outlet's `extraPickers` array with a single
+   entry (Power Monitoring) — confirms `extraPickers` was worth designing
+   as an array from the start rather than a fixed two-picker shape.
+   Separately, the new Status LED checkbox/field was moved to render
+   (and review, and appear in the Configuration summary sidebar) directly
+   above the Identify LED block instead of below it — the status LED
+   reflects the device's actual ongoing on/off state, so it reads better
+   ordered ahead of Identify's one-off blink. Re-smoke-tested after both
+   changes (0 failures) and rebuilt in Docker to confirm the LED_OUTPUT/
+   RELAY_OUTPUT `COMPONENT_LIBRARY` removal didn't affect anything the
+   firmware side depends on (it doesn't — those entries only ever fed the
+   now-removed wizard picker).
 2. Implement Matter **OTA** — partially done. All six firmware types ship
    `CONFIG_ENABLE_OTA_REQUESTOR=y`, which adds the OTA Requestor cluster
    to the root node endpoint entirely via Kconfig — esp-matter's own core

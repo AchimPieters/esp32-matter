@@ -287,7 +287,7 @@ static const char *TAG = "matter_outlet";
  * functional difference (relay polarity), not cosmetic. --- */
 #define OUTLET_OUTPUT_LED 1
 #define OUTLET_OUTPUT_RELAY 2
-#define OUTLET_OUTPUT_TYPE OUTLET_OUTPUT_LED
+#define OUTLET_OUTPUT_TYPE OUTLET_OUTPUT_RELAY
 
 #if OUTLET_OUTPUT_TYPE == OUTLET_OUTPUT_RELAY
 #define OUTLET_OUTPUT_ACTIVE_LOW 1
@@ -330,7 +330,7 @@ static const char *TAG = "matter_outlet";
 /* Optional separate on/off status indicator — see the header comment above
  * for how this differs from IDENTIFY_LED_GPIO. GPIO_NUM_NC ("not
  * connected") disables it; not every board has this LED wired up. */
-#define OUTLET_STATUS_LED_GPIO GPIO_NUM_5
+#define OUTLET_STATUS_LED_GPIO GPIO_NUM_NC
 
 /* --- Power monitoring — see the header comment above for the full
  * protocol/formula explanation and sourcing for each chip. Six real

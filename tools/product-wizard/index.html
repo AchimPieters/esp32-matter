@@ -770,13 +770,14 @@ const COMPONENT_LIBRARY = {
   REED_SWITCH: { name: "Reed Switch (magnetic)", category: "contact", bus: "GPIO", pin1Label: "Contact", pin2Label: null, usesPin2: false, verified: true },
   HALL_SENSOR: { name: "Hall-Effect Sensor (e.g. A3144, US5881)", category: "contact", bus: "GPIO", pin1Label: "Contact", pin2Label: null, usesPin2: false, verified: false },
   MICROSWITCH: { name: "Microswitch / mechanical contact", category: "contact", bus: "GPIO", pin1Label: "Contact", pin2Label: null, usesPin2: false, verified: false },
-  // Outlet's two independent pickers (see its DEVICE_TYPES entry's
+  // Outlet's Power Monitoring picker (see its DEVICE_TYPES entry's
   // `extraPickers`, a different mechanism from `componentOptions` above —
-  // neither of these choices affects any GPIO field's label the way a
-  // sensor's pin1Label does, so they're deliberately kept out of the
+  // this choice doesn't affect any GPIO field's label the way a sensor's
+  // pin1Label does, so it's deliberately kept out of the
   // componentOptions/driverLabel code path rather than shoehorned into it.
-  LED_OUTPUT: { name: "LED", category: "output", bus: "GPIO", verified: true, defineValue: "OUTLET_OUTPUT_LED" },
-  RELAY_OUTPUT: { name: "Relay", category: "output", bus: "GPIO", verified: false, defineValue: "OUTLET_OUTPUT_RELAY", note: "Active-LOW trigger — common for low-cost relay modules (GPIO LOW energizes the relay), but always check your specific module's own documentation before relying on it." },
+  // (There used to also be an Output-type LED/RELAY_OUTPUT pair of entries
+  // here, for an Output picker removed after real-world feedback — see
+  // the comment on outlet's DEVICE_TYPES `extraPickers` for why.)
   // `pins`: the GPIO(s) that chip's driver actually reads/drives in
   // firmware/outlet/main/app_main.cpp, shown as extra numeric fields in
   // Configure Device once that chip is selected (see renderConfigureDevice's
@@ -985,30 +986,27 @@ const DEVICE_TYPES = [
     desc: "Matter On/Off Plug-in Unit: a physical button toggles the device's own on/off state, visible and controllable from Apple/Google Home (unlike the switch's client-only Binding approach). Optional power monitoring. Reference device in firmware/outlet/.",
     // Matches project(matter_outlet) in firmware/outlet/CMakeLists.txt.
     binName: "matter_outlet.bin",
-    // Two independent checkable-list pickers in the left sidebar, each a
-    // real functional choice (not cosmetic like contact sensor's list) —
-    // a different, more general mechanism than componentOptions above:
-    // componentOptions assumes ONE picker whose selection also drives the
-    // main GPIO field's label (SDA/DATA/ADC per sensor), which doesn't
-    // apply here (neither Output type nor Power Monitoring chip changes
-    // what the Output/Button GPIO fields are called). Each entry's
-    // `key` names the product-state field it's stored in
-    // (state.currentProduct[key]) and the DOM attribute
-    // (data-picker-key) its radio inputs use — see renderConfigureDevice
-    // and the generic input[data-picker-key] change listener.
+    // A single checkable-list picker in the left sidebar for Power
+    // Monitoring — a real functional choice (not cosmetic like contact
+    // sensor's list) using a different, more general mechanism than
+    // componentOptions above: componentOptions assumes ONE picker whose
+    // selection also drives the main GPIO field's label (SDA/DATA/ADC per
+    // sensor), which doesn't apply here (the Power Monitoring chip choice
+    // doesn't change what the Output/Button GPIO fields are called).
+    // There used to also be an Output-type picker (LED vs. Relay) here,
+    // removed after real-world feedback: a relay is simply what an actual
+    // power outlet/smart plug switches with, so offering LED as an
+    // equally-weighted wizard choice was misleading rather than useful —
+    // OUTLET_OUTPUT_TYPE now always builds as OUTLET_OUTPUT_RELAY (the
+    // firmware's own default, see app_main.cpp), un-sed'd, same as any
+    // other #define this wizard doesn't expose a field for. LED stays
+    // available in the source for breadboard testing, just not as a
+    // wizard picker. Each `extraPickers` entry's `key` names the product-
+    // state field it's stored in (state.currentProduct[key]) and the DOM
+    // attribute (data-picker-key) its radio inputs use — see
+    // renderConfigureDevice and the generic input[data-picker-key] change
+    // listener.
     extraPickers: [
-      {
-        key: "outputType",
-        label: "Output",
-        prompt: "Which output do you have wired up?",
-        // Relay first (and therefore the default — see the picker
-        // default-fill logic below, options[0]): a real relay is the
-        // normal, typical output for an actual power outlet/smart plug.
-        // LED stays available second, mainly for breadboard testing
-        // without a relay module on hand.
-        options: ["RELAY_OUTPUT", "LED_OUTPUT"],
-        defineName: "OUTLET_OUTPUT_TYPE",
-      },
       {
         key: "powerMonitor",
         label: "Power Monitoring",
@@ -1020,7 +1018,7 @@ const DEVICE_TYPES = [
     driver: {
       summary: "GPIO (digital output)",
       fieldLabel: "Output GPIO pin",
-      blockTitle: "Output · digital GPIO (LED/relay)",
+      blockTitle: "Output · digital GPIO (relay)",
       filePath: "firmware/outlet/main/app_main.cpp",
       defineName: "OUTLET_GPIO",
       currentGpio: 2,
@@ -1685,6 +1683,34 @@ function renderConfigureDevice(p) {
           `;
         }).join("") : ""}
 
+        ${statusLed ? `
+          <div class="driver-block">
+            <label class="checkbox-label" for="status-led-enabled">
+              <input type="checkbox" id="status-led-enabled" ${statusLedOn ? "checked" : ""}>
+              <h3 style="display:inline; margin:0;">Add a Status LED</h3>
+            </label>
+            <p class="field-note" style="margin-top:4px;">
+              A separate indicator LED some plug/outlet hardware has, wired
+              to its own GPIO, that continuously mirrors the outlet's actual
+              on/off state — different from the Identify LED below, which
+              only blinks temporarily on an Identify command. Off by
+              default since not every board has one; the firmware ships
+              this pin disabled (<code>GPIO_NUM_NC</code>) until you tick
+              this and set a real pin.
+            </p>
+
+            ${statusLedOn ? `
+              <label class="field-label" for="status-led-gpio-pin" style="margin-top:12px;">${escapeHtml(statusLed.fieldLabel)}</label>
+              <input type="number" id="status-led-gpio-pin" min="0" max="48" value="${p.statusLedGpioPin}">
+              <div class="field-error">${statusLedGpioValid ? "" : "Enter a valid GPIO number (0 or higher)."}</div>
+              <p class="field-note">
+                Adjust to match your board — GPIO ${defaultStatusLedGpio}
+                is a common default for ${escapeHtml(moduleName(p.target))} devkits, not a guarantee for yours.
+              </p>
+            ` : ""}
+          </div>
+        ` : ""}
+
         <div class="driver-block">
           <label class="checkbox-label" for="identify-enabled">
             <input type="checkbox" id="identify-enabled" ${identifyOn ? "checked" : ""}>
@@ -1713,43 +1739,15 @@ function renderConfigureDevice(p) {
           ` : ""}
         </div>
 
-        ${statusLed ? `
-          <div class="driver-block">
-            <label class="checkbox-label" for="status-led-enabled">
-              <input type="checkbox" id="status-led-enabled" ${statusLedOn ? "checked" : ""}>
-              <h3 style="display:inline; margin:0;">Add a Status LED</h3>
-            </label>
-            <p class="field-note" style="margin-top:4px;">
-              A separate indicator LED some plug/outlet hardware has, wired
-              to its own GPIO, that continuously mirrors the outlet's actual
-              on/off state — different from the Identify LED above, which
-              only blinks temporarily on an Identify command. Off by
-              default since not every board has one; the firmware ships
-              this pin disabled (<code>GPIO_NUM_NC</code>) until you tick
-              this and set a real pin.
-            </p>
-
-            ${statusLedOn ? `
-              <label class="field-label" for="status-led-gpio-pin" style="margin-top:12px;">${escapeHtml(statusLed.fieldLabel)}</label>
-              <input type="number" id="status-led-gpio-pin" min="0" max="48" value="${p.statusLedGpioPin}">
-              <div class="field-error">${statusLedGpioValid ? "" : "Enter a valid GPIO number (0 or higher)."}</div>
-              <p class="field-note">
-                Adjust to match your board — GPIO ${defaultStatusLedGpio}
-                is a common default for ${escapeHtml(moduleName(p.target))} devkits, not a guarantee for yours.
-              </p>
-            ` : ""}
-          </div>
-        ` : ""}
-
         <p class="note-box">
           This only records your choices for now — it doesn't edit
           <code>${escapeHtml(driver ? driver.filePath : "app_main.cpp")}</code> yet. Applying them
           (replacing <code>${escapeHtml(driver ? driver.defineName : "")}</code>${activeExtraButtons.map((b) => `,
           <code>${escapeHtml(b.defineName)}</code>`).join("")}${extraButtons ? `,
           <code>${escapeHtml(deviceType.buttonCountDefineName)}</code>` : ""}${secondary ? `,
-          <code>${escapeHtml(secondary.defineName)}</code>${secondaryFieldNeeded ? "" : " (kept at its default — unused by this sensor)"}` : ""}${identifyOn ? `,
-          <code>${escapeHtml(identify ? identify.defineName : "IDENTIFY_LED_GPIO")}</code>` : ""}${statusLedOn ? `,
-          <code>${escapeHtml(statusLed.defineName)}</code>` : ""}${activePickerPins.map(({ pin }) => `,
+          <code>${escapeHtml(secondary.defineName)}</code>${secondaryFieldNeeded ? "" : " (kept at its default — unused by this sensor)"}` : ""}${statusLedOn ? `,
+          <code>${escapeHtml(statusLed.defineName)}</code>` : ""}${identifyOn ? `,
+          <code>${escapeHtml(identify ? identify.defineName : "IDENTIFY_LED_GPIO")}</code>` : ""}${activePickerPins.map(({ pin }) => `,
           <code>${escapeHtml(pin.defineName)}</code>`).join("")}) happens
           in the Generate Firmware step.
         </p>
@@ -1791,16 +1789,16 @@ function renderConfigureDevice(p) {
             <div class="summary-detail">IO pin: GPIO ${Number.isInteger(p.pickerPins[pin.defineName]) && p.pickerPins[pin.defineName] >= 0 ? p.pickerPins[pin.defineName] : "?"}</div>
           </div>
         `).join("")}
-        <div class="summary-row">
-          <div class="summary-label">IDENTIFY LED</div>
-          <div class="summary-detail">${identifyOn ? `IO pin: GPIO ${identifyGpioValid ? p.identifyGpioPin : "?"}` : "Not added"}</div>
-        </div>
         ${statusLed ? `
           <div class="summary-row">
             <div class="summary-label">STATUS LED</div>
             <div class="summary-detail">${statusLedOn ? `IO pin: GPIO ${statusLedGpioValid ? p.statusLedGpioPin : "?"}` : "Not added"}</div>
           </div>
         ` : ""}
+        <div class="summary-row">
+          <div class="summary-label">IDENTIFY LED</div>
+          <div class="summary-detail">${identifyOn ? `IO pin: GPIO ${identifyGpioValid ? p.identifyGpioPin : "?"}` : "Not added"}</div>
+        </div>
       </div>
     </div>
   `;
@@ -2069,13 +2067,6 @@ function renderCustomiseReview(p) {
             <button class="link" data-goto-step="2">Edit</button>
           </div>
         ` : ""}
-        <div class="review-row">
-          <div>
-            <div class="summary-label">IDENTIFY LED</div>
-            <div class="summary-value">${identifyIsEnabled(p) ? `GPIO ${p.identifyGpioPin != null ? p.identifyGpioPin : "?"}` : "Not added"}</div>
-          </div>
-          <button class="link" data-goto-step="2">Edit</button>
-        </div>
         ${findDeviceType(p.deviceType) && findDeviceType(p.deviceType).statusLed ? `
           <div class="review-row">
             <div>
@@ -2085,6 +2076,13 @@ function renderCustomiseReview(p) {
             <button class="link" data-goto-step="2">Edit</button>
           </div>
         ` : ""}
+        <div class="review-row">
+          <div>
+            <div class="summary-label">IDENTIFY LED</div>
+            <div class="summary-value">${identifyIsEnabled(p) ? `GPIO ${p.identifyGpioPin != null ? p.identifyGpioPin : "?"}` : "Not added"}</div>
+          </div>
+          <button class="link" data-goto-step="2">Edit</button>
+        </div>
       </div>
 
       ${complete ? "" : `<div class="warn-box">Some selections are missing — use "Edit" above to go back and complete them.</div>`}
@@ -2167,7 +2165,7 @@ function renderGenerateFirmware(p) {
       <p class="step-hint">
         For "${escapeHtml(p.name)}" —
         <strong>${escapeHtml(deviceTypeName(p.deviceType))}</strong>${selectedSensor ? ` (<strong>${escapeHtml(selectedSensor.name)}</strong>)` : ""} on
-        <strong>${escapeHtml(moduleName(p.target))}</strong>, GPIO ${p.gpioPin}${extraButtonGpios.length ? ` (+ button${extraButtonGpios.length === 1 ? "" : "s"} on GPIO ${extraButtonGpios.join(", ")})` : ""}${deviceType && deviceType.secondary ? ` (${escapeHtml((deviceType.secondary.label || "secondary").toLowerCase())} on GPIO ${p.secondaryGpioPin})` : ""}${identifyIsEnabled(p) ? ` (identify LED on GPIO ${p.identifyGpioPin})` : ""}${deviceType && deviceType.statusLed && statusLedIsEnabled(p) ? ` (status LED on GPIO ${p.statusLedGpioPin})` : ""}.
+        <strong>${escapeHtml(moduleName(p.target))}</strong>, GPIO ${p.gpioPin}${extraButtonGpios.length ? ` (+ button${extraButtonGpios.length === 1 ? "" : "s"} on GPIO ${extraButtonGpios.join(", ")})` : ""}${deviceType && deviceType.secondary ? ` (${escapeHtml((deviceType.secondary.label || "secondary").toLowerCase())} on GPIO ${p.secondaryGpioPin})` : ""}${deviceType && deviceType.statusLed && statusLedIsEnabled(p) ? ` (status LED on GPIO ${p.statusLedGpioPin})` : ""}${identifyIsEnabled(p) ? ` (identify LED on GPIO ${p.identifyGpioPin})` : ""}.
         This is the exact two-step flow validated end to end on real
         hardware for this device type: build, then flash. Nothing runs
         automatically — you paste and run each command yourself.
@@ -2405,15 +2403,15 @@ function buildSedCommands(p) {
   if (secondary) {
     cmds.push(`sed -i 's/^#define ${secondary.defineName} GPIO_NUM_[0-9][0-9]*/#define ${secondary.defineName} GPIO_NUM_${p.secondaryGpioPin}/' ${filePath}`);
   }
-  if (identify && identifyIsEnabled(p)) {
-    cmds.push(`sed -i 's/^#define ${identify.defineName} GPIO_NUM_[0-9][0-9]*/#define ${identify.defineName} GPIO_NUM_${p.identifyGpioPin}/' ${filePath}`);
-  }
   if (statusLed && statusLedIsEnabled(p)) {
-    // Broad `.*` match, not the narrow GPIO_NUM_[0-9]* pattern above — the
+    // Broad `.*` match, not the narrow GPIO_NUM_[0-9]* pattern below — the
     // firmware ships this one as GPIO_NUM_NC (ESP-IDF's "not connected"
     // sentinel, disabling it), not a numeric default, so the narrow
     // digits-only pattern wouldn't match the line as shipped.
     cmds.push(`sed -i 's/^#define ${statusLed.defineName} .*/#define ${statusLed.defineName} GPIO_NUM_${p.statusLedGpioPin}/' ${filePath}`);
+  }
+  if (identify && identifyIsEnabled(p)) {
+    cmds.push(`sed -i 's/^#define ${identify.defineName} GPIO_NUM_[0-9][0-9]*/#define ${identify.defineName} GPIO_NUM_${p.identifyGpioPin}/' ${filePath}`);
   }
   return cmds;
 }
