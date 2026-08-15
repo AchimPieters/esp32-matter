@@ -60,16 +60,19 @@ open tools/product-wizard/index.html
     real user feedback that a dropdown didn't make each option's status
     ("SHT4x — I2C, unverified") visible at a glance the way a list can.
     Lives in its own sidebar column to the *left* of the main panel
-    (`.config-sidebar.sensor-sidebar`, same visual treatment as
-    Configuration summary on the right — a `has-sensor-sidebar` modifier
-    turns `.configure-grid` into a three-column layout only for device
-    types that actually have a sensor choice), again from direct
-    feedback: it originally lived inside the main panel as just another
-    stacked `.driver-block`, which buried it below the fold next to
-    fields that matter less. Collapses to a single column under 720px,
-    with an intermediate two-column layout (list+main stacked above
-    the summary) between 720–960px so the page doesn't get uncomfortably
-    narrow on a mid-size window.
+    (`.config-sidebar`, same visual treatment as Configuration summary on
+    the right — a `has-left-sidebar` modifier turns `.configure-grid`
+    into a three-column layout for any device type with a checkable
+    picker on this step), again from direct feedback: it originally
+    lived inside the main panel as just another stacked `.driver-block`,
+    which buried it below the fold next to fields that matter less.
+    Collapses to a single column under 720px, with an intermediate
+    two-column layout (list+main stacked above the summary) between
+    720–960px so the page doesn't get uncomfortably narrow on a mid-size
+    window. `has-left-sidebar` (renamed from an earlier
+    sensor-specific `has-sensor-sidebar`) is shared with the switch's
+    button-count picker below — same layout, same `.component-list`
+    checkable-row styling, different content.
   - Real bug fixed alongside that redesign: for single-data-pin sensors
     (DHT11/DHT22/DS18B20's single-wire DATA line, the LDR's ADC pin —
     anything with `usesPin2: false` in `COMPONENT_LIBRARY`), the "pin 2"
@@ -86,10 +89,14 @@ open tools/product-wizard/index.html
     display-only fix, not a change to what firmware gets generated.
   - The On/Off Switch supports **1-4 independent buttons**, added
     directly on request ("meerdere buttons toevoegen met hun eigen
-    gpio"): a "How many buttons?" selector (`extraButtons` +
-    `buttonCountDefineName` on its `DEVICE_TYPES` entry) shows 0-3
-    additional per-button GPIO fields on top of the always-present
-    button 1. Each button becomes its own `on_off_light_switch` endpoint
+    gpio"): a "How many buttons?" checkable list (`extraButtons` +
+    `buttonCountDefineName` on its `DEVICE_TYPES` entry) — same left
+    sidebar, same checkable-row styling as the sensor-model picker above
+    (originally a plain `<select>` inside the main panel, moved and
+    restyled on the same direct feedback: "net als de Configuration
+    summary... aan de linkerzijde... door middel van een tick") — shows
+    0-3 additional per-button GPIO fields in the main panel on top of the
+    always-present button 1. Each button becomes its own `on_off_light_switch` endpoint
     in `app_main.cpp`, independently bindable to a different target
     device — Matter's own way of modelling a physical multi-gang wall
     switch. Button 1 keeps using the pre-existing `gpioPin` product

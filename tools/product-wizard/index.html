@@ -413,23 +413,25 @@
     align-items: start;
   }
 
-  /* Device types with a sensor-model choice (componentOptions) get a
-     third column: the sensor picker sits to the left of the main panel,
-     mirroring the Configuration summary sidebar's position on the right,
-     at roughly the same width. */
-  .configure-grid.has-sensor-sidebar {
+  /* Device types with a checkable picker on this step (componentOptions'
+     sensor-model list, or extraButtons' button-count list) get a third
+     column: the picker sits to the left of the main panel, mirroring the
+     Configuration summary sidebar's position on the right, at roughly the
+     same width. Only one of the two ever applies to a given device type
+     today, but both use this same modifier/layout. */
+  .configure-grid.has-left-sidebar {
     grid-template-columns: 240px 2fr 1fr;
   }
 
   @media (max-width: 960px) {
-    .configure-grid.has-sensor-sidebar { grid-template-columns: 1fr 1fr; }
-    .configure-grid.has-sensor-sidebar .step-panel { grid-column: 1 / -1; order: -1; }
+    .configure-grid.has-left-sidebar { grid-template-columns: 1fr 1fr; }
+    .configure-grid.has-left-sidebar .step-panel { grid-column: 1 / -1; order: -1; }
   }
 
   @media (max-width: 720px) {
     .configure-grid,
-    .configure-grid.has-sensor-sidebar { grid-template-columns: 1fr; }
-    .configure-grid.has-sensor-sidebar .step-panel { grid-column: auto; order: 0; }
+    .configure-grid.has-left-sidebar { grid-template-columns: 1fr; }
+    .configure-grid.has-left-sidebar .step-panel { grid-column: auto; order: 0; }
   }
 
   .driver-block {
@@ -479,9 +481,11 @@
     margin: 8px 0 0;
   }
 
-  /* Sensor model picker — a checkable list, replacing a plain <select> so
-     every option's bus/verified status is visible at a glance. Lives in
-     its own sidebar (.sensor-sidebar below), not inside .driver-block. */
+  /* Checkable list styling, shared by the sensor-model picker (a checkable
+     list replacing a plain <select> so every option's bus/verified status
+     is visible at a glance) and the switch's button-count picker below —
+     both live in their own left sidebar (.config-sidebar.has-left-sidebar
+     below), not inside .driver-block. */
   .component-list {
     border: 1px solid var(--border);
     border-radius: 8px;
@@ -1367,9 +1371,9 @@ function renderConfigureDevice(p) {
   const secondaryFieldNeeded = !!secondary && !(selectedComponent && !selectedComponent.usesPin2);
 
   return `
-    <div class="configure-grid ${componentOptions ? "has-sensor-sidebar" : ""}">
+    <div class="configure-grid ${componentOptions || extraButtons ? "has-left-sidebar" : ""}">
       ${componentOptions ? `
-        <div class="config-sidebar sensor-sidebar">
+        <div class="config-sidebar">
           <h3>Sensor model</h3>
           <p class="field-label">Which sensor do you have wired up?</p>
           <div class="component-list" role="radiogroup" aria-label="Sensor model">
@@ -1392,26 +1396,32 @@ function renderConfigureDevice(p) {
             ${selectedComponent.note ? ` ${escapeHtml(selectedComponent.note)}` : ""}
           </p>
         </div>
-      ` : ""}
+      ` : (extraButtons ? `
+        <div class="config-sidebar">
+          <h3>How many buttons?</h3>
+          <p class="field-label">Each button becomes its own independently-bindable switch endpoint</p>
+          <div class="component-list" role="radiogroup" aria-label="How many buttons?">
+            ${Array.from({ length: maxButtons }, (_, i) => i + 1).map((n) => `
+              <label class="component-list-item ${n === buttonCount ? "selected" : ""}">
+                <input type="radio" name="button-count" value="${n}" ${n === buttonCount ? "checked" : ""}>
+                <span class="tick">&#10003;</span>
+                <span class="component-list-item-text">
+                  <span class="component-name">${n} button${n === 1 ? "" : "s"}</span>
+                </span>
+              </label>
+            `).join("")}
+          </div>
+          <p class="field-note">
+            ${buttonCount === 1
+              ? `A single button, same as this device type has always had — its Identify LED also doubles as a local on/off indicator (see below).`
+              : `${buttonCount} independent buttons, each its own on_off_light_switch endpoint — bind each one to a different device through your controller's Bindings UI. With more than one button, the Identify LED no longer doubles as an on/off indicator (there's no longer one single "switch state" it could represent).`}
+          </p>
+        </div>
+      ` : "")}
 
       <div class="step-panel">
         <h2>Configure device</h2>
         <p class="step-hint">Set the driver options for this ${escapeHtml(deviceTypeName(p.deviceType))} on ${escapeHtml(moduleName(p.target))}.</p>
-
-        ${extraButtons ? `
-          <div class="driver-block">
-            <h3>How many buttons?</h3>
-            <label class="field-label" for="button-count">Each button becomes its own independently-bindable switch endpoint</label>
-            <select id="button-count">
-              ${Array.from({ length: maxButtons }, (_, i) => i + 1).map((n) => `<option value="${n}" ${n === buttonCount ? "selected" : ""}>${n} button${n === 1 ? "" : "s"}</option>`).join("")}
-            </select>
-            <p class="field-note">
-              ${buttonCount === 1
-                ? `A single button, same as this device type has always had — its Identify LED also doubles as a local on/off indicator (see below).`
-                : `${buttonCount} independent buttons, each its own on_off_light_switch endpoint — bind each one to a different device through your controller's Bindings UI. With more than one button, the Identify LED no longer doubles as an on/off indicator (there's no longer one single "switch state" it could represent).`}
-            </p>
-          </div>
-        ` : ""}
 
         <div class="driver-block">
           <h3>${escapeHtml(driverBlockTitle)}</h3>
@@ -2259,19 +2269,19 @@ function bindEvents() {
     });
   });
 
-  const buttonCountSelect = document.getElementById("button-count");
-  if (buttonCountSelect) {
-    buttonCountSelect.addEventListener("change", () => {
+  document.querySelectorAll('input[name="button-count"]').forEach((el) => {
+    el.addEventListener("change", () => {
+      if (!el.checked) return;
       // Only ever grows/shrinks which prefix of buttonGpios is "active" —
       // shrinking doesn't clear the values for buttons beyond the new
       // count, so growing back later restores what was there rather than
       // re-defaulting (buttonGpios is initialised as [] in
       // renderConfigureDevice if this is the first time it's touched).
-      state.currentProduct.buttonCount = parseInt(buttonCountSelect.value, 10);
+      state.currentProduct.buttonCount = parseInt(el.value, 10);
       saveProducts();
       render();
     });
-  }
+  });
 
   document.querySelectorAll('[id^="extra-button-gpio-"]').forEach((el) => {
     el.addEventListener("input", () => {
