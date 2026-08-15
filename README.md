@@ -266,9 +266,30 @@ header comment for the full explanation. Build-verified in Docker; not
 hardware-tested (no motor/relay hardware for this device type physically
 available when written).
 
-To add another type, copy any of the eight folders and swap the endpoint
+`firmware/color-light/` is a ninth example — an RGB light, still declared
+as the `ExtendedColorLight` Matter device type but implementing only its
+Hue/Saturation color mode, not esp-matter's `endpoint::extended_color_light
+::create()` default of Xy + ColorTemperature (confirmed in esp-matter's
+own source that helper never actually adds HueSaturation at all, despite
+that being what most controllers' color wheels drive first). Built by
+calling esp-matter's own lower-level free functions directly
+(`endpoint::create()`, `add_device_type()`, each cluster's own
+`create()`/`feature::xxx::add()`) rather than the higher-level endpoint
+helper — the same public API that helper is itself built from, just
+composed to skip the two color modes (CIE xyY and correlated color
+temperature) this repo isn't implementing conversions for. OnOff/
+LevelControl/ColorControl's Hue and Saturation attributes are all plain
+ember attributes (confirmed against esp-matter's own
+`examples/light/main/app_driver.cpp`) — no Delegate needed. Three LEDC PWM
+channels (R/G/B, one shared timer) combine with LevelControl's brightness
+through a standard HSV→RGB conversion. See its `app_main.cpp` header
+comment for the full explanation. Build-verified in Docker; not
+hardware-tested (no RGB LED/driver board physically available when
+written).
+
+To add another type, copy any of the nine folders and swap the endpoint
 type in `app_main.cpp` — esp-matter provides ready-made types like
-`extended_color_light`, `occupancy_sensor`, and many more.
+`occupancy_sensor`, `thermostat`, and many more.
 
 ## Updates
 
@@ -277,7 +298,7 @@ but the multi-GB Docker image stalled out on GitHub-hosted runners, so it
 was reverted rather than left flaky). Build + flash a new version yourself
 following the Quick Start steps above whenever you change `app_main.cpp`.
 
-All eight device types also ship with Matter's **OTA Requestor** cluster
+All nine device types also ship with Matter's **OTA Requestor** cluster
 enabled (`CONFIG_ENABLE_OTA_REQUESTOR=y`), so once a device is bound to an
 OTA Provider node on the same fabric, it can fetch and install updates over
 the air using the existing `ota_0`/`ota_1` A/B partition slots — no app

@@ -468,6 +468,72 @@ firmware/window-covering/  Roller shade / curtain — eighth device type, and
                            physically available when written).
   partitions.csv           same OTA + fctry layout as firmware/light/
   sdkconfig.defaults        same as firmware/light/
+firmware/color-light/     RGB color light — ninth device type, and the last
+                           of the three options offered together when
+                           firmware/dimmable-light/ was added (dimmable
+                           light and window covering were the other two,
+                           both already built)
+  main/app_main.cpp       Hand-assembled endpoint (Identify + Groups +
+                           OnOff + LevelControl + ColorControl[Hue/
+                           Saturation only] + ScenesManagement), not
+                           esp-matter's endpoint::extended_color_light::
+                           create() — confirmed directly in esp-matter's
+                           source that helper unconditionally wires up
+                           ColorTemperature *and* Xy features but never
+                           HueSaturation, despite that being what most
+                           controllers' color wheels (Apple/Google Home,
+                           Home Assistant) actually drive. Supporting all
+                           three color modes properly needs three separate
+                           real colorimetry conversions (HSV→RGB, CIE
+                           xyY→RGB, correlated-color-temperature→RGB) —
+                           same "smallest reasonable next step" scoping
+                           already used for firmware/dimmable-light/
+                           (LevelControl only) and firmware/window-covering/
+                           (Lift only, no Tilt): this device implements
+                           exactly one color mode, correctly, rather than
+                           three with two approximate. Device type is still
+                           declared as ExtendedColorLight (0x010D) — the
+                           correct Matter device type for any color-capable
+                           light regardless of which ColorControl features
+                           it implements; FeatureMap/ColorCapabilities are
+                           both set to HueSaturation-only so a real
+                           controller won't offer XY/color-temperature
+                           controls this device can't act on. Built by
+                           calling esp-matter's own lower-level free
+                           functions directly (endpoint::create(),
+                           add_device_type(), each cluster's own create()/
+                           feature::xxx::add()) — the same public API the
+                           higher-level endpoint helper itself is built
+                           from, just composed differently. OnOff/
+                           LevelControl/ColorControl's CurrentHue/
+                           CurrentSaturation are all plain ember
+                           attributes (confirmed via esp-matter's own
+                           examples/light/main/app_driver.cpp, which
+                           reacts to them through the same
+                           attribute::PRE_UPDATE pattern used everywhere
+                           else in this repo) — no Delegate needed, unlike
+                           firmware/window-covering/'s WindowCovering.
+                           CurrentHue/CurrentSaturation are both uint8
+                           0-254 (confirmed directly in the Matter 1.6
+                           ColorControl.xml spec file's own attribute
+                           constraints), mapped to degrees/fraction and
+                           combined with LevelControl's CurrentLevel (as
+                           HSV's "V") through a textbook HSV→RGB
+                           conversion, output via three LEDC PWM channels
+                           sharing one timer — same LEDC pattern
+                           firmware/dimmable-light/ already established,
+                           times three. One real compile error caught by
+                           an actual Docker build, not inspection: a
+                           namespace-qualification slip
+                           (`identify::command::create_trigger_effect`
+                           instead of `cluster::identify::command::
+                           create_trigger_effect`) — fixed, second build
+                           clean. Build-verified in Docker; not
+                           hardware-tested (no RGB LED/driver board for
+                           this device type physically available when
+                           written).
+  partitions.csv           same OTA + fctry layout as firmware/light/
+  sdkconfig.defaults        same as firmware/light/
 tools/
   dev.sh                  opens the Docker dev environment
   gen_factory.sh          local QR + factory partition generator
@@ -853,8 +919,62 @@ SECURITY.md               flash encryption / secure boot / signed OTA guidance
    caught that ESP32-H4 and ESP32-H21 (initially assumed addable) both
    have their BLE/802.15.4 capability defines commented out on this
    repo's exact pinned ESP-IDF version (v5.5.4), so they were left out
-   rather than added and silently broken.
-2. Implement Matter **OTA** — partially done. All eight firmware types ship
+   rather than added and silently broken. Also: each device-type card on
+   Get Started gained its own hand-drawn line-art icon
+   (`DEVICE_TYPE_ICONS`), styled after Apple's own SF Symbols/HomeKit
+   icons — refined after a first pass (thinner strokes, no redundant
+   frame around the icon since the card button already has one) per
+   feedback, then caught and fixed a real problem by actually rendering
+   the page with a headless Chromium (installed specifically for this)
+   rather than just reading the SVG markup: the outlet icon (bare
+   circle + 2 dots) read as a smiley face once rendered at real card
+   size, so it got its wall-plate square frame back as the one
+   deliberate exception. Screenshot-checking wizard changes this way —
+   not just the Node.js harness's structural smoke tests — is worth
+   doing for any future visual-design change to this file.
+
+   A ninth device type, `firmware/color-light/` (still declared as the
+   `ExtendedColorLight` device type, 0x010D), followed — the last of
+   the three options offered together back when dimmable light was
+   chosen (dimmable light and window covering were the other two, both
+   already built). Implements exactly one ColorControl mode
+   (Hue/Saturation) rather than esp-matter's own
+   `endpoint::extended_color_light::create()` default of Xy +
+   ColorTemperature (confirmed in source that helper never actually
+   wires up HueSaturation at all, despite that being what most
+   controllers' color wheels drive first) — same "smallest reasonable
+   next step" scoping as dimmable-light/window-covering, avoiding two
+   more real colorimetry conversions (CIE xyY→RGB,
+   correlated-color-temperature→RGB) this session judged out of scope.
+   Built by calling esp-matter's own lower-level free functions directly
+   rather than the higher-level endpoint helper — the first device type
+   in this repo assembled that way. One real compile error (a namespace-
+   qualification slip) was caught by an actual Docker build, fixed on
+   the second attempt. Build-verified in Docker; not hardware-tested (no
+   RGB LED/driver board physically available when written). See its own
+   repository-layout entry above for the full detail.
+
+   Building this device type also surfaced and fixed a real, previously
+   latent bug in the wizard's `extraButtons` mechanism: it was designed
+   only for switch's *variable* 1-4 button count, and assumed that shape
+   everywhere (a "how many?" picker, a `buttonCountDefineName` always
+   present, hardcoded "BUTTON N" labels). Color-light's Green/Blue
+   channels needed the same array-of-extra-GPIO-fields shape but as a
+   *fixed* set — always all three, no picker, no count `#define`. Fixed
+   by adding a `hasVariableButtonCount` check (true only when
+   `buttonCountDefineName` is set) that gates the picker/count-sed logic,
+   plus per-entry `label` fields (and a device-type-level `driverLabel`)
+   so summary rows say "RED CHANNEL" instead of the switch-specific
+   "BUTTON 1" fallback. This also caught a second, independently real
+   bug while fixing the first: `isProductComplete()` computed its own
+   `buttonCount` separately from `renderConfigureDevice()`'s, defaulting
+   to 1 instead of the fixed device type's true count whenever called
+   before Configure Device had rendered even once — meaning a
+   fixed-3-field product could have been reported "complete" with only
+   1 of 3 required fields actually set. Fixed the same way in both
+   places, and added a smoke test that calls `isProductComplete()`
+   first, with no prior render, specifically to catch a regression here.
+2. Implement Matter **OTA** — partially done. All nine firmware types ship
    `CONFIG_ENABLE_OTA_REQUESTOR=y`, which adds the OTA Requestor cluster
    to the root node endpoint entirely via Kconfig — esp-matter's own core
    startup (`esp_matter_core.cpp`) calls

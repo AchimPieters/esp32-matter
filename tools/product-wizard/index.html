@@ -938,8 +938,19 @@ const DEVICE_TYPES = [
     // Buttons 2-4 — only rendered/sed'd up to the selected button count.
     // Defaults mirror app_main.cpp's SWITCH_BUTTON_2_GPIO/_3_GPIO/_4_GPIO
     // (GPIO 16/17/18 on classic ESP32 — none of them strapping pins).
+    // `driverLabel` is this device type's row-summary label for `driver`
+    // itself (button 1) — see the comment on `label` below for why both
+    // exist.
+    driverLabel: "Button 1",
     extraButtons: [
       {
+        // Short label for review/summary rows (BUTTON 2, BUTTON 3, ...) —
+        // added alongside firmware/color-light/'s Green/Blue channels,
+        // which reuse this same extraButtons mechanism for a fixed set of
+        // GPIO fields that aren't "buttons" at all; a hardcoded "BUTTON N"
+        // fallback would be the wrong copy for that device type, so each
+        // entry now names itself instead.
+        label: "Button 2",
         fieldLabel: "Button 2 GPIO pin",
         blockTitle: "Button 2 · digital GPIO input",
         filePath: "firmware/switch/main/app_main.cpp",
@@ -948,6 +959,7 @@ const DEVICE_TYPES = [
         defaultsByModule: { esp32: 16, esp32c3: 16, esp32c6: 16, esp32s3: 16, esp32h2: 16 },
       },
       {
+        label: "Button 3",
         fieldLabel: "Button 3 GPIO pin",
         blockTitle: "Button 3 · digital GPIO input",
         filePath: "firmware/switch/main/app_main.cpp",
@@ -956,6 +968,7 @@ const DEVICE_TYPES = [
         defaultsByModule: { esp32: 17, esp32c3: 17, esp32c6: 17, esp32s3: 17, esp32h2: 17 },
       },
       {
+        label: "Button 4",
         fieldLabel: "Button 4 GPIO pin",
         blockTitle: "Button 4 · digital GPIO input",
         filePath: "firmware/switch/main/app_main.cpp",
@@ -1310,6 +1323,64 @@ const DEVICE_TYPES = [
       defaultsByModule: { esp32: 2, esp32c2: 2, esp32c3: 2, esp32c5: 2, esp32c6: 2, esp32c61: 2, esp32s3: 2, esp32h2: 2 },
     },
   },
+  {
+    id: "color-light",
+    name: "Color Light",
+    desc: "Matter color light: On/Off + LevelControl (brightness) + ColorControl (Hue/Saturation only — not XY or color temperature, a deliberately smaller scope than esp-matter's own extended_color_light helper defaults to). Three PWM channels drive an RGB LED. Reference device in firmware/color-light/.",
+    shortDesc: "RGB light, hue + saturation + brightness.",
+    // Matches project(matter_color_light) in
+    // firmware/color-light/CMakeLists.txt. Three PWM channels (Red =
+    // `driver`, Green/Blue = `extraButtons`) — reuses the same
+    // `extraButtons` array shape firmware/switch/ uses for its 2-4
+    // buttons, but as a *fixed* set (no `buttonCountDefineName` on this
+    // entry, unlike switch's), so renderConfigureDevice/isProductComplete/
+    // etc. always show and require all three fields rather than offering
+    // a "how many" picker — see the `hasVariableButtonCount` comment in
+    // renderConfigureDevice for the exact mechanism. `driverLabel`/each
+    // entry's own `label` give these fields their real names (RED
+    // CHANNEL/GREEN CHANNEL/BLUE CHANNEL) in summary rows instead of the
+    // switch-specific "BUTTON N" fallback.
+    binName: "matter_color_light.bin",
+    driverLabel: "Red Channel",
+    driver: {
+      summary: "Red channel · GPIO (PWM output, LEDC)",
+      fieldLabel: "Red channel GPIO pin",
+      blockTitle: "Red channel · PWM output (LEDC)",
+      filePath: "firmware/color-light/main/app_main.cpp",
+      defineName: "COLOR_LIGHT_RED_GPIO",
+      currentGpio: 2,
+      defaultsByModule: { esp32: 2, esp32c2: 2, esp32c3: 2, esp32c5: 2, esp32c6: 2, esp32c61: 2, esp32s3: 2, esp32h2: 2 },
+    },
+    extraButtons: [
+      {
+        label: "Green Channel",
+        fieldLabel: "Green channel GPIO pin",
+        blockTitle: "Green channel · PWM output (LEDC)",
+        filePath: "firmware/color-light/main/app_main.cpp",
+        defineName: "COLOR_LIGHT_GREEN_GPIO",
+        currentGpio: 4,
+        defaultsByModule: { esp32: 4, esp32c2: 4, esp32c3: 4, esp32c5: 4, esp32c6: 4, esp32c61: 4, esp32s3: 4, esp32h2: 4 },
+      },
+      {
+        label: "Blue Channel",
+        fieldLabel: "Blue channel GPIO pin",
+        blockTitle: "Blue channel · PWM output (LEDC)",
+        filePath: "firmware/color-light/main/app_main.cpp",
+        defineName: "COLOR_LIGHT_BLUE_GPIO",
+        currentGpio: 5,
+        defaultsByModule: { esp32: 5, esp32c2: 5, esp32c3: 5, esp32c5: 5, esp32c6: 5, esp32c61: 5, esp32s3: 5, esp32h2: 5 },
+      },
+    ],
+    identify: {
+      summary: "GPIO (digital output)",
+      fieldLabel: "Identify LED GPIO pin",
+      blockTitle: "Identify LED · digital output",
+      filePath: "firmware/color-light/main/app_main.cpp",
+      defineName: "IDENTIFY_LED_GPIO",
+      currentGpio: 15,
+      defaultsByModule: { esp32: 15, esp32c2: 15, esp32c3: 15, esp32c5: 15, esp32c6: 15, esp32c61: 15, esp32s3: 15, esp32h2: 15 },
+    },
+  },
 ];
 
 function findDeviceType(id) {
@@ -1574,6 +1645,17 @@ const DEVICE_TYPE_ICONS = {
     <path d="M6 24h36" stroke-width="2"/>
     <path d="M6 31h36" stroke-width="2"/>
   </svg>`,
+  // Three overlapping circles under the bulb — the standard monochrome
+  // "RGB/color mixing" motif, since the icon itself can't actually use
+  // color (single `currentColor` stroke, same as every other icon here).
+  "color-light": `<svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+    <circle cx="24" cy="15" r="8.5"/>
+    <path d="M19.5 25.5h9"/>
+    <path d="M20.5 29h7"/>
+    <circle cx="18.5" cy="38.5" r="5"/>
+    <circle cx="24" cy="38.5" r="5"/>
+    <circle cx="29.5" cy="38.5" r="5"/>
+  </svg>`,
 };
 
 // `title` becomes each badge's hover tooltip. `zigbee`'s tooltip carries
@@ -1752,9 +1834,21 @@ function renderConfigureDevice(p) {
   // migration. Buttons 2+ are extraButtons, shown/sed'd up to whatever
   // buttonCount is set to (1 = just button 1, same as before this feature
   // existed at all).
+  // A device type can use `extraButtons` two ways: a real variable count
+  // the user picks (switch's 1-4 buttons — has `buttonCountDefineName`,
+  // so the count gets its own sed line), or a fixed set of GPIO fields
+  // that are just always all shown/sed'd (e.g. firmware/color-light/'s
+  // Green/Blue channels alongside `driver`'s Red — there's no real "how
+  // many" choice, it's always all of them). No `buttonCountDefineName`
+  // on the device type is the signal for the fixed case.
   const maxButtons = extraButtons ? extraButtons.length + 1 : 1;
+  const hasVariableButtonCount = extraButtons && !!(deviceType && deviceType.buttonCountDefineName);
   if (extraButtons) {
-    if (!Number.isInteger(p.buttonCount) || p.buttonCount < 1 || p.buttonCount > maxButtons) p.buttonCount = 1;
+    if (hasVariableButtonCount) {
+      if (!Number.isInteger(p.buttonCount) || p.buttonCount < 1 || p.buttonCount > maxButtons) p.buttonCount = 1;
+    } else {
+      p.buttonCount = maxButtons;
+    }
     if (!Array.isArray(p.buttonGpios)) p.buttonGpios = [];
   }
   const buttonCount = extraButtons ? p.buttonCount : 1;
@@ -1796,7 +1890,7 @@ function renderConfigureDevice(p) {
   const secondaryFieldNeeded = !!secondary && !(selectedComponent && !selectedComponent.usesPin2);
 
   return `
-    <div class="configure-grid ${componentOptions || extraButtons || (extraPickers && extraPickers.length) ? "has-left-sidebar" : ""}">
+    <div class="configure-grid ${componentOptions || hasVariableButtonCount || (extraPickers && extraPickers.length) ? "has-left-sidebar" : ""}">
       ${componentOptions ? `
         <div class="config-sidebar">
           <h3>Sensor model</h3>
@@ -1823,7 +1917,7 @@ function renderConfigureDevice(p) {
             ${selectedComponent.note ? ` ${escapeHtml(selectedComponent.note)}` : ""}
           </p>
         </div>
-      ` : (extraButtons ? `
+      ` : (hasVariableButtonCount ? `
         <div class="config-sidebar">
           <h3>How many buttons?</h3>
           <p class="field-label">Each button becomes its own independently-bindable switch endpoint</p>
@@ -1995,7 +2089,7 @@ function renderConfigureDevice(p) {
           This only records your choices for now — it doesn't edit
           <code>${escapeHtml(driver ? driver.filePath : "app_main.cpp")}</code> yet. Applying them
           (replacing <code>${escapeHtml(driver ? driver.defineName : "")}</code>${activeExtraButtons.map((b) => `,
-          <code>${escapeHtml(b.defineName)}</code>`).join("")}${extraButtons ? `,
+          <code>${escapeHtml(b.defineName)}</code>`).join("")}${hasVariableButtonCount ? `,
           <code>${escapeHtml(deviceType.buttonCountDefineName)}</code>` : ""}${secondary ? `,
           <code>${escapeHtml(secondary.defineName)}</code>${secondaryFieldNeeded ? "" : " (kept at its default — unused by this sensor)"}` : ""}${statusLedOn ? `,
           <code>${escapeHtml(statusLed.defineName)}</code>` : ""}${identifyOn ? `,
@@ -2018,13 +2112,13 @@ function renderConfigureDevice(p) {
           <div class="summary-value">${escapeHtml(moduleName(p.target))}</div>
         </div>
         <div class="summary-row">
-          <div class="summary-label">${escapeHtml(extraButtons ? "BUTTON 1" : "DRIVER")}</div>
+          <div class="summary-label">${escapeHtml(extraButtons ? (deviceType.driverLabel || "DRIVER").toUpperCase() : "DRIVER")}</div>
           <div class="summary-value">${escapeHtml(selectedComponent ? `${selectedComponent.pin1Label} (${selectedComponent.bus})` : (driver ? driver.summary : "—"))}</div>
           <div class="summary-detail">IO pin: GPIO ${gpioValid ? p.gpioPin : "?"}</div>
         </div>
         ${activeExtraButtons.map((b, i) => `
           <div class="summary-row">
-            <div class="summary-label">BUTTON ${i + 2}</div>
+            <div class="summary-label">${escapeHtml((b.label || `Button ${i + 2}`).toUpperCase())}</div>
             <div class="summary-detail">IO pin: GPIO ${Number.isInteger(p.buttonGpios[i]) && p.buttonGpios[i] >= 0 ? p.buttonGpios[i] : "?"}</div>
           </div>
         `).join("")}
@@ -2184,9 +2278,19 @@ function isProductComplete(p) {
   // Multi-button devices (currently just the switch): every button GPIO up
   // to the selected buttonCount has to be valid too — buttonCount itself
   // defaults to 1 (just the always-present `driver` field) whenever the
-  // device type doesn't define extraButtons at all.
+  // device type doesn't define extraButtons at all. Fixed-count devices
+  // (extraButtons present but no buttonCountDefineName — see the comment
+  // on hasVariableButtonCount in renderConfigureDevice, e.g.
+  // firmware/color-light/'s Green/Blue channels) always need every field
+  // valid, not just the first — computed independently here (not read
+  // from p.buttonCount) so this validates correctly even if
+  // renderConfigureDevice() hasn't run yet to default-fill it.
   const extraButtons = deviceType ? deviceType.extraButtons : null;
-  const buttonCount = extraButtons ? (Number.isInteger(p.buttonCount) ? p.buttonCount : 1) : 1;
+  const hasVariableButtonCount = extraButtons && !!(deviceType && deviceType.buttonCountDefineName);
+  const maxButtons = extraButtons ? extraButtons.length + 1 : 1;
+  const buttonCount = extraButtons
+    ? (hasVariableButtonCount ? (Number.isInteger(p.buttonCount) ? p.buttonCount : 1) : maxButtons)
+    : 1;
   const buttonsOk = !extraButtons || extraButtons.slice(0, buttonCount - 1).every((b, i) =>
     Array.isArray(p.buttonGpios) && Number.isInteger(p.buttonGpios[i]) && p.buttonGpios[i] >= 0);
   const statusLedOk = !(deviceType && deviceType.statusLed) || !statusLedIsEnabled(p) ||
@@ -2291,7 +2395,7 @@ function renderCustomiseReview(p) {
         })()}
         <div class="review-row">
           <div>
-            <div class="summary-label">${escapeHtml(findDeviceType(p.deviceType) && findDeviceType(p.deviceType).extraButtons ? "BUTTON 1" : "DRIVER")}</div>
+            <div class="summary-label">${escapeHtml(findDeviceType(p.deviceType) && findDeviceType(p.deviceType).extraButtons ? ((findDeviceType(p.deviceType).driverLabel || "DRIVER").toUpperCase()) : "DRIVER")}</div>
             <div class="summary-value">${escapeHtml(driverSummary(p.deviceType))} &middot; IO pin GPIO ${p.gpioPin != null ? p.gpioPin : "?"}</div>
           </div>
           <button class="link" data-goto-step="2">Edit</button>
@@ -2299,11 +2403,13 @@ function renderCustomiseReview(p) {
         ${(() => {
           const dt = findDeviceType(p.deviceType);
           if (!dt || !dt.extraButtons) return "";
-          const buttonCount = Number.isInteger(p.buttonCount) ? p.buttonCount : 1;
+          const dtHasVariableCount = !!dt.buttonCountDefineName;
+          const dtMaxButtons = dt.extraButtons.length + 1;
+          const buttonCount = dtHasVariableCount ? (Number.isInteger(p.buttonCount) ? p.buttonCount : 1) : dtMaxButtons;
           return dt.extraButtons.slice(0, buttonCount - 1).map((b, i) => `
             <div class="review-row">
               <div>
-                <div class="summary-label">BUTTON ${i + 2}</div>
+                <div class="summary-label">${escapeHtml((b.label || `Button ${i + 2}`).toUpperCase())}</div>
                 <div class="summary-value">IO pin GPIO ${Array.isArray(p.buttonGpios) && p.buttonGpios[i] != null ? p.buttonGpios[i] : "?"}</div>
               </div>
               <button class="link" data-goto-step="2">Edit</button>
@@ -2404,12 +2510,14 @@ function renderGenerateFirmware(p) {
   const selectedSensor = deviceType && deviceType.componentOptions
     ? (findComponent(p.component) || findComponent(deviceType.componentOptions[0]))
     : null;
+  const dtHasVariableButtonCount = !!(deviceType && deviceType.extraButtons && deviceType.buttonCountDefineName);
   const buttonCount = deviceType && deviceType.extraButtons
-    ? (Number.isInteger(p.buttonCount) ? p.buttonCount : 1)
+    ? (dtHasVariableButtonCount ? (Number.isInteger(p.buttonCount) ? p.buttonCount : 1) : deviceType.extraButtons.length + 1)
     : 1;
   const extraButtonGpios = deviceType && deviceType.extraButtons
     ? deviceType.extraButtons.slice(0, buttonCount - 1).map((b, i) => (Array.isArray(p.buttonGpios) && p.buttonGpios[i] != null ? p.buttonGpios[i] : b.currentGpio))
     : [];
+  const extraButtonNoun = dtHasVariableButtonCount ? "button" : "channel";
 
   return `
     <div class="step-panel">
@@ -2417,7 +2525,7 @@ function renderGenerateFirmware(p) {
       <p class="step-hint">
         For "${escapeHtml(p.name)}" —
         <strong>${escapeHtml(deviceTypeName(p.deviceType))}</strong>${selectedSensor ? ` (<strong>${escapeHtml(selectedSensor.name)}</strong>)` : ""} on
-        <strong>${escapeHtml(moduleName(p.target))}</strong>, GPIO ${p.gpioPin}${extraButtonGpios.length ? ` (+ button${extraButtonGpios.length === 1 ? "" : "s"} on GPIO ${extraButtonGpios.join(", ")})` : ""}${deviceType && deviceType.secondary ? ` (${escapeHtml((deviceType.secondary.label || "secondary").toLowerCase())} on GPIO ${p.secondaryGpioPin})` : ""}${deviceType && deviceType.statusLed && statusLedIsEnabled(p) ? ` (status LED on GPIO ${p.statusLedGpioPin})` : ""}${identifyIsEnabled(p) ? ` (identify LED on GPIO ${p.identifyGpioPin})` : ""}.
+        <strong>${escapeHtml(moduleName(p.target))}</strong>, GPIO ${p.gpioPin}${extraButtonGpios.length ? ` (+ ${extraButtonNoun}${extraButtonGpios.length === 1 ? "" : "s"} on GPIO ${extraButtonGpios.join(", ")})` : ""}${deviceType && deviceType.secondary ? ` (${escapeHtml((deviceType.secondary.label || "secondary").toLowerCase())} on GPIO ${p.secondaryGpioPin})` : ""}${deviceType && deviceType.statusLed && statusLedIsEnabled(p) ? ` (status LED on GPIO ${p.statusLedGpioPin})` : ""}${identifyIsEnabled(p) ? ` (identify LED on GPIO ${p.identifyGpioPin})` : ""}.
         This is the exact two-step flow validated end to end on real
         hardware for this device type: build, then flash. Nothing runs
         automatically — you paste and run each command yourself.

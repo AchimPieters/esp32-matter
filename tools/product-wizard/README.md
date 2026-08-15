@@ -27,17 +27,22 @@ open tools/product-wizard/index.html
   Sensor" (`firmware/contact-sensor/`), "Outlet" (`firmware/outlet/`),
   "Temperature Sensor" (`firmware/temperature-sensor/`), "Light
   Sensor" (`firmware/light-sensor/`), "Dimmable Light"
-  (`firmware/dimmable-light/`), or "Window Covering"
-  (`firmware/window-covering/`). All eight are real, buildable
+  (`firmware/dimmable-light/`), "Window Covering"
+  (`firmware/window-covering/`), or "Color Light"
+  (`firmware/color-light/`). All nine are real, buildable
   firmware, not just UI placeholders. Each card has its own hand-drawn
   line-art icon (`DEVICE_TYPE_ICONS` in `index.html`), in the spirit of
   Apple's own SF Symbols/HomeKit accessory icons — not the actual Apple
   assets (those are proprietary), but drawn to read the same way: light
   2.5px strokes, no background chrome baked into the icon itself (the
   card button it sits inside already has its own border, so an icon-level
-  border too would double-frame it). The full technical description that
-  used to be the only visible text is now the card's hover tooltip; the
-  visible text is a short `shortDesc` (a handful of words) per entry.
+  border too would double-frame it) — with one deliberate exception, the
+  outlet icon, which got its own square wall-plate frame back after
+  rendering the page with a headless Chromium (installed specifically to
+  check this) and seeing that a bare circle-with-2-dots reads as a smiley
+  face at real card size, not an outlet. The full technical description
+  that used to be the only visible text is now the card's hover tooltip;
+  the visible text is a short `shortDesc` (a handful of words) per entry.
 - **Select Module (step 2)** — pick a target chip (ESP32, C2, C3, C5, C6,
   C61, S3, H2), mirroring what `tools/dev.sh` + `idf.py set-target`
   actually support. A small bordered "Matter" badge (every module here
@@ -430,6 +435,35 @@ hardware-tested (no motor/relay hardware for this device type physically
 available when written) — see `firmware/window-covering/main/app_main.cpp`'s
 header comment for the full explanation.
 
+The color light (`firmware/color-light/`, still `ExtendedColorLight`
+device type) is the last of the same three-way offer — a color light
+(the other option not picked). Implements exactly one ColorControl mode
+(Hue/Saturation, RGB-only — no white channel), not esp-matter's own
+`endpoint::extended_color_light::create()` default of Xy + color
+temperature, confirmed in esp-matter's source to never actually add
+HueSaturation despite that being what most controllers' color wheels
+drive first — same "smallest reasonable next step" scoping as dimmable
+light/window covering. Its `DEVICE_TYPES` entry reuses `extraButtons`
+(previously switch-only) for the Green/Blue channels alongside `driver`'s
+Red — but as a *fixed* set, not switch's variable 1-4 count. This
+surfaced and fixed two real, previously-latent bugs in that shared
+mechanism: it assumed a "how many?" picker and a `buttonCountDefineName`
+would always be present (now gated behind a new
+`hasVariableButtonCount` check, with per-entry `label` fields so summary
+rows say "RED CHANNEL" instead of the switch-specific "BUTTON 1"
+fallback), and `isProductComplete()` computed its own `buttonCount`
+separately from Configure Device's, defaulting to 1 instead of a fixed
+device type's true count whenever called before that step had ever
+rendered — meaning a 3-channel product could have been reported
+"complete" with 2 of 3 fields still unset. Both fixed, with a new smoke
+test specifically calling `isProductComplete()` with no prior render to
+catch a regression. Built by calling esp-matter's own lower-level free
+functions directly rather than the higher-level endpoint helper — the
+first device type in this repo assembled that way. Build-verified in
+Docker; not hardware-tested (no RGB LED/driver board physically
+available when written) — see `firmware/color-light/main/app_main.cpp`'s
+header comment for the full explanation.
+
 Reflashing a board that was previously commissioned with different
 firmware/identity (as happened testing this, repeatedly, across several
 of these device types) leaves stale fabric data in NVS — the write-flash
@@ -442,18 +476,18 @@ testing does.
 
 ## Known limitations
 
-- Eight device types exist (`On/Off Light`, `On/Off Switch`, `Contact
+- Nine device types exist (`On/Off Light`, `On/Off Switch`, `Contact
   Sensor`, `Outlet`, `Temperature Sensor`, `Light Sensor`, `Dimmable
-  Light`, `Window Covering`) — light/switch/contact/outlet are all digital
-  GPIO, temperature is this repo's first non-GPIO sensor (I2C, single-wire,
-  or 1-Wire depending which of its 7 supported chips you pick), light
-  sensor is the first analog/ADC one, dimmable light is the first with a
-  real actuator beyond simple on/off (PWM output via LEDC), and window
-  covering is the first with continuous, multi-second physical movement
-  (two relays + time-based position estimation, no position sensor). A
-  color light (the option not picked when window covering was chosen from
-  the same three) is a reasonable further `DEVICE_TYPES` entry (see the
-  comment above that array in `index.html`).
+  Light`, `Window Covering`, `Color Light`) — light/switch/contact/outlet
+  are all digital GPIO, temperature is this repo's first non-GPIO sensor
+  (I2C, single-wire, or 1-Wire depending which of its 7 supported chips
+  you pick), light sensor is the first analog/ADC one, dimmable light is
+  the first with a real actuator beyond simple on/off (PWM output via
+  LEDC), window covering is the first with continuous, multi-second
+  physical movement (two relays + time-based position estimation, no
+  position sensor), and color light is the first with more than one PWM
+  output channel driving one light (RGB, three channels). All three
+  options from the original "next actuator" offer have now been built.
 - The window covering has no position sensor of any kind — position is
   estimated purely from calibrated motor-on time (linear interpolation),
   the same technique ESPHome's/Tasmota's own time-based cover components
