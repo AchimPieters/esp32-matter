@@ -29,7 +29,15 @@ open tools/product-wizard/index.html
   Sensor" (`firmware/light-sensor/`), "Dimmable Light"
   (`firmware/dimmable-light/`), or "Window Covering"
   (`firmware/window-covering/`). All eight are real, buildable
-  firmware, not just UI placeholders.
+  firmware, not just UI placeholders. Each card has its own hand-drawn
+  line-art icon (`DEVICE_TYPE_ICONS` in `index.html`), in the spirit of
+  Apple's own SF Symbols/HomeKit accessory icons — not the actual Apple
+  assets (those are proprietary), but drawn to read the same way: light
+  2.5px strokes, no background chrome baked into the icon itself (the
+  card button it sits inside already has its own border, so an icon-level
+  border too would double-frame it). The full technical description that
+  used to be the only visible text is now the card's hover tooltip; the
+  visible text is a short `shortDesc` (a handful of words) per entry.
 - **Select Module (step 2)** — pick a target chip (ESP32, C2, C3, C5, C6,
   C61, S3, H2), mirroring what `tools/dev.sh` + `idf.py set-target`
   actually support. A small bordered "Matter" badge (every module here
