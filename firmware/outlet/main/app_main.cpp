@@ -54,11 +54,28 @@
  * ON whenever the ESP32 is unpowered or mid-boot, which is a real safety
  * consideration for anything switching mains. OUTLET_OUTPUT_TYPE picks
  * which polarity set_output() below actually drives:
- *   OUTLET_OUTPUT_LED   (default) — active-HIGH, matches every version of
- *                        this file before this option existed.
- *   OUTLET_OUTPUT_RELAY — active-LOW. Always double-check your specific
- *                        relay module's own documentation — "most common
- *                        low-cost modules" is not a guarantee for yours.
+ *   OUTLET_OUTPUT_RELAY (default) — active-LOW. A relay is what an actual
+ *                        power outlet/smart plug normally switches with —
+ *                        this is the realistic default, not the LED that
+ *                        was this option's only choice before it existed.
+ *                        Always double-check your specific relay module's
+ *                        own documentation — "most common low-cost
+ *                        modules" is not a guarantee for yours.
+ *   OUTLET_OUTPUT_LED    — active-HIGH, matches every version of this file
+ *                        before this option existed. Mainly useful for
+ *                        breadboard testing without a relay module on hand.
+ *
+ * --- Status LED (OUTLET_STATUS_LED_GPIO) --------------------------------
+ * Optional, off by default (GPIO_NUM_NC — ESP-IDF's "not connected"
+ * sentinel). Some real plug/outlet hardware has its own small indicator
+ * LED, wired to its own GPIO, that continuously mirrors the outlet's
+ * actual on/off state — different from IDENTIFY_LED_GPIO below, which
+ * only blinks temporarily in response to a controller's Identify command
+ * and says nothing about on/off state. Set this to a real GPIO to enable
+ * it; set_output() then drives it (plain active-HIGH: GPIO HIGH when the
+ * outlet is on) every time the on/off state changes, from any source —
+ * button press, remote controller command, or Identify's own STOP action
+ * restoring the real state afterwards.
  *
  * --- Power monitoring (OUTLET_POWER_MONITOR) ---------------------------
  * Optional, off by default (OUTLET_POWER_MONITOR_NONE). When enabled, adds
@@ -310,6 +327,11 @@ static const char *TAG = "matter_outlet";
 #define IDENTIFY_LED_GPIO GPIO_NUM_2
 #define IDENTIFY_BLINK_INTERVAL_MS 500
 
+/* Optional separate on/off status indicator — see the header comment above
+ * for how this differs from IDENTIFY_LED_GPIO. GPIO_NUM_NC ("not
+ * connected") disables it; not every board has this LED wired up. */
+#define OUTLET_STATUS_LED_GPIO GPIO_NUM_5
+
 /* --- Power monitoring — see the header comment above for the full
  * protocol/formula explanation and sourcing for each chip. Six real
  * chips are supported, falling into three genuinely different protocol
@@ -448,6 +470,12 @@ static esp_timer_handle_t identify_led_timer = NULL;
  * else writes it directly, so there's exactly one source of truth. */
 static bool outlet_state = false;
 
+/* Set once in app_main() by setup_status_led(), below — GPIO_NUM_NC can't be
+ * checked with #if (it's a gpio_num_t enumerator, not a preprocessor
+ * macro), so whether the status LED is wired up at all is a runtime check,
+ * not a compile-time one like OUTLET_POWER_MONITOR's #if branches. */
+static bool status_led_enabled = false;
+
 static void set_output(bool on)
 {
 #if OUTLET_OUTPUT_ACTIVE_LOW
@@ -455,6 +483,25 @@ static void set_output(bool on)
 #else
     gpio_set_level(OUTLET_GPIO, on ? 1 : 0);
 #endif
+    if (status_led_enabled) {
+        gpio_set_level(OUTLET_STATUS_LED_GPIO, on ? 1 : 0);
+    }
+}
+
+/* Configures OUTLET_STATUS_LED_GPIO as an output if it's actually been set
+ * to a real pin (GPIO_NUM_NC, the shipped default, means "not wired up" —
+ * skip entirely). Call once from app_main(), before the first set_output(). */
+static void setup_status_led(void)
+{
+    if (OUTLET_STATUS_LED_GPIO == GPIO_NUM_NC) {
+        return;
+    }
+    gpio_config_t status_led_conf = {};
+    status_led_conf.pin_bit_mask = (1ULL << OUTLET_STATUS_LED_GPIO);
+    status_led_conf.mode = GPIO_MODE_OUTPUT;
+    gpio_config(&status_led_conf);
+    status_led_enabled = true;
+    gpio_set_level(OUTLET_STATUS_LED_GPIO, 0);
 }
 
 /* Toggles the identify LED each time the timer fires — the actual blink. */
@@ -1311,11 +1358,16 @@ extern "C" void app_main(void)
         ESP_ERROR_CHECK(nvs_flash_init());
     }
 
-    /* 2. Configure the output (LED/relay). */
+    /* 2. Configure the output (LED/relay), plus the optional status LED
+     * (no-op if OUTLET_STATUS_LED_GPIO is still GPIO_NUM_NC — see
+     * setup_status_led()) — status_led_enabled has to be set before the
+     * first set_output() call below so that call's own LED level is
+     * correct too, not just the ones that follow it. */
     gpio_config_t io_conf = {};
     io_conf.pin_bit_mask = (1ULL << OUTLET_GPIO);
     io_conf.mode = GPIO_MODE_OUTPUT;
     gpio_config(&io_conf);
+    setup_status_led();
     set_output(false);
 
     /* 2b. Configure the button input + its interrupt. */

@@ -234,27 +234,49 @@ comment for the full explanation.
 
 The outlet later gained two more checkable-list pickers in Configure
 Device, stacked in the same left sidebar as the sensor-model/button-count
-pickers: **Output** (LED vs. Relay — a relay module is active-LOW, LED
-default is active-HIGH) and **Power Monitoring** (None, or one of six
-chips: BL0942, BL0937, HLW8012, CSE7759, CSE7766, ADE7953). These use a
-new `extraPickers` array on the `DEVICE_TYPES` entry, deliberately kept
-separate from `componentOptions` — reusing `componentOptions` here would
-have incorrectly fed these choices into the GPIO-field-labeling logic
-(`driverLabel`/`secondaryFieldNeeded`) that only makes sense for a
-sensor's own pin naming, not for a choice that doesn't affect any GPIO
-field's label at all. Each `extraPickers` entry independently drives its
-own sed line (`defineName`/`defineValue`, same non-GPIO `#define`-selects-
-a-branch pattern `componentDefineName` already used for `SENSOR_TYPE`),
-its own review row in Customise & Review, and its own unverified-warning
-box in Generate Firmware — with an extra explicit caveat singled out for
-ADE7953, since it's the least-certain of the six drivers (see
-`firmware/outlet/main/app_main.cpp`'s header comment for exactly why).
-Picking "None" for Power Monitoring is the default and has no build
-impact beyond the one `#define`; picking a chip pulls in that chip's
-driver and a second Matter endpoint (Electrical Sensor). None of the six
-chips has been tested on real hardware here — flagged as such throughout,
-same standard as the other build-verified-but-not-hardware-tested pieces
-in this repo.
+pickers: **Output** (Relay default — active-LOW, what an actual power
+outlet/smart plug normally switches with — or LED, active-HIGH, mainly for
+breadboard testing without a relay on hand) and **Power Monitoring** (None,
+or one of six chips: BL0942, BL0937, HLW8012, CSE7759, CSE7766, ADE7953).
+These use a new `extraPickers` array on the `DEVICE_TYPES` entry,
+deliberately kept separate from `componentOptions` — reusing
+`componentOptions` here would have incorrectly fed these choices into the
+GPIO-field-labeling logic (`driverLabel`/`secondaryFieldNeeded`) that only
+makes sense for a sensor's own pin naming, not for a choice that doesn't
+affect any GPIO field's label at all. Each `extraPickers` entry
+independently drives its own sed line (`defineName`/`defineValue`, same
+non-GPIO `#define`-selects-a-branch pattern `componentDefineName` already
+used for `SENSOR_TYPE`), its own review row in Customise & Review, and its
+own unverified-warning box in Generate Firmware — with an extra explicit
+caveat singled out for ADE7953, since it's the least-certain of the six
+drivers (see `firmware/outlet/main/app_main.cpp`'s header comment for
+exactly why). Picking "None" for Power Monitoring is the default and has
+no build impact beyond the one `#define`; picking a chip pulls in that
+chip's driver and a second Matter endpoint (Electrical Sensor). None of
+the six chips has been tested on real hardware here — flagged as such
+throughout, same standard as the other build-verified-but-not-hardware-
+tested pieces in this repo.
+
+Each power-monitor `COMPONENT_LIBRARY` entry also carries a `pins` array —
+its chip's own GPIOs (BL0942/CSE7766's UART RX/TX, BL0937/HLW8012/
+CSE7759's shared SEL/CF/CF1 pulse pins, ADE7953's I2C SDA/SCL), each with a
+label, `#define` name, and per-module default — so Configure Device shows
+real, editable GPIO fields for whichever chip you actually pick, not just
+the picker itself; a real gap in the first version of this feature, where
+picking a chip gave no way to configure the pins it needs at all.
+CSE7766 only exposes one field (RX) even though its `#define`s include a
+TX pin too — the chip only transmits and this firmware only reads, so the
+ESP32's own TX line goes nowhere useful, same "don't show a field the
+driver doesn't use" principle as the temperature sensor's `usesPin2`.
+HLW8012 and CSE7759 point at the exact same `PULSE_METER_*` `#define`
+names as BL0937 (all three share one code path in `app_main.cpp`), so
+their pin fields are deliberately identical, not chip-specific. There's
+also a separate, independently-optional **Status LED** field/checkbox
+(off by default, same shape as the required Identify LED's own checkbox)
+for `OUTLET_STATUS_LED_GPIO` — some real plug hardware has a small
+indicator LED, on its own GPIO, that continuously mirrors on/off state,
+which is a different thing from Identify (which only blinks temporarily
+on a controller's Identify command).
 
 The temperature sensor (`temperature_sensor` + `humidity_sensor`, one
 node with two endpoints — Matter has no single device type for both from

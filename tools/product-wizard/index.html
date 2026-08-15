@@ -777,13 +777,45 @@ const COMPONENT_LIBRARY = {
   // componentOptions/driverLabel code path rather than shoehorned into it.
   LED_OUTPUT: { name: "LED", category: "output", bus: "GPIO", verified: true, defineValue: "OUTLET_OUTPUT_LED" },
   RELAY_OUTPUT: { name: "Relay", category: "output", bus: "GPIO", verified: false, defineValue: "OUTLET_OUTPUT_RELAY", note: "Active-LOW trigger — common for low-cost relay modules (GPIO LOW energizes the relay), but always check your specific module's own documentation before relying on it." },
-  POWER_NONE: { name: "None", category: "power-monitor", bus: "—", verified: true, defineValue: "OUTLET_POWER_MONITOR_NONE" },
-  POWER_BL0942: { name: "BL0942", category: "power-monitor", bus: "UART", verified: false, defineValue: "OUTLET_POWER_MONITOR_BL0942" },
-  POWER_BL0937: { name: "BL0937", category: "power-monitor", bus: "GPIO (pulse)", verified: false, defineValue: "OUTLET_POWER_MONITOR_BL0937" },
-  POWER_HLW8012: { name: "HLW8012", category: "power-monitor", bus: "GPIO (pulse)", verified: false, defineValue: "OUTLET_POWER_MONITOR_HLW8012" },
-  POWER_CSE7759: { name: "CSE7759", category: "power-monitor", bus: "GPIO (pulse)", verified: false, defineValue: "OUTLET_POWER_MONITOR_CSE7759", note: "Assumed to share HLW8012's formula (same chip family) per a secondary source — not independently confirmed against CSE7759's own datasheet." },
-  POWER_CSE7766: { name: "CSE7766", category: "power-monitor", bus: "UART", verified: false, defineValue: "OUTLET_POWER_MONITOR_CSE7766" },
-  POWER_ADE7953: { name: "ADE7953", category: "power-monitor", bus: "I2C", verified: false, defineValue: "OUTLET_POWER_MONITOR_ADE7953", note: "Least-certain of the six power-monitor drivers — only partially confirmed against Analog Devices' own datasheet across several attempts; double-check before relying on it." },
+  // `pins`: the GPIO(s) that chip's driver actually reads/drives in
+  // firmware/outlet/main/app_main.cpp, shown as extra numeric fields in
+  // Configure Device once that chip is selected (see renderConfigureDevice's
+  // extraPickers pin-block rendering) and sed'd in Generate Firmware —
+  // same "don't show a field the driver doesn't use" principle as
+  // COMPONENT_LIBRARY's usesPin2 for sensors (CSE7766 only exposes RX: its
+  // chip only transmits and this firmware only reads, so the ESP32's own
+  // TX line goes nowhere and isn't worth a confusing extra field).
+  POWER_NONE: { name: "None", category: "power-monitor", bus: "—", verified: true, defineValue: "OUTLET_POWER_MONITOR_NONE", pins: [] },
+  POWER_BL0942: { name: "BL0942", category: "power-monitor", bus: "UART", verified: false, defineValue: "OUTLET_POWER_MONITOR_BL0942", pins: [
+    { key: "rx", label: "UART RX", defineName: "BL0942_UART_RX_GPIO", defaultsByModule: { esp32: 16, esp32c3: 16, esp32c6: 16, esp32s3: 16, esp32h2: 16 } },
+    { key: "tx", label: "UART TX", defineName: "BL0942_UART_TX_GPIO", defaultsByModule: { esp32: 17, esp32c3: 17, esp32c6: 17, esp32s3: 17, esp32h2: 17 } },
+  ] },
+  POWER_BL0937: { name: "BL0937", category: "power-monitor", bus: "GPIO (pulse)", verified: false, defineValue: "OUTLET_POWER_MONITOR_BL0937", pins: [
+    { key: "sel", label: "SEL", defineName: "PULSE_METER_SEL_GPIO", defaultsByModule: { esp32: 25, esp32c3: 25, esp32c6: 25, esp32s3: 25, esp32h2: 25 } },
+    { key: "cf", label: "CF (power pulse)", defineName: "PULSE_METER_CF_GPIO", defaultsByModule: { esp32: 26, esp32c3: 26, esp32c6: 26, esp32s3: 26, esp32h2: 26 } },
+    { key: "cf1", label: "CF1 (V/I pulse)", defineName: "PULSE_METER_CF1_GPIO", defaultsByModule: { esp32: 27, esp32c3: 27, esp32c6: 27, esp32s3: 27, esp32h2: 27 } },
+  ] },
+  // HLW8012/CSE7759 reuse the exact same PULSE_METER_* #defines as BL0937 —
+  // all three share one code path in app_main.cpp (#if OUTLET_POWER_MONITOR
+  // == ...BL0937 || ...HLW8012 || ...CSE7759), so their pin fields have to
+  // point at the same defineNames, not chip-specific ones.
+  POWER_HLW8012: { name: "HLW8012", category: "power-monitor", bus: "GPIO (pulse)", verified: false, defineValue: "OUTLET_POWER_MONITOR_HLW8012", pins: [
+    { key: "sel", label: "SEL", defineName: "PULSE_METER_SEL_GPIO", defaultsByModule: { esp32: 25, esp32c3: 25, esp32c6: 25, esp32s3: 25, esp32h2: 25 } },
+    { key: "cf", label: "CF (power pulse)", defineName: "PULSE_METER_CF_GPIO", defaultsByModule: { esp32: 26, esp32c3: 26, esp32c6: 26, esp32s3: 26, esp32h2: 26 } },
+    { key: "cf1", label: "CF1 (V/I pulse)", defineName: "PULSE_METER_CF1_GPIO", defaultsByModule: { esp32: 27, esp32c3: 27, esp32c6: 27, esp32s3: 27, esp32h2: 27 } },
+  ] },
+  POWER_CSE7759: { name: "CSE7759", category: "power-monitor", bus: "GPIO (pulse)", verified: false, defineValue: "OUTLET_POWER_MONITOR_CSE7759", note: "Assumed to share HLW8012's formula (same chip family) per a secondary source — not independently confirmed against CSE7759's own datasheet.", pins: [
+    { key: "sel", label: "SEL", defineName: "PULSE_METER_SEL_GPIO", defaultsByModule: { esp32: 25, esp32c3: 25, esp32c6: 25, esp32s3: 25, esp32h2: 25 } },
+    { key: "cf", label: "CF (power pulse)", defineName: "PULSE_METER_CF_GPIO", defaultsByModule: { esp32: 26, esp32c3: 26, esp32c6: 26, esp32s3: 26, esp32h2: 26 } },
+    { key: "cf1", label: "CF1 (V/I pulse)", defineName: "PULSE_METER_CF1_GPIO", defaultsByModule: { esp32: 27, esp32c3: 27, esp32c6: 27, esp32s3: 27, esp32h2: 27 } },
+  ] },
+  POWER_CSE7766: { name: "CSE7766", category: "power-monitor", bus: "UART", verified: false, defineValue: "OUTLET_POWER_MONITOR_CSE7766", pins: [
+    { key: "rx", label: "UART RX", defineName: "CSE7766_UART_RX_GPIO", defaultsByModule: { esp32: 16, esp32c3: 16, esp32c6: 16, esp32s3: 16, esp32h2: 16 } },
+  ] },
+  POWER_ADE7953: { name: "ADE7953", category: "power-monitor", bus: "I2C", verified: false, defineValue: "OUTLET_POWER_MONITOR_ADE7953", note: "Least-certain of the six power-monitor drivers — only partially confirmed against Analog Devices' own datasheet across several attempts; double-check before relying on it.", pins: [
+    { key: "sda", label: "SDA", defineName: "ADE7953_SDA_GPIO", defaultsByModule: { esp32: 21, esp32c3: 21, esp32c6: 21, esp32s3: 21, esp32h2: 21 } },
+    { key: "scl", label: "SCL", defineName: "ADE7953_SCL_GPIO", defaultsByModule: { esp32: 22, esp32c3: 22, esp32c6: 22, esp32s3: 22, esp32h2: 22 } },
+  ] },
 };
 
 /* Device types this repo actually has firmware for (see firmware/). Each
@@ -969,7 +1001,12 @@ const DEVICE_TYPES = [
         key: "outputType",
         label: "Output",
         prompt: "Which output do you have wired up?",
-        options: ["LED_OUTPUT", "RELAY_OUTPUT"],
+        // Relay first (and therefore the default — see the picker
+        // default-fill logic below, options[0]): a real relay is the
+        // normal, typical output for an actual power outlet/smart plug.
+        // LED stays available second, mainly for breadboard testing
+        // without a relay module on hand.
+        options: ["RELAY_OUTPUT", "LED_OUTPUT"],
         defineName: "OUTLET_OUTPUT_TYPE",
       },
       {
@@ -1018,6 +1055,26 @@ const DEVICE_TYPES = [
       // header comment) — same GPIO here so the wizard's default matches.
       currentGpio: 2,
       defaultsByModule: { esp32: 2, esp32c3: 2, esp32c6: 2, esp32s3: 2, esp32h2: 2 },
+    },
+    // Optional third LED, distinct from Identify above: some real plug/
+    // outlet hardware has its own small indicator LED, wired to its own
+    // GPIO, that continuously mirrors the outlet's actual on/off state —
+    // not the same thing as Identify (which only blinks temporarily in
+    // response to a controller's Identify command, on any device type).
+    // Off by default (OUTLET_STATUS_LED_GPIO ships as GPIO_NUM_NC, ESP-IDF's
+    // "not connected" sentinel) since not every board has one — same
+    // opt-in-checkbox shape as `identify` above, just defaulting off
+    // instead of on. See statusLedIsEnabled()/the checkbox render block in
+    // renderConfigureDevice for how the two independently-toggleable LEDs
+    // are handled without hardcoding "outlet" anywhere in that logic.
+    statusLed: {
+      summary: "GPIO (digital output)",
+      fieldLabel: "Status LED GPIO pin",
+      blockTitle: "Status LED · digital output",
+      filePath: "firmware/outlet/main/app_main.cpp",
+      defineName: "OUTLET_STATUS_LED_GPIO",
+      currentGpio: 5,
+      defaultsByModule: { esp32: 5, esp32c3: 5, esp32c6: 5, esp32s3: 5, esp32h2: 5 },
     },
   },
   {
@@ -1375,11 +1432,20 @@ function identifyIsEnabled(p) {
   return p.identifyEnabled !== false;
 }
 
+// Status LED (currently outlet-only): opposite default from Identify above
+// — off unless explicitly turned on — since not every board has this
+// separate on/off indicator LED wired up at all, unlike Identify which
+// every device type ships with.
+function statusLedIsEnabled(p) {
+  return p.statusLedEnabled === true;
+}
+
 function renderConfigureDevice(p) {
   const deviceType = findDeviceType(p.deviceType);
   const driver = deviceType ? deviceType.driver : null;
   const secondary = deviceType ? deviceType.secondary : null;
   const identify = deviceType ? deviceType.identify : null;
+  const statusLed = deviceType ? deviceType.statusLed : null;
   const componentOptions = deviceType ? deviceType.componentOptions : null;
   const extraButtons = deviceType ? deviceType.extraButtons : null;
   const extraPickers = deviceType ? deviceType.extraPickers : null;
@@ -1387,6 +1453,8 @@ function renderConfigureDevice(p) {
   const defaultSecondaryGpio = secondary ? (secondary.defaultsByModule[p.target] != null ? secondary.defaultsByModule[p.target] : 4) : 4;
   const defaultIdentifyGpio = identify ? (identify.defaultsByModule[p.target] != null ? identify.defaultsByModule[p.target] : 4) : 4;
   const identifyOn = identifyIsEnabled(p);
+  const defaultStatusLedGpio = statusLed ? (statusLed.defaultsByModule[p.target] != null ? statusLed.defaultsByModule[p.target] : 5) : 5;
+  const statusLedOn = statusLed ? statusLedIsEnabled(p) : false;
 
   if (componentOptions && p.component == null) p.component = componentOptions[0];
   const selectedComponent = componentOptions ? (findComponent(p.component) || findComponent(componentOptions[0])) : null;
@@ -1397,11 +1465,36 @@ function renderConfigureDevice(p) {
   // p.component componentOptions uses — deliberately separate from
   // componentOptions since these choices don't drive driverLabel/
   // secondaryFieldNeeded pin-naming the way a sensor-model choice does.
+  // A selected component can also carry its own `pins` array (currently
+  // just the power-monitor chips) — those get defaulted into
+  // p.pickerPins, keyed by each pin's defineName (globally unique across
+  // chips, since HLW8012/CSE7759 intentionally share BL0937's
+  // PULSE_METER_* names — see the comment in COMPONENT_LIBRARY).
   if (extraPickers) {
+    if (typeof p.pickerPins !== "object" || p.pickerPins == null) p.pickerPins = {};
     extraPickers.forEach((picker) => {
       if (p[picker.key] == null) p[picker.key] = picker.options[0];
+      const selected = findComponent(p[picker.key]);
+      if (selected && Array.isArray(selected.pins)) {
+        selected.pins.forEach((pin) => {
+          if (p.pickerPins[pin.defineName] == null) {
+            p.pickerPins[pin.defineName] = pin.defaultsByModule[p.target] != null ? pin.defaultsByModule[p.target] : 0;
+          }
+        });
+      }
     });
   }
+  // Every pin field currently active across all extraPickers (e.g. both of
+  // BL0942's UART pins, or ADE7953's SDA/SCL) — flattened once so
+  // rendering/validation/summary don't each need their own copy of this walk.
+  const activePickerPins = extraPickers
+    ? extraPickers.flatMap((picker) => {
+        const selected = findComponent(p[picker.key]);
+        return selected && Array.isArray(selected.pins) ? selected.pins.map((pin) => ({ picker, pin })) : [];
+      })
+    : [];
+  const pickerPinsValid = activePickerPins.every(({ pin }) =>
+    Number.isInteger(p.pickerPins[pin.defineName]) && p.pickerPins[pin.defineName] >= 0);
 
   // Multi-button (currently just the switch): button 1 is always the
   // existing `driver` field, unchanged, so single-button products (every
@@ -1430,7 +1523,9 @@ function renderConfigureDevice(p) {
   const secondaryGpioValid = !secondary || (Number.isInteger(p.secondaryGpioPin) && p.secondaryGpioPin >= 0);
   const identifyGpioValid = !identifyOn || (Number.isInteger(p.identifyGpioPin) && p.identifyGpioPin >= 0);
   const sameGpio = identifyOn && gpioValid && identifyGpioValid && p.gpioPin === p.identifyGpioPin;
-  const allValid = gpioValid && secondaryGpioValid && identifyGpioValid && extraButtonsValid;
+  if (statusLed && p.statusLedGpioPin == null) p.statusLedGpioPin = defaultStatusLedGpio;
+  const statusLedGpioValid = !statusLedOn || (Number.isInteger(p.statusLedGpioPin) && p.statusLedGpioPin >= 0);
+  const allValid = gpioValid && secondaryGpioValid && identifyGpioValid && extraButtonsValid && statusLedGpioValid && pickerPinsValid;
 
   // Component-aware field labels: falls back to the device type's own
   // static text when there's no componentOptions list (every device type
@@ -1568,6 +1663,28 @@ function renderConfigureDevice(p) {
           </div>
         ` : ""}
 
+        ${extraPickers ? extraPickers.map((picker) => {
+          const selected = findComponent(p[picker.key]);
+          if (!selected || !Array.isArray(selected.pins) || !selected.pins.length) return "";
+          return `
+            <div class="driver-block">
+              <h3>${escapeHtml(picker.label)} · ${escapeHtml(selected.name)} (${escapeHtml(selected.bus)})</h3>
+              ${selected.pins.map((pin) => `
+                <label class="field-label" for="picker-pin-${escapeHtml(pin.defineName)}">${escapeHtml(pin.label)} GPIO pin</label>
+                <input type="number" id="picker-pin-${escapeHtml(pin.defineName)}" data-pin-define="${escapeHtml(pin.defineName)}" min="0" max="48" value="${p.pickerPins[pin.defineName]}" style="margin-bottom:12px;">
+                <div class="field-error">${Number.isInteger(p.pickerPins[pin.defineName]) && p.pickerPins[pin.defineName] >= 0 ? "" : "Enter a valid GPIO number (0 or higher)."}</div>
+              `).join("")}
+              <p class="field-note">
+                Adjust to match your board — these defaults are common for
+                ${escapeHtml(moduleName(p.target))} devkits, not a guarantee
+                for yours. Wiring/protocol details for ${escapeHtml(selected.name)}
+                are in the comment above its section in
+                ${escapeHtml(driver ? driver.filePath : "app_main.cpp")}.
+              </p>
+            </div>
+          `;
+        }).join("") : ""}
+
         <div class="driver-block">
           <label class="checkbox-label" for="identify-enabled">
             <input type="checkbox" id="identify-enabled" ${identifyOn ? "checked" : ""}>
@@ -1596,14 +1713,44 @@ function renderConfigureDevice(p) {
           ` : ""}
         </div>
 
+        ${statusLed ? `
+          <div class="driver-block">
+            <label class="checkbox-label" for="status-led-enabled">
+              <input type="checkbox" id="status-led-enabled" ${statusLedOn ? "checked" : ""}>
+              <h3 style="display:inline; margin:0;">Add a Status LED</h3>
+            </label>
+            <p class="field-note" style="margin-top:4px;">
+              A separate indicator LED some plug/outlet hardware has, wired
+              to its own GPIO, that continuously mirrors the outlet's actual
+              on/off state — different from the Identify LED above, which
+              only blinks temporarily on an Identify command. Off by
+              default since not every board has one; the firmware ships
+              this pin disabled (<code>GPIO_NUM_NC</code>) until you tick
+              this and set a real pin.
+            </p>
+
+            ${statusLedOn ? `
+              <label class="field-label" for="status-led-gpio-pin" style="margin-top:12px;">${escapeHtml(statusLed.fieldLabel)}</label>
+              <input type="number" id="status-led-gpio-pin" min="0" max="48" value="${p.statusLedGpioPin}">
+              <div class="field-error">${statusLedGpioValid ? "" : "Enter a valid GPIO number (0 or higher)."}</div>
+              <p class="field-note">
+                Adjust to match your board — GPIO ${defaultStatusLedGpio}
+                is a common default for ${escapeHtml(moduleName(p.target))} devkits, not a guarantee for yours.
+              </p>
+            ` : ""}
+          </div>
+        ` : ""}
+
         <p class="note-box">
           This only records your choices for now — it doesn't edit
           <code>${escapeHtml(driver ? driver.filePath : "app_main.cpp")}</code> yet. Applying them
           (replacing <code>${escapeHtml(driver ? driver.defineName : "")}</code>${activeExtraButtons.map((b) => `,
           <code>${escapeHtml(b.defineName)}</code>`).join("")}${extraButtons ? `,
           <code>${escapeHtml(deviceType.buttonCountDefineName)}</code>` : ""}${secondary ? `,
-          <code>${escapeHtml(secondary.defineName)}</code>${secondaryFieldNeeded ? "" : " (kept at its default — unused by this sensor)"}` : ""}${identifyOn ? ` and
-          <code>${escapeHtml(identify ? identify.defineName : "IDENTIFY_LED_GPIO")}</code>` : ""}) happens
+          <code>${escapeHtml(secondary.defineName)}</code>${secondaryFieldNeeded ? "" : " (kept at its default — unused by this sensor)"}` : ""}${identifyOn ? `,
+          <code>${escapeHtml(identify ? identify.defineName : "IDENTIFY_LED_GPIO")}</code>` : ""}${statusLedOn ? `,
+          <code>${escapeHtml(statusLed.defineName)}</code>` : ""}${activePickerPins.map(({ pin }) => `,
+          <code>${escapeHtml(pin.defineName)}</code>`).join("")}) happens
           in the Generate Firmware step.
         </p>
 
@@ -1638,10 +1785,22 @@ function renderConfigureDevice(p) {
             <div class="summary-detail">IO pin: GPIO ${secondaryGpioValid ? p.secondaryGpioPin : "?"}</div>
           </div>
         ` : ""}
+        ${activePickerPins.map(({ picker, pin }) => `
+          <div class="summary-row">
+            <div class="summary-label">${escapeHtml(picker.label.toUpperCase())} · ${escapeHtml(pin.label.toUpperCase())}</div>
+            <div class="summary-detail">IO pin: GPIO ${Number.isInteger(p.pickerPins[pin.defineName]) && p.pickerPins[pin.defineName] >= 0 ? p.pickerPins[pin.defineName] : "?"}</div>
+          </div>
+        `).join("")}
         <div class="summary-row">
           <div class="summary-label">IDENTIFY LED</div>
           <div class="summary-detail">${identifyOn ? `IO pin: GPIO ${identifyGpioValid ? p.identifyGpioPin : "?"}` : "Not added"}</div>
         </div>
+        ${statusLed ? `
+          <div class="summary-row">
+            <div class="summary-label">STATUS LED</div>
+            <div class="summary-detail">${statusLedOn ? `IO pin: GPIO ${statusLedGpioValid ? p.statusLedGpioPin : "?"}` : "Not added"}</div>
+          </div>
+        ` : ""}
       </div>
     </div>
   `;
@@ -1780,9 +1939,21 @@ function isProductComplete(p) {
   const buttonCount = extraButtons ? (Number.isInteger(p.buttonCount) ? p.buttonCount : 1) : 1;
   const buttonsOk = !extraButtons || extraButtons.slice(0, buttonCount - 1).every((b, i) =>
     Array.isArray(p.buttonGpios) && Number.isInteger(p.buttonGpios[i]) && p.buttonGpios[i] >= 0);
+  const statusLedOk = !(deviceType && deviceType.statusLed) || !statusLedIsEnabled(p) ||
+    (Number.isInteger(p.statusLedGpioPin) && p.statusLedGpioPin >= 0);
+  // Pins belonging to whichever component is currently selected on each
+  // extraPicker (currently just the outlet's Power Monitoring chip) —
+  // same "active selection only" shape as buttonsOk above.
+  const extraPickers = deviceType ? deviceType.extraPickers : null;
+  const pickerPinsOk = !extraPickers || extraPickers.every((picker) => {
+    const selected = findComponent(p[picker.key]);
+    if (!selected || !Array.isArray(selected.pins)) return true;
+    return selected.pins.every((pin) =>
+      p.pickerPins && Number.isInteger(p.pickerPins[pin.defineName]) && p.pickerPins[pin.defineName] >= 0);
+  });
   return !!p.deviceType && !!p.target &&
     Number.isInteger(p.gpioPin) && p.gpioPin >= 0 &&
-    secondaryOk && identifyOk && buttonsOk;
+    secondaryOk && identifyOk && buttonsOk && statusLedOk && pickerPinsOk;
 }
 
 function buildConfigPreview(p) {
@@ -1851,6 +2022,23 @@ function renderCustomiseReview(p) {
             `;
           }).join("");
         })()}
+        ${(() => {
+          const dt = findDeviceType(p.deviceType);
+          if (!dt || !dt.extraPickers) return "";
+          return dt.extraPickers.flatMap((picker) => {
+            const s = findComponent(p[picker.key]);
+            if (!s || !Array.isArray(s.pins) || !s.pins.length) return [];
+            return s.pins.map((pin) => `
+              <div class="review-row">
+                <div>
+                  <div class="summary-label">${escapeHtml(picker.label.toUpperCase())} &middot; ${escapeHtml(pin.label.toUpperCase())}</div>
+                  <div class="summary-value">IO pin GPIO ${p.pickerPins && p.pickerPins[pin.defineName] != null ? p.pickerPins[pin.defineName] : "?"}</div>
+                </div>
+                <button class="link" data-goto-step="2">Edit</button>
+              </div>
+            `);
+          }).join("");
+        })()}
         <div class="review-row">
           <div>
             <div class="summary-label">${escapeHtml(findDeviceType(p.deviceType) && findDeviceType(p.deviceType).extraButtons ? "BUTTON 1" : "DRIVER")}</div>
@@ -1888,6 +2076,15 @@ function renderCustomiseReview(p) {
           </div>
           <button class="link" data-goto-step="2">Edit</button>
         </div>
+        ${findDeviceType(p.deviceType) && findDeviceType(p.deviceType).statusLed ? `
+          <div class="review-row">
+            <div>
+              <div class="summary-label">STATUS LED</div>
+              <div class="summary-value">${statusLedIsEnabled(p) ? `GPIO ${p.statusLedGpioPin != null ? p.statusLedGpioPin : "?"}` : "Not added"}</div>
+            </div>
+            <button class="link" data-goto-step="2">Edit</button>
+          </div>
+        ` : ""}
       </div>
 
       ${complete ? "" : `<div class="warn-box">Some selections are missing — use "Edit" above to go back and complete them.</div>`}
@@ -1970,7 +2167,7 @@ function renderGenerateFirmware(p) {
       <p class="step-hint">
         For "${escapeHtml(p.name)}" —
         <strong>${escapeHtml(deviceTypeName(p.deviceType))}</strong>${selectedSensor ? ` (<strong>${escapeHtml(selectedSensor.name)}</strong>)` : ""} on
-        <strong>${escapeHtml(moduleName(p.target))}</strong>, GPIO ${p.gpioPin}${extraButtonGpios.length ? ` (+ button${extraButtonGpios.length === 1 ? "" : "s"} on GPIO ${extraButtonGpios.join(", ")})` : ""}${deviceType && deviceType.secondary ? ` (${escapeHtml((deviceType.secondary.label || "secondary").toLowerCase())} on GPIO ${p.secondaryGpioPin})` : ""}${identifyIsEnabled(p) ? ` (identify LED on GPIO ${p.identifyGpioPin})` : ""}.
+        <strong>${escapeHtml(moduleName(p.target))}</strong>, GPIO ${p.gpioPin}${extraButtonGpios.length ? ` (+ button${extraButtonGpios.length === 1 ? "" : "s"} on GPIO ${extraButtonGpios.join(", ")})` : ""}${deviceType && deviceType.secondary ? ` (${escapeHtml((deviceType.secondary.label || "secondary").toLowerCase())} on GPIO ${p.secondaryGpioPin})` : ""}${identifyIsEnabled(p) ? ` (identify LED on GPIO ${p.identifyGpioPin})` : ""}${deviceType && deviceType.statusLed && statusLedIsEnabled(p) ? ` (status LED on GPIO ${p.statusLedGpioPin})` : ""}.
         This is the exact two-step flow validated end to end on real
         hardware for this device type: build, then flash. Nothing runs
         automatically — you paste and run each command yourself.
@@ -2150,6 +2347,7 @@ function buildSedCommands(p) {
   const componentOptions = deviceType ? deviceType.componentOptions : null;
   const extraButtons = deviceType ? deviceType.extraButtons : null;
   const extraPickers = deviceType ? deviceType.extraPickers : null;
+  const statusLed = deviceType ? deviceType.statusLed : null;
   const filePath = driver ? driver.filePath.split("/").slice(2).join("/") : "main/app_main.cpp"; // relative to firmwareDir
   const cmds = [];
   if (componentOptions && deviceType.componentDefineName) {
@@ -2175,6 +2373,19 @@ function buildSedCommands(p) {
     extraPickers.forEach((picker) => {
       const selected = findComponent(p[picker.key]) || findComponent(picker.options[0]);
       cmds.push(`sed -i 's/^#define ${picker.defineName} .*/#define ${picker.defineName} ${selected.defineValue}/' ${filePath}`);
+      // The selected component's own pins (e.g. BL0942's UART RX/TX, or
+      // ADE7953's SDA/SCL) — these ship as ordinary numeric GPIO_NUM_<n>
+      // defaults in app_main.cpp (never GPIO_NUM_NC), so the narrow
+      // GPIO_NUM_[0-9]* pattern used for driver/secondary/identify below
+      // applies here too.
+      if (selected && Array.isArray(selected.pins)) {
+        selected.pins.forEach((pin) => {
+          const gpio = p.pickerPins && p.pickerPins[pin.defineName] != null
+            ? p.pickerPins[pin.defineName]
+            : (pin.defaultsByModule[p.target] != null ? pin.defaultsByModule[p.target] : 0);
+          cmds.push(`sed -i 's/^#define ${pin.defineName} GPIO_NUM_[0-9][0-9]*/#define ${pin.defineName} GPIO_NUM_${gpio}/' ${filePath}`);
+        });
+      }
     });
   }
   if (driver) {
@@ -2196,6 +2407,13 @@ function buildSedCommands(p) {
   }
   if (identify && identifyIsEnabled(p)) {
     cmds.push(`sed -i 's/^#define ${identify.defineName} GPIO_NUM_[0-9][0-9]*/#define ${identify.defineName} GPIO_NUM_${p.identifyGpioPin}/' ${filePath}`);
+  }
+  if (statusLed && statusLedIsEnabled(p)) {
+    // Broad `.*` match, not the narrow GPIO_NUM_[0-9]* pattern above — the
+    // firmware ships this one as GPIO_NUM_NC (ESP-IDF's "not connected"
+    // sentinel, disabling it), not a numeric default, so the narrow
+    // digits-only pattern wouldn't match the line as shipped.
+    cmds.push(`sed -i 's/^#define ${statusLed.defineName} .*/#define ${statusLed.defineName} GPIO_NUM_${p.statusLedGpioPin}/' ${filePath}`);
   }
   return cmds;
 }
@@ -2410,6 +2628,13 @@ function bindEvents() {
         DEVICE_TYPES.forEach((dt) => {
           if (dt.extraPickers) dt.extraPickers.forEach((picker) => { state.currentProduct[picker.key] = null; });
         });
+        state.currentProduct.pickerPins = null;
+        // statusLed (currently outlet-only): same stale-GPIO risk as
+        // component/buttonCount above — reset both the pin and the
+        // enabled flag so a new device type starts from its own default
+        // (off) rather than inheriting a previous type's choice.
+        state.currentProduct.statusLedGpioPin = null;
+        state.currentProduct.statusLedEnabled = null;
       }
       state.currentProduct.deviceType = newType;
       saveProducts();
@@ -2502,6 +2727,40 @@ function bindEvents() {
       render();
     });
   }
+
+  const statusLedGpioPinInput = document.getElementById("status-led-gpio-pin");
+  if (statusLedGpioPinInput) {
+    statusLedGpioPinInput.addEventListener("input", () => {
+      const raw = statusLedGpioPinInput.value;
+      state.currentProduct.statusLedGpioPin = raw === "" ? null : parseInt(raw, 10);
+      saveProducts();
+      render();
+      document.getElementById("status-led-gpio-pin").focus();
+    });
+  }
+
+  const statusLedEnabledInput = document.getElementById("status-led-enabled");
+  if (statusLedEnabledInput) {
+    statusLedEnabledInput.addEventListener("change", () => {
+      state.currentProduct.statusLedEnabled = statusLedEnabledInput.checked;
+      saveProducts();
+      render();
+    });
+  }
+
+  document.querySelectorAll('input[data-pin-define]').forEach((el) => {
+    el.addEventListener("input", () => {
+      const defineName = el.getAttribute("data-pin-define");
+      if (typeof state.currentProduct.pickerPins !== "object" || state.currentProduct.pickerPins == null) {
+        state.currentProduct.pickerPins = {};
+      }
+      const raw = el.value;
+      state.currentProduct.pickerPins[defineName] = raw === "" ? null : parseInt(raw, 10);
+      saveProducts();
+      render();
+      document.getElementById(el.id).focus();
+    });
+  });
 
   document.querySelectorAll("[data-select-module]").forEach((el) => {
     el.addEventListener("click", () => {

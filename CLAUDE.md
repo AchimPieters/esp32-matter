@@ -167,10 +167,28 @@ firmware/outlet/         On/Off Plug-in Unit — fourth device type, combines
                            the header comment in app_main.cpp for the full
                            explanation, checked directly against the spec's
                            device_types/ folder). #define OUTLET_OUTPUT_TYPE
-                           selects LED (default, active-HIGH) or RELAY
-                           (active-LOW — common for low-cost opto-isolated
-                           relay modules, documented as "always check your
-                           specific module" since polarity isn't universal).
+                           selects RELAY (default, active-LOW — common for
+                           low-cost opto-isolated relay modules, documented
+                           as "always check your specific module" since
+                           polarity isn't universal — a relay is what a
+                           real power outlet/smart plug actually switches
+                           with) or LED (active-HIGH, mainly for breadboard
+                           testing without a relay on hand; the only choice
+                           that existed before OUTLET_OUTPUT_TYPE did, and
+                           still this option's default until real-world
+                           feedback pointed out relay is the realistic
+                           default for actual outlet hardware). A separate
+                           #define OUTLET_STATUS_LED_GPIO optionally adds a
+                           third, independent LED — some real plug hardware
+                           has its own small indicator LED, on its own
+                           GPIO, that continuously mirrors on/off state,
+                           distinct from the Identify LED (which only
+                           blinks temporarily on an Identify command and
+                           says nothing about on/off state). Off by default
+                           (GPIO_NUM_NC, ESP-IDF's "not connected"
+                           sentinel — checked at runtime in set_output(),
+                           not via #if, since GPIO_NUM_NC is a gpio_num_t
+                           enumerator, not a preprocessor macro).
                            #define OUTLET_POWER_MONITOR optionally compiles
                            in one of 6 power-monitoring chip drivers —
                            BL0942/CSE7766 (UART), BL0937/HLW8012/CSE7759
@@ -210,10 +228,19 @@ firmware/outlet/         On/Off Plug-in Unit — fourth device type, combines
                            Configure Device step, and its Generate Firmware
                            step. See the file's header comment for full
                            per-chip protocol/formula detail and exact
-                           sourcing. Build-verified in Docker for all 7
-                           power-monitor configurations (none + 6 chips) x
-                           both output types — not hardware-tested (no
-                           module of any of the 6 chips was physically
+                           sourcing. Every power-monitor chip's own GPIOs
+                           (BL0942/CSE7766's UART pins, BL0937/HLW8012/
+                           CSE7759's shared SEL/CF/CF1 pulse pins, ADE7953's
+                           I2C pins) are wizard-configurable fields in
+                           Configure Device once that chip is picked, not
+                           just hardcoded #defines — real, reported gap:
+                           the wizard originally let you pick a chip but
+                           never showed its pins anywhere. Build-verified in
+                           Docker for all 7 power-monitor configurations
+                           (none + 6 chips) x both output types, plus the
+                           status LED both off (default) and on — not
+                           hardware-tested (no module of any of the 6 chips,
+                           or a separate status LED, was physically
                            available).
   partitions.csv           same OTA + fctry layout as firmware/light/
   sdkconfig.defaults        same as firmware/light/
@@ -569,6 +596,36 @@ SECURITY.md               flash encryption / secure boot / signed OTA guidance
    read — every option compiles to the exact same driver, since a contact
    sensor is always just HIGH or LOW to the microcontroller regardless of
    which physical part is wired up.
+
+   Real-world feedback on the outlet's relay/power-monitoring feature
+   (above) surfaced three gaps, all fixed together: (1) `OUTLET_OUTPUT_TYPE`
+   defaulted to LED, but a relay is what an actual power outlet/smart plug
+   normally switches with — LED was really only useful for breadboard
+   testing without a relay module on hand, so the default (both the
+   firmware's own `#define` and the wizard's picker order) flipped to
+   RELAY; (2) some real plug hardware has a small status-indicator LED,
+   separate from the relay/LED output itself, wired to its own GPIO, that
+   continuously mirrors on/off state — distinct from the Identify LED
+   (which only blinks temporarily on an Identify command) — added as a new
+   optional `OUTLET_STATUS_LED_GPIO` (off by default, `GPIO_NUM_NC`,
+   checked at runtime in `set_output()` since that sentinel is a
+   `gpio_num_t` enumerator, not a preprocessor macro usable in `#if`), with
+   its own opt-in checkbox + GPIO field in the wizard, same shape as the
+   Identify LED's own checkbox but defaulting off instead of on; (3) the
+   six power-monitor chips' own GPIOs (BL0942/CSE7766's UART pins,
+   BL0937/HLW8012/CSE7759's shared SEL/CF/CF1 pulse pins, ADE7953's I2C
+   pins) were hardcoded `#define`s the wizard never exposed at all — picking
+   a chip in Power Monitoring showed no way to configure the pins it
+   actually needs. Fixed by attaching a `pins` array (label, `#define`
+   name, per-module defaults) to each power-monitor `COMPONENT_LIBRARY`
+   entry and rendering them as extra GPIO fields in Configure Device once
+   that chip is selected — same "don't show a field the driver doesn't
+   use" principle as the temperature sensor's `usesPin2` (CSE7766 exposes
+   only its RX pin, since the chip only transmits and this firmware only
+   reads, so the ESP32's own TX line goes nowhere). Build-verified in
+   Docker for the default config, status LED enabled, and LED output +
+   status LED together; smoke-tested in the wizard across the full
+   2 output x 7 power-monitor x 2 status-LED-state matrix, 0 failures.
 2. Implement Matter **OTA** — partially done. All six firmware types ship
    `CONFIG_ENABLE_OTA_REQUESTOR=y`, which adds the OTA Requestor cluster
    to the root node endpoint entirely via Kconfig — esp-matter's own core
