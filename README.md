@@ -215,9 +215,34 @@ as such (in the code, and in the wizard), same standard as the
 temperature sensor's unverified sensor chips. See its `app_main.cpp`
 header comment for the full explanation and wiring for both sensors.
 
-To add another type, copy any of the six folders and swap the endpoint
+`firmware/dimmable-light/` is a seventh example, and this repo's first
+device type with a real actuator beyond plain on/off — every prior type
+is either a digital GPIO output, a sensor, or (for the switch) a
+remote-control client with no output of its own. Uses esp-matter's
+`dimmable_light` endpoint (OnOff + LevelControl, vs. `firmware/light/`'s
+OnOff-only `on_off_light`), driving the LED as real PWM via ESP-IDF's
+`driver/ledc.h` — one LEDC timer + channel, `LEDC_LOW_SPEED_MODE` for
+portability across every module this repo targets — instead of a plain
+`gpio_set_level()`. LevelControl's `CurrentLevel` turned out to be a
+plain "ember" attribute like OnOff, not one of the newer "code-driven"
+cluster classes other sensors in this repo needed a special setter for —
+confirmed by checking esp-matter's own `data_model_provider/clusters/`
+has no `level_control/` folder — so it uses the exact same
+`attribute::PRE_UPDATE` reaction pattern `firmware/light/` already uses
+for OnOff, just for a second cluster too. `CurrentLevel`'s 1-254 range
+maps directly onto LEDC's 0-255 duty range with no remapping math needed.
+The light boots Off (matching every other device type here), and output
+is on/off state × level together — turning off doesn't forget the
+brightness, so turning back on restores it, same as a real dimmer. See
+its `app_main.cpp` header comment for the full explanation, including
+exactly what was checked against esp-matter's own SDK/reference example
+before writing any of it. Build-verified in Docker; not hardware-tested
+(no board free to flash when written).
+
+To add another type, copy any of the seven folders and swap the endpoint
 type in `app_main.cpp` — esp-matter provides ready-made types like
-`dimmable_light`, `occupancy_sensor`, and many more.
+`extended_color_light`, `window_covering`, `occupancy_sensor`, and many
+more.
 
 ## Updates
 
@@ -226,7 +251,7 @@ but the multi-GB Docker image stalled out on GitHub-hosted runners, so it
 was reverted rather than left flaky). Build + flash a new version yourself
 following the Quick Start steps above whenever you change `app_main.cpp`.
 
-All six device types also ship with Matter's **OTA Requestor** cluster
+All seven device types also ship with Matter's **OTA Requestor** cluster
 enabled (`CONFIG_ENABLE_OTA_REQUESTOR=y`), so once a device is bound to an
 OTA Provider node on the same fabric, it can fetch and install updates over
 the air using the existing `ota_0`/`ota_1` A/B partition slots — no app

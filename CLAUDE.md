@@ -345,6 +345,59 @@ firmware/light-sensor/    Ambient light sensor — sixth device type, and
                            wizard entry below).
   partitions.csv           same OTA + fctry layout as firmware/light/
   sdkconfig.defaults        same as firmware/light/
+firmware/dimmable-light/  Dimmable light — seventh device type, and this
+                           repo's first with a real actuator beyond plain
+                           on/off (every prior type is a digital GPIO
+                           output, a sensor, or a remote-control switch)
+  main/app_main.cpp       `dimmable_light` endpoint (OnOff + LevelControl
+                           clusters, vs. firmware/light/'s OnOff-only
+                           `on_off_light`) — checked directly against
+                           esp-matter's own endpoint::dimmable_light::add()
+                           in esp_matter_endpoint.cpp for the exact cluster
+                           composition rather than assumed. Output is real
+                           PWM via ESP-IDF's driver/ledc.h (the LEDC
+                           peripheral: one timer + one channel,
+                           LEDC_LOW_SPEED_MODE for portability across every
+                           module this repo targets, LEDC_AUTO_CLK,
+                           8-bit/0-255 duty resolution), not a plain
+                           gpio_set_level() — DIMMABLE_LIGHT_LED_GPIO must
+                           be an LEDC-capable pin (true for nearly every
+                           GPIO except input-only ones). LevelControl's
+                           CurrentLevel confirmed to be a plain ember
+                           attribute, not a "code-driven" cluster class
+                           (checked by confirming esp-matter's
+                           data_model_provider/clusters/ has no
+                           level_control/ folder, unlike BooleanState/
+                           TemperatureMeasurement/ElectricalPowerMeasurement
+                           elsewhere in this repo) — so it uses the exact
+                           same attribute::PRE_UPDATE + attribute::update()
+                           pattern as OnOff, confirmed against esp-matter's
+                           own examples/light/app_driver.cpp. CurrentLevel's
+                           1-254 range is used directly as the LEDC duty
+                           value (0-255) with no remapping math — close
+                           enough that the ~0.4% difference at full
+                           brightness isn't perceptible, and simpler than
+                           the official example's separate 0-100% remap
+                           (only needed there because it goes through a
+                           generic led_driver component this repo
+                           deliberately doesn't depend on). Output = on/off
+                           state x level together, same as a real dimmer:
+                           turning off doesn't forget the brightness.
+                           Boots Off (on_off_lighting.start_up_on_off left
+                           at its config default of 0), matching every
+                           other device type's boot-to-known-state
+                           convention in this repo, rather than
+                           esp-matter's own example (which restores
+                           whatever state preceded a power loss). Also
+                           calls attribute::set_deferred_persistence() on
+                           CurrentLevel (same call the official example
+                           makes, for the same reason: avoids flash wear
+                           from writing NVS on every step of a brightness
+                           slider drag). Build-verified in Docker; not
+                           hardware-tested (no board free to flash when
+                           written).
+  partitions.csv           same OTA + fctry layout as firmware/light/
+  sdkconfig.defaults        same as firmware/light/
 tools/
   dev.sh                  opens the Docker dev environment
   gen_factory.sh          local QR + factory partition generator
@@ -648,14 +701,38 @@ SECURITY.md               flash encryption / secure boot / signed OTA guidance
    RELAY_OUTPUT `COMPONENT_LIBRARY` removal didn't affect anything the
    firmware side depends on (it doesn't — those entries only ever fed the
    now-removed wizard picker).
-2. Implement Matter **OTA** — partially done. All six firmware types ship
+
+   A seventh device type, `firmware/dimmable-light/` (`dimmable_light`
+   endpoint type), followed — this repo's first device type with a real
+   actuator beyond simple on/off, per the user's own choice between that,
+   a color light, and a window covering. Adds the LevelControl cluster on
+   top of OnOff, driving the output as real PWM via ESP-IDF's
+   `driver/ledc.h` (the LEDC hardware peripheral) rather than a plain
+   `gpio_set_level()` — confirmed against esp-matter's own
+   `endpoint::dimmable_light::add()` for the exact cluster composition,
+   and against the SDK's own `examples/light/` reference (app_main.cpp +
+   app_driver.cpp) for the CurrentLevel-handling pattern. LevelControl
+   turned out to be a plain ember attribute, not a "code-driven" cluster
+   class the way BooleanState/TemperatureMeasurement/
+   ElectricalPowerMeasurement are elsewhere in this repo — confirmed by
+   checking that `data_model_provider/clusters/` has no `level_control/`
+   folder — so it needed the exact same `attribute::PRE_UPDATE` +
+   `attribute::update()` pattern as OnOff, no special setter. See its own
+   repository-layout entry above for the full detail (brightness scaling,
+   boot-to-Off convention, deferred NVS persistence for CurrentLevel).
+   Build-verified in Docker; not hardware-tested (no board free to flash
+   when written). The wizard needed zero new mechanism for this one —
+   its `DEVICE_TYPES` entry is the same single-GPIO-plus-identify shape
+   `firmware/light/`'s own entry already uses, confirming that shape
+   really is generic rather than accidentally light-specific.
+2. Implement Matter **OTA** — partially done. All seven firmware types ship
    `CONFIG_ENABLE_OTA_REQUESTOR=y`, which adds the OTA Requestor cluster
    to the root node endpoint entirely via Kconfig — esp-matter's own core
    startup (`esp_matter_core.cpp`) calls
    `esp_matter_ota_requestor_init()`/`_start()` automatically once that
    flag is on, so no app code was needed. Confirmed on real hardware for
    `firmware/contact-sensor/` and `firmware/switch/` (clean boot, cluster
-   registered, zero errors); the other four build identically since the
+   registered, zero errors); the other five build identically since the
    code path is generic to every device type, not device-specific.
 
    Still open: a real OTA **transfer** needs an OTA Provider node

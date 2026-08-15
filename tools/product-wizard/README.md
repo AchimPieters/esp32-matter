@@ -25,8 +25,9 @@ open tools/product-wizard/index.html
 - **Get Started (step 1)** — pick a device type: "On/Off Light"
   (`firmware/light/`), "On/Off Switch" (`firmware/switch/`), "Contact
   Sensor" (`firmware/contact-sensor/`), "Outlet" (`firmware/outlet/`),
-  "Temperature Sensor" (`firmware/temperature-sensor/`), or "Light
-  Sensor" (`firmware/light-sensor/`). All six are real, buildable
+  "Temperature Sensor" (`firmware/temperature-sensor/`), "Light
+  Sensor" (`firmware/light-sensor/`), or "Dimmable Light"
+  (`firmware/dimmable-light/`). All seven are real, buildable
   firmware, not just UI placeholders.
 - **Select Module (step 2)** — pick a target chip (ESP32 / C3 / C6 / S3 /
   H2), mirroring what `tools/dev.sh` + `idf.py set-target` actually
@@ -205,12 +206,14 @@ open tools/product-wizard/index.html
 
 All six steps are implemented end to end: Dashboard → Setup → Get
 Started → Select Module → Configure Device → Test Product → Customise &
-Review → Generate Firmware. Five of the six device types on classic ESP32
-have now been validated for real, through the wizard's own generated
-commands run verbatim — built, factory data + QR generated, flashed, and
-commissioned via Apple Home (full PASE/CASE handshake, no errors). The
-light sensor has been built and boot-tested through the same commands but
-not yet commissioned (see below).
+Review → Generate Firmware. Five of the seven device types on classic
+ESP32 have now been validated for real, through the wizard's own
+generated commands run verbatim — built, factory data + QR generated,
+flashed, and commissioned via Apple Home (full PASE/CASE handshake, no
+errors). The light sensor has been built and boot-tested through the same
+commands but not yet commissioned (see below). The dimmable light is
+build-verified in Docker only — no board was free to flash when it was
+added.
 
 The switch commissions cleanly but then shows up in Apple Home as a
 generic "Matter Accessory" / "Niet geschikt" (not compatible) tile with a
@@ -352,6 +355,23 @@ paths in Customise & Review / Generate Firmware went with it (the
 per-component warning already covers the same case, one level more
 precisely).
 
+The dimmable light (`firmware/dimmable-light/`, `dimmable_light` device
+type) is this repo's first device type with a real actuator beyond simple
+on/off — added after being offered as one of three options (the others
+were a color light and a window covering/blind) and picked as the
+smallest reasonable step up from what already existed. Its `DEVICE_TYPES`
+entry needed no new wizard mechanism at all: just one `driver` GPIO field
+(the PWM-capable LED pin) plus `identify`, the exact same shape
+`firmware/light/`'s own entry already uses — confirming that shape really
+is generic across "any device with one main output pin," not something
+that happened to only work for a plain digital output. Configure Device
+labels the field "LED · PWM output (LEDC)" instead of "digital GPIO" to
+make clear it needs an LEDC-capable pin (true for nearly every GPIO
+except input-only ones), not any arbitrary GPIO the way a plain digital
+output field does. Build-verified in Docker; not hardware-tested (no
+board free to flash when it was added) — flagged the same way as any
+other build-only-verified piece in this repo.
+
 Reflashing a board that was previously commissioned with different
 firmware/identity (as happened testing this, repeatedly, across several
 of these device types) leaves stale fabric data in NVS — the write-flash
@@ -364,15 +384,23 @@ testing does.
 
 ## Known limitations
 
-- Six device types exist (`On/Off Light`, `On/Off Switch`, `Contact
-  Sensor`, `Outlet`, `Temperature Sensor`, `Light Sensor`) —
-  light/switch/contact/outlet are all digital GPIO, temperature is this
-  repo's first non-GPIO sensor (I2C, single-wire, or 1-Wire depending
-  which of its 7 supported chips you pick), and light sensor is the first
-  analog/ADC one. A device type with a physical actuator beyond simple
-  on/off (e.g. a dimmable/color light, or a cover/blind) is a reasonable
-  next `DEVICE_TYPES` entry (see the comment above that array in
-  `index.html`).
+- Seven device types exist (`On/Off Light`, `On/Off Switch`, `Contact
+  Sensor`, `Outlet`, `Temperature Sensor`, `Light Sensor`, `Dimmable
+  Light`) — light/switch/contact/outlet are all digital GPIO, temperature
+  is this repo's first non-GPIO sensor (I2C, single-wire, or 1-Wire
+  depending which of its 7 supported chips you pick), light sensor is the
+  first analog/ADC one, and dimmable light is the first with a real
+  actuator beyond simple on/off (PWM output via LEDC). A color light or a
+  window covering/blind (the two options not picked when choosing
+  dimmable light) are reasonable further `DEVICE_TYPES` entries (see the
+  comment above that array in `index.html`).
+- The dimmable light is build-verified in Docker only, not tested against
+  real hardware — no board was free to flash when it was added. Everything
+  about it (LEDC/PWM setup, LevelControl integration) was checked directly
+  against esp-matter's own SDK headers and its `examples/light/` reference
+  before writing any code, same verification standard as every other
+  device type here — see `firmware/dimmable-light/main/app_main.cpp`'s
+  header comment for exactly what was checked.
 - The light sensor is the one device type in this list not actually
   confirmed against real hardware for both of its sensor options — no
   LDR or BH1750 module was on hand when either was built. Everything

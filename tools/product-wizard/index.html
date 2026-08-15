@@ -55,6 +55,14 @@
     padding: 40px 24px 80px;
   }
 
+  footer.app-footer {
+    border-top: 1px solid var(--border);
+    padding: 16px 32px 24px;
+    text-align: center;
+    color: var(--text-muted);
+    font-size: 12px;
+  }
+
   /* ---------- Dashboard ---------- */
 
   .dashboard-head {
@@ -706,6 +714,8 @@
 
 <main id="app"></main>
 
+<footer class="app-footer">Achim Pieters &middot; Copyright &copy; 2026 StudioPieters. Alle rechten voorbehouden. &middot; version 0.0.0</footer>
+
 <script>
 /*
  * Plain client-side state machine, no build step, no external dependencies.
@@ -1184,6 +1194,39 @@ const DEVICE_TYPES = [
       defineName: "IDENTIFY_LED_GPIO",
       currentGpio: 2,
       defaultsByModule: { esp32: 2, esp32c3: 2, esp32c6: 2, esp32s3: 2, esp32h2: 2 },
+    },
+  },
+  {
+    id: "dimmable-light",
+    name: "Dimmable Light",
+    desc: "Matter dimmable light: On/Off + LevelControl (brightness), driven as real PWM via the LEDC peripheral — this repo's first device type with an actuator beyond simple on/off. Reference device in firmware/dimmable-light/.",
+    // Matches project(matter_dimmable_light) in
+    // firmware/dimmable-light/CMakeLists.txt. Same single-GPIO-plus-
+    // identify shape as firmware/light/'s own DEVICE_TYPES entry — no
+    // componentOptions/secondary/extraButtons/extraPickers needed, since
+    // there's no chip/model choice and no second pin, just one PWM-capable
+    // output pin. See its own app_main.cpp header comment for why this is
+    // a genuinely different device type from firmware/light/, not just a
+    // config flag (LevelControl cluster + real PWM duty output, not a
+    // plain digital gpio_set_level()).
+    binName: "matter_dimmable_light.bin",
+    driver: {
+      summary: "GPIO (PWM output, LEDC)",
+      fieldLabel: "LED GPIO pin",
+      blockTitle: "LED · PWM output (LEDC)",
+      filePath: "firmware/dimmable-light/main/app_main.cpp",
+      defineName: "DIMMABLE_LIGHT_LED_GPIO",
+      currentGpio: 2,
+      defaultsByModule: { esp32: 2, esp32c3: 8, esp32c6: 8, esp32s3: 2, esp32h2: 8 },
+    },
+    identify: {
+      summary: "GPIO (digital output)",
+      fieldLabel: "Identify LED GPIO pin",
+      blockTitle: "Identify LED · digital output",
+      filePath: "firmware/dimmable-light/main/app_main.cpp",
+      defineName: "IDENTIFY_LED_GPIO",
+      currentGpio: 4,
+      defaultsByModule: { esp32: 4, esp32c3: 4, esp32c6: 4, esp32s3: 4, esp32h2: 4 },
     },
   },
 ];
