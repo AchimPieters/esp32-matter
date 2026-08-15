@@ -464,6 +464,26 @@ Docker; not hardware-tested (no RGB LED/driver board physically
 available when written) — see `firmware/color-light/main/app_main.cpp`'s
 header comment for the full explanation.
 
+Color light then gained an optional RGBW mode
+(`COLOR_LIGHT_HAS_WHITE_CHANNEL`, off by default) — a 4th LEDC channel
+for an RGBW LED/strip's separate white output, computed from the same
+Hue/Saturation color via the standard "extract common white" technique
+(matches Home Assistant's own color utility and WLED, not invented for
+this file). Rather than building new wizard mechanism for this, it
+reuses the *existing* `extraPickers` + `COMPONENT_LIBRARY` `pins`
+mechanism built for the outlet's power-monitoring chip picker: a named
+option (`COLOR_MODE_RGB` / `COLOR_MODE_RGBW`) that, when picked, reveals
+its own extra GPIO field and sed target — the same shape as "does this
+outlet have a power-monitor chip, and if so which one." Zero new
+render/validation/sed code was needed, only two new `COMPONENT_LIBRARY`
+entries and one `extraPickers` entry on color-light's `DEVICE_TYPES`
+record. Verified two ways: a Docker build for both RGB and RGBW
+configurations (both clean), and a headless-Chromium screenshot of the
+wizard's Configure Device step confirming the Color Mode picker, the
+conditional White Channel GPIO field, and the configuration-summary row
+all render correctly. Not hardware-tested (no RGB(W) LED/driver board
+physically available when written).
+
 Reflashing a board that was previously commissioned with different
 firmware/identity (as happened testing this, repeatedly, across several
 of these device types) leaves stale fabric data in NVS — the write-flash

@@ -1,8 +1,8 @@
 /*
- * Minimal Matter Color Light (RGB) — ninth device type, and the last of the
- * three options offered together back when firmware/dimmable-light/ was
- * added (the other two, dimmable light and window covering, are both
- * already built — this is the remaining one).
+ * Minimal Matter Color Light (RGB or RGBW) — ninth device type, and the
+ * last of the three options offered together back when
+ * firmware/dimmable-light/ was added (the other two, dimmable light and
+ * window covering, are both already built — this is the remaining one).
  *
  * Built on the open-source esp-matter SDK. Everything here is plain, readable
  * C++ — there is no hidden framework layer and no telemetry. Matter is
@@ -72,14 +72,35 @@
  * attribute name or cluster API does.
  *
  * --- Output -----------------------------------------------------------
- * Three LEDC PWM channels (R/G/B) sharing one timer — same LEDC pattern
- * firmware/dimmable-light/ already established for a single channel,
- * just three of them. Active-HIGH by default (plain RGB LED / common
- * driver board wiring, not a relay — no polarity option needed the way
- * firmware/outlet/'s real relay output has one). Output is the product of
- * on/off state and the current HSV→RGB result together, same "off
- * doesn't forget where it was" behavior as firmware/dimmable-light/'s own
- * brightness: turning back on restores the last color, not a reset one.
+ * Three or four LEDC PWM channels (R/G/B, optionally +W) sharing one
+ * timer — same LEDC pattern firmware/dimmable-light/ already established
+ * for a single channel. Active-HIGH by default (plain RGB(W) LED /
+ * common driver board wiring, not a relay — no polarity option needed
+ * the way firmware/outlet/'s real relay output has one). Output is the
+ * product of on/off state and the current HSV→RGB(W) result together,
+ * same "off doesn't forget where it was" behavior as
+ * firmware/dimmable-light/'s own brightness: turning back on restores
+ * the last color, not a reset one.
+ *
+ * --- Optional white channel (COLOR_LIGHT_HAS_WHITE_CHANNEL) ---------------
+ * Off by default — a plain 3-channel RGB LED is this file's baseline (see
+ * above). Turning this on adds a 4th LEDC channel and converts the HSV→RGB
+ * result into RGBW via the standard "extract common white" technique:
+ * W = min(R, G, B); R' = R - W; G' = G - W; B' = B - W (implemented in
+ * rgb_to_rgbw() below). This is the same algorithm Home Assistant's own
+ * color utility (`homeassistant.util.color.color_rgb_to_rgbw`) and WLED
+ * use — not something invented for this file, a widely-used, well-
+ * understood technique precisely because there's no single Matter- or
+ * industry-mandated RGBW formula: real RGBW products differ in how much
+ * they lean on the (usually more efficient, sometimes more accurate)
+ * dedicated white LED vs. the RGB channels for near-white colors, and this
+ * simple subtraction is the common baseline every more elaborate scheme
+ * builds on. Matter's own ColorControl cluster has no separate "White"
+ * attribute or concept at all here — from the protocol's point of view
+ * this is still plain Hue/Saturation control (see the header comment
+ * above on Matter cluster details); the white channel is purely a local
+ * hardware-rendering decision this device makes on its own, invisible to
+ * any controller.
  */
 
 #include <esp_err.h>
@@ -103,6 +124,14 @@ static const char *TAG = "matter_color_light";
 #define COLOR_LIGHT_GREEN_GPIO GPIO_NUM_4
 #define COLOR_LIGHT_BLUE_GPIO GPIO_NUM_5
 
+/* Optional 4th channel for an RGBW LED/strip — off by default (plain RGB,
+ * see the header comment on the white channel above for the RGB->RGBW
+ * conversion this enables). GPIO 18 is a plain, unreserved GPIO on
+ * classic ESP32 (WROOM-32) that doesn't collide with the three color
+ * channels above or the identify LED below. Adjust to match your board. */
+#define COLOR_LIGHT_HAS_WHITE_CHANNEL 0
+#define COLOR_LIGHT_WHITE_GPIO GPIO_NUM_18
+
 /* Separate LED for the Matter "Identify" cluster — blinks so you can
  * physically find this device when a controller asks it to identify
  * itself, independent of the light's own on/off/color state. GPIO 15 is a
@@ -123,6 +152,7 @@ static const char *TAG = "matter_color_light";
 #define COLOR_LIGHT_LEDC_RED_CHANNEL LEDC_CHANNEL_0
 #define COLOR_LIGHT_LEDC_GREEN_CHANNEL LEDC_CHANNEL_1
 #define COLOR_LIGHT_LEDC_BLUE_CHANNEL LEDC_CHANNEL_2
+#define COLOR_LIGHT_LEDC_WHITE_CHANNEL LEDC_CHANNEL_3
 #define COLOR_LIGHT_LEDC_MODE LEDC_LOW_SPEED_MODE
 #define COLOR_LIGHT_LEDC_DUTY_RES LEDC_TIMER_8_BIT
 #define COLOR_LIGHT_LEDC_FREQUENCY_HZ 5000
@@ -180,12 +210,29 @@ static void hsv_to_rgb(float h, float s, float v, float *r, float *g, float *b)
     *b = b1 + m;
 }
 
-/* Drives the three LEDC channels from the current on/off + level + hue +
+#if COLOR_LIGHT_HAS_WHITE_CHANNEL
+/* RGB -> RGBW via the standard "extract common white" technique — see the
+ * header comment on the optional white channel for the exact algorithm
+ * and its sourcing (matches Home Assistant's own color_rgb_to_rgbw() and
+ * WLED). Inputs and outputs are all in [0,1]. */
+static void rgb_to_rgbw(float r, float g, float b, float *r_out, float *g_out, float *b_out, float *w_out)
+{
+    float w = fminf(r, fminf(g, b));
+    *r_out = r - w;
+    *g_out = g - w;
+    *b_out = b - w;
+    *w_out = w;
+}
+#endif
+
+/* Drives the LEDC channels from the current on/off + level + hue +
  * saturation state together — see the header comment on color math for
- * the exact attribute-range interpretation. */
+ * the exact attribute-range interpretation, and on the optional white
+ * channel for the RGB->RGBW conversion applied when
+ * COLOR_LIGHT_HAS_WHITE_CHANNEL is enabled. */
 static void set_output(void)
 {
-    uint32_t red_duty = 0, green_duty = 0, blue_duty = 0;
+    uint32_t red_duty = 0, green_duty = 0, blue_duty = 0, white_duty = 0;
 
     if (light_on) {
         float hue_degrees = (float)light_hue * 360.0f / 254.0f;
@@ -193,6 +240,13 @@ static void set_output(void)
         float value_fraction = (float)light_level / 254.0f;
         float r, g, b;
         hsv_to_rgb(hue_degrees, saturation_fraction, value_fraction, &r, &g, &b);
+
+#if COLOR_LIGHT_HAS_WHITE_CHANNEL
+        float w;
+        rgb_to_rgbw(r, g, b, &r, &g, &b, &w);
+        white_duty = (uint32_t)(w * 255.0f + 0.5f);
+#endif
+
         red_duty = (uint32_t)(r * 255.0f + 0.5f);
         green_duty = (uint32_t)(g * 255.0f + 0.5f);
         blue_duty = (uint32_t)(b * 255.0f + 0.5f);
@@ -204,6 +258,10 @@ static void set_output(void)
     ledc_update_duty(COLOR_LIGHT_LEDC_MODE, COLOR_LIGHT_LEDC_GREEN_CHANNEL);
     ledc_set_duty(COLOR_LIGHT_LEDC_MODE, COLOR_LIGHT_LEDC_BLUE_CHANNEL, blue_duty);
     ledc_update_duty(COLOR_LIGHT_LEDC_MODE, COLOR_LIGHT_LEDC_BLUE_CHANNEL);
+#if COLOR_LIGHT_HAS_WHITE_CHANNEL
+    ledc_set_duty(COLOR_LIGHT_LEDC_MODE, COLOR_LIGHT_LEDC_WHITE_CHANNEL, white_duty);
+    ledc_update_duty(COLOR_LIGHT_LEDC_MODE, COLOR_LIGHT_LEDC_WHITE_CHANNEL);
+#endif
 }
 
 /* Toggles the identify LED each time the timer fires — the actual blink. */
@@ -296,9 +354,9 @@ extern "C" void app_main(void)
         ESP_ERROR_CHECK(nvs_flash_init());
     }
 
-    /* 2. Configure the three RGB channels via LEDC (hardware PWM) — one
-     * timer (shared clock/frequency/resolution) plus three channels (the
-     * actual GPIOs + duty registers), same driver/ledc.h API
+    /* 2. Configure the RGB(W) channels via LEDC (hardware PWM) — one timer
+     * (shared clock/frequency/resolution) plus three or four channels
+     * (the actual GPIOs + duty registers), same driver/ledc.h API
      * firmware/dimmable-light/ already uses for its single channel. */
     ledc_timer_config_t ledc_timer = {};
     ledc_timer.speed_mode = COLOR_LIGHT_LEDC_MODE;
@@ -311,12 +369,15 @@ extern "C" void app_main(void)
     struct {
         ledc_channel_t channel;
         gpio_num_t gpio;
-    } channels[3] = {
+    } channels[] = {
         { COLOR_LIGHT_LEDC_RED_CHANNEL, COLOR_LIGHT_RED_GPIO },
         { COLOR_LIGHT_LEDC_GREEN_CHANNEL, COLOR_LIGHT_GREEN_GPIO },
         { COLOR_LIGHT_LEDC_BLUE_CHANNEL, COLOR_LIGHT_BLUE_GPIO },
+#if COLOR_LIGHT_HAS_WHITE_CHANNEL
+        { COLOR_LIGHT_LEDC_WHITE_CHANNEL, COLOR_LIGHT_WHITE_GPIO },
+#endif
     };
-    for (int i = 0; i < 3; i++) {
+    for (size_t i = 0; i < sizeof(channels) / sizeof(channels[0]); i++) {
         ledc_channel_config_t ledc_channel = {};
         ledc_channel.gpio_num = channels[i].gpio;
         ledc_channel.speed_mode = COLOR_LIGHT_LEDC_MODE;
@@ -327,7 +388,7 @@ extern "C" void app_main(void)
         ledc_channel.hpoint = 0;
         ledc_channel_config(&ledc_channel);
     }
-    set_output(); /* light_on starts false, so this drives all three duties to 0 (fully off). */
+    set_output(); /* light_on starts false, so this drives all duties to 0 (fully off). */
 
     /* 2b. Configure the identify LED + its blink timer (not started yet —
      * only runs while a controller has an identify request active). */

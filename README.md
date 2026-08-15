@@ -282,10 +282,17 @@ LevelControl/ColorControl's Hue and Saturation attributes are all plain
 ember attributes (confirmed against esp-matter's own
 `examples/light/main/app_driver.cpp`) — no Delegate needed. Three LEDC PWM
 channels (R/G/B, one shared timer) combine with LevelControl's brightness
-through a standard HSV→RGB conversion. See its `app_main.cpp` header
-comment for the full explanation. Build-verified in Docker; not
-hardware-tested (no RGB LED/driver board physically available when
-written).
+through a standard HSV→RGB conversion. An optional 4th channel
+(`COLOR_LIGHT_HAS_WHITE_CHANNEL`, off by default) drives an RGBW
+LED/strip's separate white channel, derived from the same Hue/Saturation
+color via the standard "extract common white" technique (`W =
+min(R,G,B)`, then subtract `W` from each of R/G/B) — the same approach
+Home Assistant's own color utility and WLED use, not something invented
+for this file; Matter's ColorControl cluster itself has no "white"
+concept, this is purely a local hardware-rendering choice. See its
+`app_main.cpp` header comment for the full explanation. Build-verified in
+Docker for both RGB (default) and RGBW; not hardware-tested (no RGB(W)
+LED/driver board physically available when written).
 
 To add another type, copy any of the nine folders and swap the endpoint
 type in `app_main.cpp` — esp-matter provides ready-made types like

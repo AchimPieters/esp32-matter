@@ -852,6 +852,20 @@ const COMPONENT_LIBRARY = {
     { key: "sda", label: "SDA", defineName: "ADE7953_SDA_GPIO", defaultsByModule: { esp32: 21, esp32c3: 21, esp32c6: 21, esp32s3: 21, esp32h2: 21 } },
     { key: "scl", label: "SCL", defineName: "ADE7953_SCL_GPIO", defaultsByModule: { esp32: 22, esp32c3: 22, esp32c6: 22, esp32s3: 22, esp32h2: 22 } },
   ] },
+  // Outlet's Power Monitoring picker's `pins` mechanism (chip choice ->
+  // extra GPIO fields) turns out to fit firmware/color-light/'s optional
+  // 4th LED channel just as well: RGB vs RGBW isn't a variable-count or
+  // toggleable-extra-LED situation like outlet's Status LED (different
+  // shape, see the comment there) — it's a build-time hardware choice
+  // that also needs its own #define (COLOR_LIGHT_HAS_WHITE_CHANNEL) plus
+  // one extra GPIO when picked, exactly like a power-monitor chip
+  // selection. Reusing this existing mechanism needed zero new wizard
+  // code, only these two entries plus one extraPickers entry on
+  // color-light's DEVICE_TYPES entry.
+  COLOR_MODE_RGB: { name: "RGB", category: "color-mode", bus: "PWM (3ch)", verified: false, defineValue: "0" },
+  COLOR_MODE_RGBW: { name: "RGBW", category: "color-mode", bus: "PWM (4ch)", verified: false, defineValue: "1", note: "Adds a 4th LED channel. Converted from the same Hue/Saturation color via the standard RGB->RGBW \"extract common white\" technique (same algorithm Home Assistant's own color utility and WLED use) — see firmware/color-light/main/app_main.cpp's header comment.", pins: [
+    { key: "white", label: "White Channel", defineName: "COLOR_LIGHT_WHITE_GPIO", defaultsByModule: { esp32: 18, esp32c2: 18, esp32c3: 18, esp32c5: 18, esp32c6: 18, esp32c61: 18, esp32s3: 18, esp32h2: 18 } },
+  ] },
 };
 
 /* Device types this repo actually has firmware for (see firmware/). Each
@@ -1341,6 +1355,19 @@ const DEVICE_TYPES = [
     // CHANNEL/GREEN CHANNEL/BLUE CHANNEL) in summary rows instead of the
     // switch-specific "BUTTON N" fallback.
     binName: "matter_color_light.bin",
+    // RGB vs RGBW — reuses outlet's Power Monitoring picker mechanism
+    // (chip choice -> extra GPIO field via COMPONENT_LIBRARY's `pins`),
+    // not a new one; see the comment on COLOR_MODE_RGB/COLOR_MODE_RGBW
+    // above for why this fits better than the Status LED pattern would.
+    extraPickers: [
+      {
+        key: "colorMode",
+        label: "Color Mode",
+        prompt: "RGB (3 channels), or RGBW if your LED/strip has a separate white channel",
+        options: ["COLOR_MODE_RGB", "COLOR_MODE_RGBW"],
+        defineName: "COLOR_LIGHT_HAS_WHITE_CHANNEL",
+      },
+    ],
     driverLabel: "Red Channel",
     driver: {
       summary: "Red channel · GPIO (PWM output, LEDC)",

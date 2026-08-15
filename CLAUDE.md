@@ -528,8 +528,20 @@ firmware/color-light/     RGB color light — ninth device type, and the last
                            (`identify::command::create_trigger_effect`
                            instead of `cluster::identify::command::
                            create_trigger_effect`) — fixed, second build
-                           clean. Build-verified in Docker; not
-                           hardware-tested (no RGB LED/driver board for
+                           clean. #define COLOR_LIGHT_HAS_WHITE_CHANNEL
+                           optionally adds a 4th LEDC channel for an RGBW
+                           LED/strip, converting the same Hue/Saturation
+                           color to RGBW via the standard "extract common
+                           white" technique (W = min(R,G,B), then subtract
+                           W from each of R/G/B) — the same algorithm Home
+                           Assistant's own color utility
+                           (`color_rgb_to_rgbw`) and WLED use, not
+                           something invented for this file; Matter's
+                           ColorControl cluster has no separate "White"
+                           concept at all, this is purely a local
+                           hardware-rendering decision. Build-verified in
+                           Docker for both RGB (default) and RGBW; not
+                           hardware-tested (no RGB(W) LED/driver board for
                            this device type physically available when
                            written).
   partitions.csv           same OTA + fctry layout as firmware/light/
@@ -974,6 +986,22 @@ SECURITY.md               flash encryption / secure boot / signed OTA guidance
    1 of 3 required fields actually set. Fixed the same way in both
    places, and added a smoke test that calls `isProductComplete()`
    first, with no prior render, specifically to catch a regression here.
+
+   `firmware/color-light/` was then extended with an optional RGBW mode
+   (`COLOR_LIGHT_HAS_WHITE_CHANNEL`, off by default) — a 4th LEDC
+   channel, with the same Hue/Saturation color converted to RGBW via the
+   standard "extract common white" technique (matches Home Assistant's
+   own color utility and WLED, not invented for this file). The wizard
+   integration needed zero new mechanism: RGB-vs-RGBW turned out to fit
+   the *existing* Power Monitoring picker's `pins`-per-component
+   mechanism (built for `firmware/outlet/`) exactly — a build-time
+   hardware choice with its own `#define` plus one extra GPIO when
+   picked, same shape as choosing a power-monitor chip. Build-verified
+   in Docker for both RGB and RGBW; not hardware-tested. Screenshot-
+   verified in the wizard too (both the plain RGB card grid and the
+   RGBW mode's White Channel field rendering correctly), continuing the
+   "actually render wizard changes with a headless Chromium" practice
+   started when the outlet icon issue was caught.
 2. Implement Matter **OTA** — partially done. All nine firmware types ship
    `CONFIG_ENABLE_OTA_REQUESTOR=y`, which adds the OTA Requestor cluster
    to the root node endpoint entirely via Kconfig — esp-matter's own core
