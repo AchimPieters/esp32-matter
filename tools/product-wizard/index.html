@@ -770,6 +770,20 @@ const COMPONENT_LIBRARY = {
   REED_SWITCH: { name: "Reed Switch (magnetic)", category: "contact", bus: "GPIO", pin1Label: "Contact", pin2Label: null, usesPin2: false, verified: true },
   HALL_SENSOR: { name: "Hall-Effect Sensor (e.g. A3144, US5881)", category: "contact", bus: "GPIO", pin1Label: "Contact", pin2Label: null, usesPin2: false, verified: false },
   MICROSWITCH: { name: "Microswitch / mechanical contact", category: "contact", bus: "GPIO", pin1Label: "Contact", pin2Label: null, usesPin2: false, verified: false },
+  // Outlet's two independent pickers (see its DEVICE_TYPES entry's
+  // `extraPickers`, a different mechanism from `componentOptions` above —
+  // neither of these choices affects any GPIO field's label the way a
+  // sensor's pin1Label does, so they're deliberately kept out of the
+  // componentOptions/driverLabel code path rather than shoehorned into it.
+  LED_OUTPUT: { name: "LED", category: "output", bus: "GPIO", verified: true, defineValue: "OUTLET_OUTPUT_LED" },
+  RELAY_OUTPUT: { name: "Relay", category: "output", bus: "GPIO", verified: false, defineValue: "OUTLET_OUTPUT_RELAY", note: "Active-LOW trigger — common for low-cost relay modules (GPIO LOW energizes the relay), but always check your specific module's own documentation before relying on it." },
+  POWER_NONE: { name: "None", category: "power-monitor", bus: "—", verified: true, defineValue: "OUTLET_POWER_MONITOR_NONE" },
+  POWER_BL0942: { name: "BL0942", category: "power-monitor", bus: "UART", verified: false, defineValue: "OUTLET_POWER_MONITOR_BL0942" },
+  POWER_BL0937: { name: "BL0937", category: "power-monitor", bus: "GPIO (pulse)", verified: false, defineValue: "OUTLET_POWER_MONITOR_BL0937" },
+  POWER_HLW8012: { name: "HLW8012", category: "power-monitor", bus: "GPIO (pulse)", verified: false, defineValue: "OUTLET_POWER_MONITOR_HLW8012" },
+  POWER_CSE7759: { name: "CSE7759", category: "power-monitor", bus: "GPIO (pulse)", verified: false, defineValue: "OUTLET_POWER_MONITOR_CSE7759", note: "Assumed to share HLW8012's formula (same chip family) per a secondary source — not independently confirmed against CSE7759's own datasheet." },
+  POWER_CSE7766: { name: "CSE7766", category: "power-monitor", bus: "UART", verified: false, defineValue: "OUTLET_POWER_MONITOR_CSE7766" },
+  POWER_ADE7953: { name: "ADE7953", category: "power-monitor", bus: "I2C", verified: false, defineValue: "OUTLET_POWER_MONITOR_ADE7953", note: "Least-certain of the six power-monitor drivers — only partially confirmed against Analog Devices' own datasheet across several attempts; double-check before relying on it." },
 };
 
 /* Device types this repo actually has firmware for (see firmware/). Each
@@ -936,9 +950,36 @@ const DEVICE_TYPES = [
   {
     id: "outlet",
     name: "Outlet",
-    desc: "Matter On/Off Plug-in Unit: a physical button toggles the device's own on/off state, visible and controllable from Apple/Google Home (unlike the switch's client-only Binding approach). Reference device in firmware/outlet/.",
+    desc: "Matter On/Off Plug-in Unit: a physical button toggles the device's own on/off state, visible and controllable from Apple/Google Home (unlike the switch's client-only Binding approach). Optional power monitoring. Reference device in firmware/outlet/.",
     // Matches project(matter_outlet) in firmware/outlet/CMakeLists.txt.
     binName: "matter_outlet.bin",
+    // Two independent checkable-list pickers in the left sidebar, each a
+    // real functional choice (not cosmetic like contact sensor's list) —
+    // a different, more general mechanism than componentOptions above:
+    // componentOptions assumes ONE picker whose selection also drives the
+    // main GPIO field's label (SDA/DATA/ADC per sensor), which doesn't
+    // apply here (neither Output type nor Power Monitoring chip changes
+    // what the Output/Button GPIO fields are called). Each entry's
+    // `key` names the product-state field it's stored in
+    // (state.currentProduct[key]) and the DOM attribute
+    // (data-picker-key) its radio inputs use — see renderConfigureDevice
+    // and the generic input[data-picker-key] change listener.
+    extraPickers: [
+      {
+        key: "outputType",
+        label: "Output",
+        prompt: "Which output do you have wired up?",
+        options: ["LED_OUTPUT", "RELAY_OUTPUT"],
+        defineName: "OUTLET_OUTPUT_TYPE",
+      },
+      {
+        key: "powerMonitor",
+        label: "Power Monitoring",
+        prompt: "Optional — pick a chip only if your board actually has one wired up",
+        options: ["POWER_NONE", "POWER_BL0942", "POWER_BL0937", "POWER_HLW8012", "POWER_CSE7759", "POWER_CSE7766", "POWER_ADE7953"],
+        defineName: "OUTLET_POWER_MONITOR",
+      },
+    ],
     driver: {
       summary: "GPIO (digital output)",
       fieldLabel: "Output GPIO pin",
@@ -1341,6 +1382,7 @@ function renderConfigureDevice(p) {
   const identify = deviceType ? deviceType.identify : null;
   const componentOptions = deviceType ? deviceType.componentOptions : null;
   const extraButtons = deviceType ? deviceType.extraButtons : null;
+  const extraPickers = deviceType ? deviceType.extraPickers : null;
   const defaultGpio = driver ? (driver.defaultsByModule[p.target] != null ? driver.defaultsByModule[p.target] : 2) : 2;
   const defaultSecondaryGpio = secondary ? (secondary.defaultsByModule[p.target] != null ? secondary.defaultsByModule[p.target] : 4) : 4;
   const defaultIdentifyGpio = identify ? (identify.defaultsByModule[p.target] != null ? identify.defaultsByModule[p.target] : 4) : 4;
@@ -1348,6 +1390,18 @@ function renderConfigureDevice(p) {
 
   if (componentOptions && p.component == null) p.component = componentOptions[0];
   const selectedComponent = componentOptions ? (findComponent(p.component) || findComponent(componentOptions[0])) : null;
+
+  // extraPickers (currently just the outlet's Output-type + Power-Monitoring
+  // chip choices): a list of independent enum-like pickers, each keyed by
+  // its own state field (picker.key) rather than the single shared
+  // p.component componentOptions uses — deliberately separate from
+  // componentOptions since these choices don't drive driverLabel/
+  // secondaryFieldNeeded pin-naming the way a sensor-model choice does.
+  if (extraPickers) {
+    extraPickers.forEach((picker) => {
+      if (p[picker.key] == null) p[picker.key] = picker.options[0];
+    });
+  }
 
   // Multi-button (currently just the switch): button 1 is always the
   // existing `driver` field, unchanged, so single-button products (every
@@ -1397,7 +1451,7 @@ function renderConfigureDevice(p) {
   const secondaryFieldNeeded = !!secondary && !(selectedComponent && !selectedComponent.usesPin2);
 
   return `
-    <div class="configure-grid ${componentOptions || extraButtons ? "has-left-sidebar" : ""}">
+    <div class="configure-grid ${componentOptions || extraButtons || (extraPickers && extraPickers.length) ? "has-left-sidebar" : ""}">
       ${componentOptions ? `
         <div class="config-sidebar">
           <h3>Sensor model</h3>
@@ -1445,7 +1499,33 @@ function renderConfigureDevice(p) {
               : `${buttonCount} independent buttons, each its own on_off_light_switch endpoint — bind each one to a different device through your controller's Bindings UI. With more than one button, the Identify LED no longer doubles as an on/off indicator (there's no longer one single "switch state" it could represent).`}
           </p>
         </div>
-      ` : "")}
+      ` : (extraPickers && extraPickers.length ? `
+        <div class="config-sidebar">
+          ${extraPickers.map((picker) => {
+            const selected = findComponent(p[picker.key]) || findComponent(picker.options[0]);
+            return `
+              <h3>${escapeHtml(picker.label)}</h3>
+              <p class="field-label">${escapeHtml(picker.prompt)}</p>
+              <div class="component-list" role="radiogroup" aria-label="${escapeHtml(picker.label)}">
+                ${picker.options.map(findComponent).map((s) => `
+                  <label class="component-list-item ${s.id === selected.id ? "selected" : ""}">
+                    <input type="radio" name="picker-${escapeHtml(picker.key)}" value="${escapeHtml(s.id)}" data-picker-key="${escapeHtml(picker.key)}" ${s.id === selected.id ? "checked" : ""}>
+                    <span class="tick">&#10003;</span>
+                    <span class="component-list-item-text">
+                      <span class="component-name">${escapeHtml(s.name)}</span>
+                      <span class="component-bus">${escapeHtml(s.bus)}${s.verified ? "" : " · unverified"}</span>
+                    </span>
+                  </label>
+                `).join("")}
+              </div>
+              <p class="field-note">
+                ${selected.verified ? `Verified on real hardware in this repo.` : `Not personally tested on real hardware in this repo — build-verified only.`}
+                ${selected.note ? ` ${escapeHtml(selected.note)}` : ""}
+              </p>
+            `;
+          }).join('<hr style="margin:20px 0;border:none;border-top:1px solid var(--border);">')}
+        </div>
+      ` : ""))}
 
       <div class="step-panel">
         <h2>Configure device</h2>
@@ -1754,6 +1834,23 @@ function renderCustomiseReview(p) {
             <button class="link" data-goto-step="2">Edit</button>
           </div>
         ` : ""}
+        ${(() => {
+          const dt = findDeviceType(p.deviceType);
+          if (!dt || !dt.extraPickers) return "";
+          return dt.extraPickers.map((picker) => {
+            const s = findComponent(p[picker.key]) || findComponent(picker.options[0]);
+            const caveat = s.verified ? "" : " — not hardware-verified in this repo";
+            return `
+              <div class="review-row">
+                <div>
+                  <div class="summary-label">${escapeHtml(picker.label.toUpperCase())}</div>
+                  <div class="summary-value">${escapeHtml(s.name)} (${escapeHtml(s.bus)})${caveat}</div>
+                </div>
+                <button class="link" data-goto-step="2">Edit</button>
+              </div>
+            `;
+          }).join("");
+        })()}
         <div class="review-row">
           <div>
             <div class="summary-label">${escapeHtml(findDeviceType(p.deviceType) && findDeviceType(p.deviceType).extraButtons ? "BUTTON 1" : "DRIVER")}</div>
@@ -1914,6 +2011,22 @@ function renderGenerateFirmware(p) {
         </p>
       ` : ""}
 
+      ${deviceType && deviceType.extraPickers ? deviceType.extraPickers.map((picker) => {
+        const selected = findComponent(p[picker.key]) || findComponent(picker.options[0]);
+        if (selected.verified) return "";
+        return `
+          <div class="warn-box">
+            &#9888; ${escapeHtml(selected.name)} (${escapeHtml(picker.label)}) was implemented
+            from its datasheet/reference source but hasn't been personally
+            tested on real hardware in this repo — build-verified in Docker
+            only. See the comment above its section in
+            ${escapeHtml(deviceType.driver.filePath)} for exactly what was
+            checked and against which source.
+            ${selected.id === "POWER_ADE7953" ? ` This is the least-certain of the six power-monitoring drivers — only partially confirmed against Analog Devices' own datasheet across several attempts; double-check its register map and scaling constants before relying on it.` : ""}
+          </div>
+        `;
+      }).join("") : ""}
+
       ${repoRoot ? `
         <p class="field-note">
           Detected checkout at <code>${escapeHtml(repoRoot)}</code> from this
@@ -2036,6 +2149,7 @@ function buildSedCommands(p) {
   const identify = deviceType ? deviceType.identify : null;
   const componentOptions = deviceType ? deviceType.componentOptions : null;
   const extraButtons = deviceType ? deviceType.extraButtons : null;
+  const extraPickers = deviceType ? deviceType.extraPickers : null;
   const filePath = driver ? driver.filePath.split("/").slice(2).join("/") : "main/app_main.cpp"; // relative to firmwareDir
   const cmds = [];
   if (componentOptions && deviceType.componentDefineName) {
@@ -2053,6 +2167,15 @@ function buildSedCommands(p) {
     // feature existed.
     const buttonCount = Number.isInteger(p.buttonCount) ? p.buttonCount : 1;
     cmds.push(`sed -i 's/^#define ${deviceType.buttonCountDefineName} .*/#define ${deviceType.buttonCountDefineName} ${buttonCount}/' ${filePath}`);
+  }
+  if (extraPickers) {
+    // Same non-GPIO #define-selects-a-branch pattern as componentDefineName
+    // above (each picker chooses which #if OUTLET_xxx branch compiles in,
+    // not a pin number), one sed line per picker.
+    extraPickers.forEach((picker) => {
+      const selected = findComponent(p[picker.key]) || findComponent(picker.options[0]);
+      cmds.push(`sed -i 's/^#define ${picker.defineName} .*/#define ${picker.defineName} ${selected.defineValue}/' ${filePath}`);
+    });
   }
   if (driver) {
     cmds.push(`sed -i 's/^#define ${driver.defineName} GPIO_NUM_[0-9][0-9]*/#define ${driver.defineName} GPIO_NUM_${p.gpioPin}/' ${filePath}`);
@@ -2279,6 +2402,14 @@ function bindEvents() {
         state.currentProduct.component = null;
         state.currentProduct.buttonCount = null;
         state.currentProduct.buttonGpios = null;
+        // extraPickers (currently outlet's Output type + Power Monitoring
+        // chip) are keyed per-device-type too — same stale-value risk, same
+        // fix. Reset every key any device type's extraPickers might use,
+        // not just outlet's, so this doesn't need updating if a future
+        // device type reuses one of these key names differently.
+        DEVICE_TYPES.forEach((dt) => {
+          if (dt.extraPickers) dt.extraPickers.forEach((picker) => { state.currentProduct[picker.key] = null; });
+        });
       }
       state.currentProduct.deviceType = newType;
       saveProducts();
@@ -2315,6 +2446,15 @@ function bindEvents() {
       // re-defaulting (buttonGpios is initialised as [] in
       // renderConfigureDevice if this is the first time it's touched).
       state.currentProduct.buttonCount = parseInt(el.value, 10);
+      saveProducts();
+      render();
+    });
+  });
+
+  document.querySelectorAll('input[data-picker-key]').forEach((el) => {
+    el.addEventListener("change", () => {
+      if (!el.checked) return;
+      state.currentProduct[el.getAttribute("data-picker-key")] = el.value;
       saveProducts();
       render();
     });

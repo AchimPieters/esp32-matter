@@ -232,6 +232,30 @@ type with "Switch" in the name is a client/input device (same category as
 device, icon included; see `firmware/outlet/main/app_main.cpp`'s header
 comment for the full explanation.
 
+The outlet later gained two more checkable-list pickers in Configure
+Device, stacked in the same left sidebar as the sensor-model/button-count
+pickers: **Output** (LED vs. Relay — a relay module is active-LOW, LED
+default is active-HIGH) and **Power Monitoring** (None, or one of six
+chips: BL0942, BL0937, HLW8012, CSE7759, CSE7766, ADE7953). These use a
+new `extraPickers` array on the `DEVICE_TYPES` entry, deliberately kept
+separate from `componentOptions` — reusing `componentOptions` here would
+have incorrectly fed these choices into the GPIO-field-labeling logic
+(`driverLabel`/`secondaryFieldNeeded`) that only makes sense for a
+sensor's own pin naming, not for a choice that doesn't affect any GPIO
+field's label at all. Each `extraPickers` entry independently drives its
+own sed line (`defineName`/`defineValue`, same non-GPIO `#define`-selects-
+a-branch pattern `componentDefineName` already used for `SENSOR_TYPE`),
+its own review row in Customise & Review, and its own unverified-warning
+box in Generate Firmware — with an extra explicit caveat singled out for
+ADE7953, since it's the least-certain of the six drivers (see
+`firmware/outlet/main/app_main.cpp`'s header comment for exactly why).
+Picking "None" for Power Monitoring is the default and has no build
+impact beyond the one `#define`; picking a chip pulls in that chip's
+driver and a second Matter endpoint (Electrical Sensor). None of the six
+chips has been tested on real hardware here — flagged as such throughout,
+same standard as the other build-verified-but-not-hardware-tested pieces
+in this repo.
+
 The temperature sensor (`temperature_sensor` + `humidity_sensor`, one
 node with two endpoints — Matter has no single device type for both from
 one sensor chip) supports 7 sensor chips (SHT3x, SHT4x, AHT20, DHT11,
@@ -325,6 +349,18 @@ testing does.
   additionally been boot-tested on a real board. `COMPONENT_LIBRARY`'s
   `verified: false` on both `LDR` and `BH1750` surfaces this in the
   Configure Device dropdown and the Generate Firmware warning box.
+- The outlet's six power-monitoring chips are build-verified in Docker
+  only, not tested against real hardware — none of the six modules was
+  physically available here. Their protocols were checked against their
+  own manufacturer datasheets rather than trusted from secondary sources,
+  which caught two real bugs (BL0942 byte offsets, CSE7766 status-byte
+  semantics) — but two of the six (CSE7759, ADE7953) could only be
+  partially or indirectly verified even that way; see
+  `firmware/outlet/main/app_main.cpp`'s header comment for exactly which
+  chip got what level of verification. `COMPONENT_LIBRARY`'s per-chip
+  `verified`/`note` fields surface this in the Power Monitoring picker
+  and the Generate Firmware warning box, with an extra explicit caveat
+  for ADE7953 specifically.
 - The switch's buttons each send a real OnOff Toggle to whatever their own
   endpoint is bound to (`client::cluster_update()`), but those bindings
   themselves have to be set up through a controller with a Bindings UI

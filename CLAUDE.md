@@ -166,7 +166,55 @@ firmware/outlet/         On/Off Plug-in Unit — fourth device type, combines
                            on/off state distinct from a plug-in outlet, see
                            the header comment in app_main.cpp for the full
                            explanation, checked directly against the spec's
-                           device_types/ folder)
+                           device_types/ folder). #define OUTLET_OUTPUT_TYPE
+                           selects LED (default, active-HIGH) or RELAY
+                           (active-LOW — common for low-cost opto-isolated
+                           relay modules, documented as "always check your
+                           specific module" since polarity isn't universal).
+                           #define OUTLET_POWER_MONITOR optionally compiles
+                           in one of 6 power-monitoring chip drivers —
+                           BL0942/CSE7766 (UART), BL0937/HLW8012/CSE7759
+                           (GPIO pulse-frequency), ADE7953 (I2C) — feeding a
+                           second Matter endpoint (Electrical Sensor device
+                           type, 0x0510) built from two different esp-matter
+                           integration patterns: ElectricalPowerMeasurement
+                           via a hand-written push-style Delegate subclass
+                           (adapted from esp-matter's own
+                           examples/all_device_types_app reference, since
+                           esp-matter's generic cluster::create() config for
+                           it is an undocumented void* — not risked) and
+                           ElectricalEnergyMeasurement via esp-matter's own
+                           ready-made free-function API
+                           (data_model_provider/clusters/
+                           electrical_energy_measurement/integration.h —
+                           no custom Delegate needed there). All 6 chips'
+                           protocols were checked against their own
+                           manufacturer datasheets, not secondary sources,
+                           per instruction — this caught two real bugs:
+                           BL0942's response packet had current and voltage
+                           byte offsets swapped from an earlier
+                           secondary-source draft, and CSE7766's Adj status
+                           byte was mischaracterized as "measurement valid"
+                           when the datasheet defines it as "cycle
+                           complete/incomplete" (same resulting skip logic,
+                           different actual meaning — comment corrected).
+                           BL0937 and HLW8012's existing formulas were
+                           independently re-derived from their datasheets
+                           and confirmed already correct. CSE7759 (assumed
+                           to share HLW8012's chip family per a secondary
+                           source only — its own datasheet wasn't
+                           obtainable) and ADE7953 (least-certain of the
+                           six — only partially confirmed against Analog
+                           Devices' own datasheet across several attempts)
+                           are flagged as such in the code, the wizard's
+                           Configure Device step, and its Generate Firmware
+                           step. See the file's header comment for full
+                           per-chip protocol/formula detail and exact
+                           sourcing. Build-verified in Docker for all 7
+                           power-monitor configurations (none + 6 chips) x
+                           both output types — not hardware-tested (no
+                           module of any of the 6 chips was physically
+                           available).
   partitions.csv           same OTA + fctry layout as firmware/light/
   sdkconfig.defaults        same as firmware/light/
 firmware/temperature-sensor/  Temperature + humidity sensor — fifth device
@@ -467,6 +515,60 @@ SECURITY.md               flash encryption / secure boot / signed OTA guidance
    used for the temperature/light sensors' `SENSOR_TYPE`) — the first
    device type needing a *variable number* of GPIO fields rather than a
    fixed one or two.
+
+   `firmware/outlet/` was then extended with an optional relay output
+   polarity (`OUTLET_OUTPUT_TYPE`: LED active-HIGH default vs. RELAY
+   active-LOW) and, much more substantially, optional power monitoring via
+   6 selectable chips (`OUTLET_POWER_MONITOR`: BL0942, BL0937, HLW8012,
+   CSE7759, CSE7766, ADE7953), spanning three genuinely different
+   protocol families — UART request/response, UART auto-report, GPIO
+   pulse-frequency, and I2C. This is this repo's first device exposing a
+   second Matter endpoint (Electrical Sensor, device type 0x0510) and the
+   first to combine two different esp-matter cluster-integration patterns
+   in one file: ElectricalPowerMeasurement needed a hand-written
+   push-style `Delegate` subclass (adapted from esp-matter's own
+   `examples/all_device_types_app` reference code, since the generic
+   `cluster::electrical_power_measurement::create()` config is an
+   undocumented raw `void*` — not risked); ElectricalEnergyMeasurement,
+   by contrast, ships a complete ready-made implementation in esp-matter
+   itself, driven entirely through free functions
+   (`data_model_provider/clusters/electrical_energy_measurement/
+   integration.h`) with no custom Delegate needed at all. Per the user's
+   explicit instruction, every chip's protocol/formula was checked
+   against its own manufacturer datasheet directly (not just ESPHome's
+   open-source implementations, which an earlier draft had leaned on) —
+   this caught two real bugs: BL0942's response packet had current and
+   voltage at swapped byte offsets, and CSE7766's "Adj" status byte was
+   mischaracterized as a per-measurement validity flag when the datasheet
+   defines it as "cycle complete vs. partial" (the resulting skip-logic
+   behavior was coincidentally already correct; only the comment was
+   wrong). BL0937 and HLW8012's existing formulas were independently
+   re-derived from their datasheets and confirmed correct as-is. CSE7759
+   (assumed to share HLW8012's formula per a secondary source only — its
+   own datasheet wasn't obtainable) and ADE7953 (least-certain of the
+   six — only partially confirmed against Analog Devices' own datasheet
+   across several fetch attempts) are flagged as such everywhere:
+   code comments, the wizard's Configure Device sidebar note, and its
+   Generate Firmware warning box (with an extra explicit caveat for
+   ADE7953 specifically). Build-verified in Docker across all 7
+   power-monitor configurations x both output types; not hardware-tested
+   (no module of any of the 6 chips was physically available in this
+   repo). The wizard gained a new `extraPickers` mechanism on
+   `DEVICE_TYPES` — deliberately separate from `componentOptions`, since
+   `componentOptions`'s selection also drives GPIO-field labeling
+   (`driverLabel`/`secondaryFieldNeeded`) that doesn't apply to an output-
+   type or power-monitor-chip choice — to render the Output and Power
+   Monitoring pickers as two stacked checkable lists in the same left
+   sidebar, each independently keyed and independently sed'd.
+
+   Also, prompted by "does the contact sensor need a sensor list like the
+   temperature sensor?": added a purely cosmetic `componentOptions` list
+   to `firmware/contact-sensor/` (reed switch / hall sensor / microswitch)
+   for visual continuity with the other device types' pickers, even
+   though — as `componentsPurelyVisual: true` documents everywhere it's
+   read — every option compiles to the exact same driver, since a contact
+   sensor is always just HIGH or LOW to the microcontroller regardless of
+   which physical part is wired up.
 2. Implement Matter **OTA** — partially done. All six firmware types ship
    `CONFIG_ENABLE_OTA_REQUESTOR=y`, which adds the OTA Requestor cluster
    to the root node endpoint entirely via Kconfig — esp-matter's own core

@@ -134,6 +134,28 @@ device type with "Switch" in the name is a client/input device, none of
 them a controllable output). See the header comment in its `app_main.cpp`
 for the full explanation.
 
+It also has two optional extras, both off by default: `OUTLET_OUTPUT_TYPE`
+switches its output between an LED (active-HIGH default) and a relay
+module (active-LOW — always check your specific module's own wiring,
+since polarity isn't universal), and `OUTLET_POWER_MONITOR` optionally
+compiles in one of **six** power-monitoring chips — **BL0942** and
+**CSE7766** (UART), **BL0937**, **HLW8012**, and **CSE7759** (GPIO
+pulse-frequency), and **ADE7953** (I2C) — feeding a second Matter
+endpoint (Electrical Sensor, device type 0x0510). Power readings use a
+hand-written push-style `Delegate` (adapted from esp-matter's own
+`examples/all_device_types_app` reference, since the generic cluster
+config for it is an undocumented raw pointer); energy readings use
+esp-matter's own ready-made `ElectricalEnergyMeasurement` API directly —
+two different integration patterns for two clusters in the same file.
+Every chip's protocol/formula was checked against its own manufacturer
+datasheet, which caught two real bugs during development (BL0942 had
+current/voltage at swapped byte offsets; CSE7766's status byte was
+mischaracterized) — see the header comment in `app_main.cpp` for the
+full per-chip story, including which ones (CSE7759, ADE7953) could only
+be partially or indirectly verified. Build-verified in Docker for all 7
+power-monitor configurations; not hardware-tested (no module of any of
+the six chips was physically available here).
+
 `firmware/temperature-sensor/` is a fifth example, and this repo's first
 sensor device with more than one supported chip: change `SENSOR_TYPE` in
 `app_main.cpp` (or let the wizard's sed command do it) to pick from **SHT3x,
