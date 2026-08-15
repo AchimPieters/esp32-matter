@@ -26,8 +26,9 @@ open tools/product-wizard/index.html
   (`firmware/light/`), "On/Off Switch" (`firmware/switch/`), "Contact
   Sensor" (`firmware/contact-sensor/`), "Outlet" (`firmware/outlet/`),
   "Temperature Sensor" (`firmware/temperature-sensor/`), "Light
-  Sensor" (`firmware/light-sensor/`), or "Dimmable Light"
-  (`firmware/dimmable-light/`). All seven are real, buildable
+  Sensor" (`firmware/light-sensor/`), "Dimmable Light"
+  (`firmware/dimmable-light/`), or "Window Covering"
+  (`firmware/window-covering/`). All eight are real, buildable
   firmware, not just UI placeholders.
 - **Select Module (step 2)** — pick a target chip (ESP32, C2, C3, C5, C6,
   C61, S3, H2), mirroring what `tools/dev.sh` + `idf.py set-target`
@@ -398,6 +399,29 @@ serial log, which showed a distinct `Light level set to N/254` line for
 every step of a slider drag, matching what was actually done in the
 controller's UI.
 
+The window covering (`firmware/window-covering/`, `window_covering`
+device type) is the option not picked when dimmable light was chosen from
+the same three-way offer (the other being a color light) — this repo's
+first device type with continuous, multi-second physical movement. Its
+`DEVICE_TYPES` entry uses the same `driver` + `secondary` + `identify`
+shape `firmware/outlet/`'s own entry already uses for a device type
+needing two main GPIOs (here: an UP/open relay and a DOWN/close relay,
+both active-LOW) — again no new wizard mechanism needed. Unlike every
+other cluster this repo builds, WindowCovering's own Matter cluster
+doesn't drive hardware or simulate movement by itself (confirmed directly
+in esp-matter's source — it only validates commands and calls an
+app-supplied Delegate), so the firmware needed its own timed-movement
+logic: a shared FreeRTOS task drives the two relays and estimates
+position via linear interpolation against a calibrated full-travel time,
+with no position sensor assumed — the same technique ESPHome's/Tasmota's
+own time-based cover components use. A real compile error was caught by
+an actual Docker build, not by inspection: esp-matter's own `nullable<T>`
+wrapper type isn't the same as `chip::app::DataModel::Nullable<T>`, and
+the first build attempt used the wrong one. Build-verified in Docker; not
+hardware-tested (no motor/relay hardware for this device type physically
+available when written) — see `firmware/window-covering/main/app_main.cpp`'s
+header comment for the full explanation.
+
 Reflashing a board that was previously commissioned with different
 firmware/identity (as happened testing this, repeatedly, across several
 of these device types) leaves stale fabric data in NVS — the write-flash
@@ -410,16 +434,29 @@ testing does.
 
 ## Known limitations
 
-- Seven device types exist (`On/Off Light`, `On/Off Switch`, `Contact
+- Eight device types exist (`On/Off Light`, `On/Off Switch`, `Contact
   Sensor`, `Outlet`, `Temperature Sensor`, `Light Sensor`, `Dimmable
-  Light`) — light/switch/contact/outlet are all digital GPIO, temperature
-  is this repo's first non-GPIO sensor (I2C, single-wire, or 1-Wire
-  depending which of its 7 supported chips you pick), light sensor is the
-  first analog/ADC one, and dimmable light is the first with a real
-  actuator beyond simple on/off (PWM output via LEDC). A color light or a
-  window covering/blind (the two options not picked when choosing
-  dimmable light) are reasonable further `DEVICE_TYPES` entries (see the
+  Light`, `Window Covering`) — light/switch/contact/outlet are all digital
+  GPIO, temperature is this repo's first non-GPIO sensor (I2C, single-wire,
+  or 1-Wire depending which of its 7 supported chips you pick), light
+  sensor is the first analog/ADC one, dimmable light is the first with a
+  real actuator beyond simple on/off (PWM output via LEDC), and window
+  covering is the first with continuous, multi-second physical movement
+  (two relays + time-based position estimation, no position sensor). A
+  color light (the option not picked when window covering was chosen from
+  the same three) is a reasonable further `DEVICE_TYPES` entry (see the
   comment above that array in `index.html`).
+- The window covering has no position sensor of any kind — position is
+  estimated purely from calibrated motor-on time (linear interpolation),
+  the same technique ESPHome's/Tasmota's own time-based cover components
+  use. This means the reported position can silently drift from reality if
+  the motor stalls, slips, or the covering is moved by hand; only a full
+  open or full close command re-anchors it to a known point (0% or 100%).
+  Not a bug specific to this implementation — an inherent limitation of
+  time-based (vs. sensor-based) position tracking, documented in
+  `firmware/window-covering/main/app_main.cpp`'s header comment. Also not
+  yet hardware-tested — no motor/relay hardware for this device type was
+  physically available when it was built.
 - The light sensor is the one device type in this list not actually
   confirmed against real hardware for both of its sensor options — no
   LDR or BH1750 module was on hand when either was built. Everything

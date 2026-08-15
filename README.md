@@ -244,10 +244,31 @@ both On/Off and the brightness slider exercised live from Home
 Assistant's UI — confirmed via the serial log, not just the controller's
 own display.
 
-To add another type, copy any of the seven folders and swap the endpoint
+`firmware/window-covering/` is an eighth example, and this repo's first
+device type with continuous, multi-second physical movement rather than
+an instant response. Uses esp-matter's `window_covering` endpoint (Lift +
+PositionAwareLift features — up/down travel with percentage position
+reporting, no Tilt). Unlike every other cluster this repo uses,
+WindowCovering doesn't drive hardware or simulate movement by itself —
+confirmed directly in esp-matter's source: it only validates commands and
+calls an app-supplied `Delegate`'s `HandleMovement()`/`HandleStopMotion()`.
+This file's delegate drives two relay outputs (UP/DOWN, active-LOW,
+mutually exclusive by construction) via a shared FreeRTOS task, estimating
+position through linear interpolation against a calibrated full-travel
+time — no position sensor assumed, the same technique ESPHome's/Tasmota's
+own time-based cover components use. Position accuracy is therefore only
+as good as that calibration; a stalled, slipped, or hand-moved covering
+drifts out of sync until the next full open/close command re-anchors it.
+Cross-checked against connectedhomeip's own real reference delegate
+(`examples/chef/common/clusters/window-covering/`) for the correct
+attribute update pattern before writing any of it — see its `app_main.cpp`
+header comment for the full explanation. Build-verified in Docker; not
+hardware-tested (no motor/relay hardware for this device type physically
+available when written).
+
+To add another type, copy any of the eight folders and swap the endpoint
 type in `app_main.cpp` — esp-matter provides ready-made types like
-`extended_color_light`, `window_covering`, `occupancy_sensor`, and many
-more.
+`extended_color_light`, `occupancy_sensor`, and many more.
 
 ## Updates
 
@@ -256,7 +277,7 @@ but the multi-GB Docker image stalled out on GitHub-hosted runners, so it
 was reverted rather than left flaky). Build + flash a new version yourself
 following the Quick Start steps above whenever you change `app_main.cpp`.
 
-All seven device types also ship with Matter's **OTA Requestor** cluster
+All eight device types also ship with Matter's **OTA Requestor** cluster
 enabled (`CONFIG_ENABLE_OTA_REQUESTOR=y`), so once a device is bound to an
 OTA Provider node on the same fabric, it can fetch and install updates over
 the air using the existing `ota_0`/`ota_1` A/B partition slots — no app

@@ -416,6 +416,58 @@ firmware/dimmable-light/  Dimmable light — seventh device type, and this
                            "Light level set to N/254" line for each step.
   partitions.csv           same OTA + fctry layout as firmware/light/
   sdkconfig.defaults        same as firmware/light/
+firmware/window-covering/  Roller shade / curtain — eighth device type, and
+                           this repo's first with continuous, multi-second
+                           physical movement instead of an instant on/off/
+                           dim response
+  main/app_main.cpp       `window_covering` endpoint (Identify + Groups +
+                           WindowCovering clusters, Lift + PositionAwareLift
+                           features only — no Tilt). Confirmed directly in
+                           esp-matter's own source that, unlike every prior
+                           device type, this cluster does NOT drive hardware
+                           or simulate movement on its own — it only
+                           validates commands, stores TargetPosition, and
+                           calls an app-supplied Delegate's HandleMovement()/
+                           HandleStopMotion(). Cross-checked against
+                           connectedhomeip's own real reference delegate
+                           (examples/chef/common/clusters/window-covering/)
+                           for the correct Attribute Get/Set +
+                           MatterReportingAttributeChangeCallback() pattern
+                           — chef's own version does an instant jump with no
+                           timed movement (headless/simulated, no real
+                           motor), so this file's delegate adds the timed,
+                           physical part chef doesn't need: HandleMovement()
+                           records the direction, and a shared FreeRTOS task
+                           drives two relay outputs (UP/DOWN, active-LOW,
+                           mutually exclusive by construction) and reports
+                           CurrentPositionLiftPercent100ths periodically via
+                           linear interpolation against a calibrated
+                           full-travel time (WINDOW_COVERING_FULL_TRAVEL_MS)
+                           — no position sensor assumed, same time-based
+                           technique ESPHome's/Tasmota's own cover
+                           components use for this class of cheap motor
+                           hardware. An extra overshoot allowance runs the
+                           motor a bit longer than the calibrated time when
+                           the target is a hard 0%/100%, so timer jitter
+                           doesn't leave the covering short of its actual
+                           physical end stop. Position is therefore only as
+                           accurate as the calibration — a stalled/slipped/
+                           hand-moved covering will silently drift out of
+                           sync until the next full open or close command
+                           re-anchors it to a known endpoint. A real,
+                           substantive bug was caught by an actual Docker
+                           build, not by inspection: esp-matter's own
+                           `nullable<T>` wrapper (used for the position
+                           config fields) isn't the same type as
+                           `chip::app::DataModel::Nullable<T>` — the first
+                           build attempt used the latter and failed to
+                           compile; fixed by using esp-matter's own
+                           `nullable<uint16_t>(0)` constructor instead.
+                           Build-verified in Docker; not hardware-tested (no
+                           motor/relay hardware for this device type
+                           physically available when written).
+  partitions.csv           same OTA + fctry layout as firmware/light/
+  sdkconfig.defaults        same as firmware/light/
 tools/
   dev.sh                  opens the Docker dev environment
   gen_factory.sh          local QR + factory partition generator
@@ -756,7 +808,53 @@ SECURITY.md               flash encryption / secure boot / signed OTA guidance
    have its dimming behavior specifically confirmed end to end, not just
    commissioning; see its own repository-layout entry above for the full
    detail now that this is hardware-verified, not just build-verified.
-2. Implement Matter **OTA** — partially done. All seven firmware types ship
+
+   An eighth device type, `firmware/window-covering/` (`window_covering`
+   endpoint type), followed — the option not picked when dimmable light
+   was chosen from the same three (the other being a color light). This
+   repo's first device type with continuous, multi-second physical
+   movement rather than an instant response, and the first where the
+   Matter cluster itself does *not* drive hardware or simulate movement —
+   confirmed directly in esp-matter's source that WindowCovering only
+   validates commands and calls an app-supplied Delegate, unlike
+   LevelControl (which ramps CurrentLevel entirely inside
+   connectedhomeip's own cluster server). Cross-checked against
+   connectedhomeip's own real reference delegate implementation
+   (`examples/chef/common/clusters/window-covering/`) for the correct
+   attribute Get/Set + `MatterReportingAttributeChangeCallback()` pattern
+   before writing this file's own delegate, which adds the timed,
+   physical movement chef's headless/simulated version doesn't need: two
+   relay outputs (UP/DOWN, active-LOW, mutually exclusive by
+   construction) driven by a shared FreeRTOS task that estimates position
+   via linear interpolation against a calibrated full-travel time — the
+   same technique ESPHome's/Tasmota's own time-based cover components use
+   for motors with no position sensor of their own. A real compile error
+   was caught by an actual Docker build on the first attempt, not by
+   inspection: esp-matter's own `nullable<T>` wrapper type isn't the same
+   as `chip::app::DataModel::Nullable<T>` — fixed by using esp-matter's
+   own constructor. Build-verified in Docker; not hardware-tested (no
+   motor/relay hardware for this device type physically available when
+   written). See its own repository-layout entry above for the full
+   detail, including the documented limitation that position accuracy
+   depends entirely on calibration and drifts if the motor stalls, slips,
+   or is moved by hand.
+
+   Also during this session: the wizard's Select Module connectivity
+   badges were restyled (small bordered rounded-rect instead of filled
+   pills, per a reference screenshot) and gained a "Matter" badge (always
+   shown — every module here builds Matter firmware) and a "Zigbee"
+   badge for the 802.15.4-capable chips, with an explicit note (initially
+   in the visible label, moved to the hover tooltip after feedback) that
+   the radio can physically run Zigbee but this repo/wizard never
+   actually builds Zigbee firmware for it. Three ESP32 modules missing
+   from the picker were added — ESP32-C2, ESP32-C5, ESP32-C61 — after
+   checking each chip's real connectivity directly in ESP-IDF's own
+   `soc_caps.h` rather than assuming from the chip name alone; this
+   caught that ESP32-H4 and ESP32-H21 (initially assumed addable) both
+   have their BLE/802.15.4 capability defines commented out on this
+   repo's exact pinned ESP-IDF version (v5.5.4), so they were left out
+   rather than added and silently broken.
+2. Implement Matter **OTA** — partially done. All eight firmware types ship
    `CONFIG_ENABLE_OTA_REQUESTOR=y`, which adds the OTA Requestor cluster
    to the root node endpoint entirely via Kconfig — esp-matter's own core
    startup (`esp_matter_core.cpp`) calls
