@@ -468,7 +468,8 @@ firmware/window-covering/  Roller shade / curtain — eighth device type, and
                            physically available when written).
   partitions.csv           same OTA + fctry layout as firmware/light/
   sdkconfig.defaults        same as firmware/light/
-firmware/color-light/     RGB color light — ninth device type, and the last
+firmware/color-light/     RGB/RGBW/RGBWW color light — ninth device type,
+                           and the last
                            of the three options offered together when
                            firmware/dimmable-light/ was added (dimmable
                            light and window covering were the other two,
@@ -528,22 +529,78 @@ firmware/color-light/     RGB color light — ninth device type, and the last
                            (`identify::command::create_trigger_effect`
                            instead of `cluster::identify::command::
                            create_trigger_effect`) — fixed, second build
-                           clean. #define COLOR_LIGHT_HAS_WHITE_CHANNEL
-                           optionally adds a 4th LEDC channel for an RGBW
-                           LED/strip, converting the same Hue/Saturation
-                           color to RGBW via the standard "extract common
-                           white" technique (W = min(R,G,B), then subtract
-                           W from each of R/G/B) — the same algorithm Home
+                           clean. #define COLOR_LIGHT_COLOR_MODE (a 3-way
+                           enum: COLOR_LIGHT_MODE_RGB/_RGBW/_RGBWW, RGB by
+                           default) selects between three hardware
+                           variants. RGBW adds a 4th LEDC channel,
+                           converting the same Hue/Saturation color to
+                           RGBW via the standard "extract common white"
+                           technique (W = min(R,G,B), then subtract W
+                           from each of R/G/B) — the same algorithm Home
                            Assistant's own color utility
                            (`color_rgb_to_rgbw`) and WLED use, not
                            something invented for this file; Matter's
                            ColorControl cluster has no separate "White"
                            concept at all, this is purely a local
-                           hardware-rendering decision. Build-verified in
-                           Docker for both RGB (default) and RGBW; not
-                           hardware-tested (no RGB(W) LED/driver board for
-                           this device type physically available when
-                           written).
+                           hardware-rendering decision. RGBWW (what LED
+                           strip vendors sell as "RGBCCT"/"RGB+CCT" — same
+                           5-channel hardware) is a genuinely different
+                           case, not just one more channel: real RGBCCT
+                           products don't blend RGB and white
+                           simultaneously (confirmed in ESPHome's own
+                           rgbww light component docs, which call this
+                           "color_interlock"), which maps cleanly onto
+                           Matter's ColorControl cluster already having a
+                           `ColorMode` attribute that distinguishes
+                           Hue/Saturation from ColorTemperatureMireds as
+                           separate color spaces — so RGBWW mode adds the
+                           ColorTemperature feature
+                           (`cluster::color_control::feature::
+                           color_temperature::add()`, config_t field
+                           names confirmed directly against esp-matter's
+                           own color_control.h) alongside HueSaturation,
+                           and the firmware locally latches which color
+                           space a controller last commanded, driving
+                           either the RGB channels or the cool/warm
+                           channels — never both — exactly ESPHome's
+                           interlock behavior, just built against
+                           Matter's cluster instead. Converting a target
+                           ColorTemperatureMireds into cool/warm channel
+                           duty cycles reuses ESPHome's own
+                           light_call.cpp formula verbatim (clamp into
+                           range, linear-interpolate the warm/cool
+                           fraction, then normalize both by their max so
+                           at least one channel stays at full strength at
+                           any color temperature instead of both dimming
+                           together at the midpoint) — fetched and
+                           confirmed from ESPHome's actual source file,
+                           not assumed. COLOR_LIGHT_COOL_WHITE_KELVIN/
+                           _WARM_WHITE_KELVIN default to 6500K/2700K, the
+                           two most common "daylight"/"warm white" LED
+                           bin ratings across the LED lighting industry —
+                           explicitly documented as adjustable per your
+                           actual LEDs' rated color temperature, since no
+                           RGBWW hardware was available to measure real
+                           values (ESPHome's own documented RGBWW example
+                           uses 6536K/2000K instead, underlining there's
+                           no universal default). Wizard integration
+                           (tools/product-wizard/) needed the color-mode
+                           picker's options to become a true 3-way enum —
+                           RGB/RGBW's defineValue changed from raw "0"/
+                           "1" to the actual C constant names
+                           (COLOR_LIGHT_MODE_RGB/_RGBW), same pattern
+                           SENSOR_TYPE/OUTLET_POWER_MONITOR already use —
+                           but needed zero new render/validation/sed
+                           logic: RGBWW's 2 extra GPIO fields (cool white,
+                           warm white) go through the exact same
+                           multi-pin `pins` array mechanism BL0942's UART
+                           pins and ADE7953's I2C pins already exercise,
+                           confirmed by reading that code path rather
+                           than assuming it only handled one pin. Build-
+                           verified in Docker for all three modes (RGB,
+                           RGBW, RGBWW); not hardware-tested (no RGB(W)(W)
+                           LED/driver board for this device type
+                           physically available when written).
   partitions.csv           same OTA + fctry layout as firmware/light/
   sdkconfig.defaults        same as firmware/light/
 tools/
@@ -1002,6 +1059,45 @@ SECURITY.md               flash encryption / secure boot / signed OTA guidance
    RGBW mode's White Channel field rendering correctly), continuing the
    "actually render wizard changes with a headless Chromium" practice
    started when the outlet icon issue was caught.
+
+   `firmware/color-light/` then gained a third variant, RGBWW (what LED
+   strip vendors sell as "RGBCCT"/"RGB+CCT" — separate cool-white and
+   warm-white channels instead of RGBW's single white channel), prompted
+   directly by the user listing out real product categories (RGB, RGBW,
+   RGBIC, RGBWW, RGBCCT) they wanted covered. Unlike RGBW, this isn't
+   just "one more optional channel": real RGBCCT hardware doesn't blend
+   RGB and white simultaneously (confirmed via ESPHome's own rgbww light
+   component docs — "color_interlock", "it is not possible to enable the
+   RGB leds at the same time as the white leds" on this class of
+   hardware), which maps directly onto Matter's ColorControl cluster
+   already distinguishing Hue/Saturation from ColorTemperatureMireds as
+   separate `ColorMode` values — so RGBWW mode adds the ColorTemperature
+   feature (confirmed field-by-field against esp-matter's own
+   color_control.h: `color_temperature_mireds`,
+   `color_temp_physical_min/max_mireds`,
+   `couple_color_temp_to_level_min_mireds`,
+   `start_up_color_temperature_mireds`) and the firmware locally latches
+   which color space was most recently commanded, driving either the RGB
+   channels or the cool/warm channels — same interlock effect as
+   ESPHome's, against Matter's own cluster. The mireds→channel-duty
+   conversion reuses ESPHome's own `light_call.cpp`
+   `transform_parameters_` formula verbatim (fetched and read directly,
+   not assumed): clamp into range, linear-interpolate the warm/cool
+   fraction, then normalize both by their max so at least one channel
+   stays at full strength at any color temperature instead of both
+   dimming together at the midpoint. This forced `COLOR_LIGHT_COLOR_MODE`
+   from a boolean flag into a real 3-way enum
+   (`COLOR_LIGHT_MODE_RGB`/`_RGBW`/`_RGBWW`) — safe to do since the
+   RGBW-only version had only just been committed, not yet released or
+   hardware-tested by anyone. The wizard side needed zero new
+   render/validation/sed logic despite this: RGBWW's 2 extra GPIO fields
+   (cool white, warm white) go through the exact same multi-pin `pins`
+   array mechanism `firmware/outlet/`'s BL0942 (2 UART pins) and ADE7953
+   (SDA/SCL) options already exercise — confirmed by actually reading
+   that render/validation code path before assuming it only ever handled
+   one pin per option, rather than guessing. Build-verified in Docker for
+   all three color modes; not hardware-tested (no RGB(W)(W) LED/driver
+   board physically available when written).
 2. Implement Matter **OTA** — partially done. All nine firmware types ship
    `CONFIG_ENABLE_OTA_REQUESTOR=y`, which adds the OTA Requestor cluster
    to the root node endpoint entirely via Kconfig — esp-matter's own core

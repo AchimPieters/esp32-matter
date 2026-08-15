@@ -484,6 +484,31 @@ conditional White Channel GPIO field, and the configuration-summary row
 all render correctly. Not hardware-tested (no RGB(W) LED/driver board
 physically available when written).
 
+A third mode, RGBWW (what LED strip vendors sell as "RGBCCT"/"RGB+CCT"
+— separate cool-white and warm-white channels instead of RGBW's single
+white channel), followed directly on the user's request. Unlike RGBW,
+this isn't just "one more channel": real RGBCCT hardware never blends
+RGB and white simultaneously (ESPHome's own rgbww light component docs
+call this "color_interlock"), which maps onto Matter's ColorControl
+cluster already treating Hue/Saturation and ColorTemperatureMireds as
+separate `ColorMode` values — so this variant adds Matter's
+ColorTemperature feature and the firmware locally tracks which color
+space a controller last commanded, driving either the RGB channels or
+the cool/warm channels, never both. This forced `COLOR_LIGHT_COLOR_MODE`
+from a boolean flag into a real 3-way enum
+(`COLOR_LIGHT_MODE_RGB`/`_RGBW`/`_RGBWW`) — safe since the RGBW-only
+version had only just been committed, not yet released or hardware-
+tested by anyone — and the `COMPONENT_LIBRARY` entries' `defineValue`
+changed from raw `"0"`/`"1"` to the actual C constant names, matching
+`SENSOR_TYPE`/`OUTLET_POWER_MONITOR`'s existing pattern. Despite adding
+2 extra GPIO fields (cool white, warm white) instead of 1, this still
+needed zero new render/validation/sed logic: the `pins` array mechanism
+already handles any number of pins per option — confirmed by reading
+that code path (it already drives BL0942's 2 UART pins and ADE7953's
+SDA/SCL) rather than assuming it would need extending. Build-verified in
+Docker for all three color modes; not hardware-tested (no RGB(W)(W)
+LED/driver board physically available when written).
+
 Reflashing a board that was previously commissioned with different
 firmware/identity (as happened testing this, repeatedly, across several
 of these device types) leaves stale fabric data in NVS — the write-flash

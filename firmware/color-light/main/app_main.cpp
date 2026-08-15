@@ -1,5 +1,6 @@
 /*
- * Minimal Matter Color Light (RGB or RGBW) — ninth device type, and the
+ * Minimal Matter Color Light (RGB, RGBW, or RGBWW/RGBCCT) — ninth device
+ * type, and the
  * last of the three options offered together back when
  * firmware/dimmable-light/ was added (the other two, dimmable light and
  * window covering, are both already built — this is the remaining one).
@@ -82,25 +83,66 @@
  * firmware/dimmable-light/'s own brightness: turning back on restores
  * the last color, not a reset one.
  *
- * --- Optional white channel (COLOR_LIGHT_HAS_WHITE_CHANNEL) ---------------
- * Off by default — a plain 3-channel RGB LED is this file's baseline (see
- * above). Turning this on adds a 4th LEDC channel and converts the HSV→RGB
- * result into RGBW via the standard "extract common white" technique:
- * W = min(R, G, B); R' = R - W; G' = G - W; B' = B - W (implemented in
- * rgb_to_rgbw() below). This is the same algorithm Home Assistant's own
- * color utility (`homeassistant.util.color.color_rgb_to_rgbw`) and WLED
- * use — not something invented for this file, a widely-used, well-
- * understood technique precisely because there's no single Matter- or
- * industry-mandated RGBW formula: real RGBW products differ in how much
- * they lean on the (usually more efficient, sometimes more accurate)
- * dedicated white LED vs. the RGB channels for near-white colors, and this
- * simple subtraction is the common baseline every more elaborate scheme
- * builds on. Matter's own ColorControl cluster has no separate "White"
- * attribute or concept at all here — from the protocol's point of view
- * this is still plain Hue/Saturation control (see the header comment
- * above on Matter cluster details); the white channel is purely a local
+ * --- COLOR_LIGHT_COLOR_MODE: RGB / RGBW / RGBWW ---------------------------
+ * COLOR_LIGHT_COLOR_MODE selects one of three build-time hardware
+ * variants — plain 3-channel RGB (default), RGBW (adds one white channel),
+ * or RGBWW (adds separate cool-white + warm-white channels, i.e. what LED
+ * strip vendors usually sell as "RGBCCT" or "RGB+CCT" — the two names
+ * refer to the same 5-channel hardware).
+ *
+ * RGBW adds a 4th LEDC channel and converts the HSV→RGB result into RGBW
+ * via the standard "extract common white" technique: W = min(R, G, B);
+ * R' = R - W; G' = G - W; B' = B - W (implemented in rgb_to_rgbw() below).
+ * This is the same algorithm Home Assistant's own color utility
+ * (`homeassistant.util.color.color_rgb_to_rgbw`) and WLED use — not
+ * something invented for this file, a widely-used, well-understood
+ * technique precisely because there's no single Matter- or industry-
+ * mandated RGBW formula: real RGBW products differ in how much they lean
+ * on the (usually more efficient, sometimes more accurate) dedicated
+ * white LED vs. the RGB channels for near-white colors, and this simple
+ * subtraction is the common baseline every more elaborate scheme builds
+ * on. Matter's own ColorControl cluster has no separate "White" attribute
+ * or concept at all here — from the protocol's point of view this is
+ * still plain Hue/Saturation control; the white channel is purely a local
  * hardware-rendering decision this device makes on its own, invisible to
  * any controller.
+ *
+ * RGBWW is a genuinely different case, not just "one more channel": real
+ * RGBCCT products don't blend RGB and white simultaneously — you're
+ * either driving color (RGB) or driving tunable white (cool+warm), never
+ * both at once (confirmed in ESPHome's own rgbww light component docs,
+ * which call this "color_interlock": "it is not possible to enable the
+ * RGB leds at the same time as the white leds" on this class of
+ * hardware). This maps cleanly onto Matter's ColorControl cluster, which
+ * already has a `ColorMode` attribute distinguishing
+ * CurrentHueAndCurrentSaturation from ColorTemperatureMireds as separate,
+ * mutually exclusive color spaces — so RGBWW mode here adds the
+ * ColorTemperature feature (`cluster::color_control::feature::
+ * color_temperature::add()`, confirmed against esp-matter's own
+ * color_control.h for the exact config_t field names) alongside the
+ * existing HueSaturation feature, and locally latches which color space
+ * was most recently commanded (light_color_source below) — same
+ * interlock behavior as ESPHome's, just implemented against Matter's
+ * cluster instead of ESPHome's.
+ *
+ * Converting a target ColorTemperatureMireds into cool/warm channel duty
+ * cycles uses the same linear-interpolation-with-intensity-normalization
+ * formula as ESPHome's own light_call.cpp
+ * (LightCall::transform_parameters_): clamp the target mireds into
+ * [cool, warm], compute the warm fraction as
+ * (mireds - cool_mireds) / (warm_mireds - cool_mireds), the cool fraction
+ * as its complement, then divide both by max(warm_fraction, cool_fraction)
+ * before scaling by brightness — this keeps at least one channel at full
+ * strength at any color temperature within range instead of both
+ * channels dimming together at the midpoint, exactly the effect ESPHome
+ * gets from the same normalization. COLOR_LIGHT_COOL_WHITE_KELVIN/
+ * COLOR_LIGHT_WARM_WHITE_KELVIN (6500K/2700K) are the two most common
+ * "daylight"/"warm white" LED bin ratings used across the LED lighting
+ * industry — not this specific strip's measured values (no RGBWW
+ * hardware was available to measure), so adjust them to your actual
+ * LEDs' rated color temperature if you know it; ESPHome's own documented
+ * RGBWW example uses 6536K/2000K instead, underlining that this varies
+ * per product and there's no universal default.
  */
 
 #include <esp_err.h>
@@ -124,13 +166,32 @@ static const char *TAG = "matter_color_light";
 #define COLOR_LIGHT_GREEN_GPIO GPIO_NUM_4
 #define COLOR_LIGHT_BLUE_GPIO GPIO_NUM_5
 
-/* Optional 4th channel for an RGBW LED/strip — off by default (plain RGB,
- * see the header comment on the white channel above for the RGB->RGBW
- * conversion this enables). GPIO 18 is a plain, unreserved GPIO on
- * classic ESP32 (WROOM-32) that doesn't collide with the three color
- * channels above or the identify LED below. Adjust to match your board. */
-#define COLOR_LIGHT_HAS_WHITE_CHANNEL 0
+/* COLOR_LIGHT_COLOR_MODE picks the hardware variant — see the header
+ * comment above for the full explanation of each. Only one of these is
+ * ever active at a time (mutually exclusive #if branches below), so the
+ * RGBW and RGBWW variants can safely share the same "channel 3" LEDC
+ * slot and default GPIO 18. */
+#define COLOR_LIGHT_MODE_RGB 0
+#define COLOR_LIGHT_MODE_RGBW 1
+#define COLOR_LIGHT_MODE_RGBWW 2
+#define COLOR_LIGHT_COLOR_MODE COLOR_LIGHT_MODE_RGB
+
+/* Optional 4th channel for an RGBW LED/strip (COLOR_LIGHT_MODE_RGBW). GPIO
+ * 18 is a plain, unreserved GPIO on classic ESP32 (WROOM-32) that doesn't
+ * collide with the three color channels above or the identify LED below.
+ * Adjust to match your board. */
 #define COLOR_LIGHT_WHITE_GPIO GPIO_NUM_18
+
+/* Optional cool-white + warm-white channels for an RGBWW/RGBCCT LED/strip
+ * (COLOR_LIGHT_MODE_RGBWW) — see the header comment for the color-space
+ * "interlock" this implies and the mireds conversion it uses. GPIO 18/19
+ * are plain, unreserved GPIOs on classic ESP32 (WROOM-32). */
+#define COLOR_LIGHT_COOL_WHITE_GPIO GPIO_NUM_18
+#define COLOR_LIGHT_WARM_WHITE_GPIO GPIO_NUM_19
+#define COLOR_LIGHT_COOL_WHITE_KELVIN 6500
+#define COLOR_LIGHT_WARM_WHITE_KELVIN 2700
+#define COLOR_LIGHT_COOL_WHITE_MIREDS (1000000 / COLOR_LIGHT_COOL_WHITE_KELVIN) /* ~154 */
+#define COLOR_LIGHT_WARM_WHITE_MIREDS (1000000 / COLOR_LIGHT_WARM_WHITE_KELVIN) /* ~370 */
 
 /* Separate LED for the Matter "Identify" cluster — blinks so you can
  * physically find this device when a controller asks it to identify
@@ -153,6 +214,8 @@ static const char *TAG = "matter_color_light";
 #define COLOR_LIGHT_LEDC_GREEN_CHANNEL LEDC_CHANNEL_1
 #define COLOR_LIGHT_LEDC_BLUE_CHANNEL LEDC_CHANNEL_2
 #define COLOR_LIGHT_LEDC_WHITE_CHANNEL LEDC_CHANNEL_3
+#define COLOR_LIGHT_LEDC_COOL_WHITE_CHANNEL LEDC_CHANNEL_3
+#define COLOR_LIGHT_LEDC_WARM_WHITE_CHANNEL LEDC_CHANNEL_4
 #define COLOR_LIGHT_LEDC_MODE LEDC_LOW_SPEED_MODE
 #define COLOR_LIGHT_LEDC_DUTY_RES LEDC_TIMER_8_BIT
 #define COLOR_LIGHT_LEDC_FREQUENCY_HZ 5000
@@ -187,6 +250,16 @@ static uint8_t light_level = COLOR_LIGHT_DEFAULT_LEVEL;
 static uint8_t light_hue = COLOR_LIGHT_DEFAULT_HUE;
 static uint8_t light_saturation = COLOR_LIGHT_DEFAULT_SATURATION;
 
+#if COLOR_LIGHT_COLOR_MODE == COLOR_LIGHT_MODE_RGBWW
+/* Which color space was most recently commanded — see the header comment
+ * on the RGB/CCT "interlock" this hardware variant needs. Starts in HS
+ * mode to match COLOR_LIGHT_DEFAULT_HUE/_SATURATION being the light's
+ * initial visible color. */
+enum color_source_t { COLOR_SOURCE_HS, COLOR_SOURCE_CCT };
+static color_source_t light_color_source = COLOR_SOURCE_HS;
+static uint16_t light_mireds = COLOR_LIGHT_COOL_WHITE_MIREDS;
+#endif
+
 /* Textbook HSV -> RGB conversion (six 60-degree hue sectors). h in
  * degrees [0,360), s and v in [0,1]. Output components in [0,1]; caller
  * scales to whatever duty range it needs (0-255 here, see set_output()). */
@@ -210,10 +283,10 @@ static void hsv_to_rgb(float h, float s, float v, float *r, float *g, float *b)
     *b = b1 + m;
 }
 
-#if COLOR_LIGHT_HAS_WHITE_CHANNEL
+#if COLOR_LIGHT_COLOR_MODE == COLOR_LIGHT_MODE_RGBW
 /* RGB -> RGBW via the standard "extract common white" technique — see the
- * header comment on the optional white channel for the exact algorithm
- * and its sourcing (matches Home Assistant's own color_rgb_to_rgbw() and
+ * header comment on COLOR_LIGHT_COLOR_MODE for the exact algorithm and
+ * its sourcing (matches Home Assistant's own color_rgb_to_rgbw() and
  * WLED). Inputs and outputs are all in [0,1]. */
 static void rgb_to_rgbw(float r, float g, float b, float *r_out, float *g_out, float *b_out, float *w_out)
 {
@@ -225,31 +298,69 @@ static void rgb_to_rgbw(float r, float g, float b, float *r_out, float *g_out, f
 }
 #endif
 
-/* Drives the LEDC channels from the current on/off + level + hue +
- * saturation state together — see the header comment on color math for
- * the exact attribute-range interpretation, and on the optional white
- * channel for the RGB->RGBW conversion applied when
- * COLOR_LIGHT_HAS_WHITE_CHANNEL is enabled. */
-static void set_output(void)
+#if COLOR_LIGHT_COLOR_MODE == COLOR_LIGHT_MODE_RGBWW
+/* Target color temperature (mireds, clamped to the cool/warm physical
+ * range) + brightness -> cool-white/warm-white channel duties. Same
+ * linear-interpolation-with-intensity-normalization formula as ESPHome's
+ * own light_call.cpp (LightCall::transform_parameters_) — see the header
+ * comment on COLOR_LIGHT_COLOR_MODE for the full explanation. Duties
+ * returned as [0,1] fractions of `value_fraction` (brightness). */
+static void mireds_to_cw_ww(uint16_t mireds, float value_fraction, float *cool_out, float *warm_out)
 {
-    uint32_t red_duty = 0, green_duty = 0, blue_duty = 0, white_duty = 0;
-
-    if (light_on) {
-        float hue_degrees = (float)light_hue * 360.0f / 254.0f;
-        float saturation_fraction = (float)light_saturation / 254.0f;
-        float value_fraction = (float)light_level / 254.0f;
-        float r, g, b;
-        hsv_to_rgb(hue_degrees, saturation_fraction, value_fraction, &r, &g, &b);
-
-#if COLOR_LIGHT_HAS_WHITE_CHANNEL
-        float w;
-        rgb_to_rgbw(r, g, b, &r, &g, &b, &w);
-        white_duty = (uint32_t)(w * 255.0f + 0.5f);
+    float clamped = fminf(fmaxf((float)mireds, (float)COLOR_LIGHT_COOL_WHITE_MIREDS),
+                           (float)COLOR_LIGHT_WARM_WHITE_MIREDS);
+    float range = (float)(COLOR_LIGHT_WARM_WHITE_MIREDS - COLOR_LIGHT_COOL_WHITE_MIREDS);
+    float warm_fraction = (clamped - (float)COLOR_LIGHT_COOL_WHITE_MIREDS) / range;
+    float cool_fraction = 1.0f - warm_fraction;
+    float max_fraction = fmaxf(warm_fraction, cool_fraction);
+    *cool_out = value_fraction * (cool_fraction / max_fraction);
+    *warm_out = value_fraction * (warm_fraction / max_fraction);
+}
 #endif
 
-        red_duty = (uint32_t)(r * 255.0f + 0.5f);
-        green_duty = (uint32_t)(g * 255.0f + 0.5f);
-        blue_duty = (uint32_t)(b * 255.0f + 0.5f);
+/* Drives the LEDC channels from the current on/off + level + hue +
+ * saturation (or, in RGBWW mode, color temperature) state together — see
+ * the header comment on color math for the exact attribute-range
+ * interpretation, and on COLOR_LIGHT_COLOR_MODE for the RGB->RGBW / mireds
+ * conversions applied for the RGBW/RGBWW variants. */
+static void set_output(void)
+{
+    uint32_t red_duty = 0, green_duty = 0, blue_duty = 0;
+#if COLOR_LIGHT_COLOR_MODE == COLOR_LIGHT_MODE_RGBW
+    uint32_t white_duty = 0;
+#elif COLOR_LIGHT_COLOR_MODE == COLOR_LIGHT_MODE_RGBWW
+    uint32_t cool_white_duty = 0, warm_white_duty = 0;
+#endif
+
+    if (light_on) {
+        float value_fraction = (float)light_level / 254.0f;
+
+#if COLOR_LIGHT_COLOR_MODE == COLOR_LIGHT_MODE_RGBWW
+        if (light_color_source == COLOR_SOURCE_CCT) {
+            /* CCT mode: drive cool/warm only, RGB stays off — see the
+             * header comment on the RGB/CCT interlock. */
+            float cool_fraction, warm_fraction;
+            mireds_to_cw_ww(light_mireds, value_fraction, &cool_fraction, &warm_fraction);
+            cool_white_duty = (uint32_t)(cool_fraction * 255.0f + 0.5f);
+            warm_white_duty = (uint32_t)(warm_fraction * 255.0f + 0.5f);
+        } else
+#endif
+        {
+            float hue_degrees = (float)light_hue * 360.0f / 254.0f;
+            float saturation_fraction = (float)light_saturation / 254.0f;
+            float r, g, b;
+            hsv_to_rgb(hue_degrees, saturation_fraction, value_fraction, &r, &g, &b);
+
+#if COLOR_LIGHT_COLOR_MODE == COLOR_LIGHT_MODE_RGBW
+            float w;
+            rgb_to_rgbw(r, g, b, &r, &g, &b, &w);
+            white_duty = (uint32_t)(w * 255.0f + 0.5f);
+#endif
+
+            red_duty = (uint32_t)(r * 255.0f + 0.5f);
+            green_duty = (uint32_t)(g * 255.0f + 0.5f);
+            blue_duty = (uint32_t)(b * 255.0f + 0.5f);
+        }
     }
 
     ledc_set_duty(COLOR_LIGHT_LEDC_MODE, COLOR_LIGHT_LEDC_RED_CHANNEL, red_duty);
@@ -258,9 +369,14 @@ static void set_output(void)
     ledc_update_duty(COLOR_LIGHT_LEDC_MODE, COLOR_LIGHT_LEDC_GREEN_CHANNEL);
     ledc_set_duty(COLOR_LIGHT_LEDC_MODE, COLOR_LIGHT_LEDC_BLUE_CHANNEL, blue_duty);
     ledc_update_duty(COLOR_LIGHT_LEDC_MODE, COLOR_LIGHT_LEDC_BLUE_CHANNEL);
-#if COLOR_LIGHT_HAS_WHITE_CHANNEL
+#if COLOR_LIGHT_COLOR_MODE == COLOR_LIGHT_MODE_RGBW
     ledc_set_duty(COLOR_LIGHT_LEDC_MODE, COLOR_LIGHT_LEDC_WHITE_CHANNEL, white_duty);
     ledc_update_duty(COLOR_LIGHT_LEDC_MODE, COLOR_LIGHT_LEDC_WHITE_CHANNEL);
+#elif COLOR_LIGHT_COLOR_MODE == COLOR_LIGHT_MODE_RGBWW
+    ledc_set_duty(COLOR_LIGHT_LEDC_MODE, COLOR_LIGHT_LEDC_COOL_WHITE_CHANNEL, cool_white_duty);
+    ledc_update_duty(COLOR_LIGHT_LEDC_MODE, COLOR_LIGHT_LEDC_COOL_WHITE_CHANNEL);
+    ledc_set_duty(COLOR_LIGHT_LEDC_MODE, COLOR_LIGHT_LEDC_WARM_WHITE_CHANNEL, warm_white_duty);
+    ledc_update_duty(COLOR_LIGHT_LEDC_MODE, COLOR_LIGHT_LEDC_WARM_WHITE_CHANNEL);
 #endif
 }
 
@@ -312,12 +428,25 @@ static esp_err_t app_attribute_update_cb(attribute::callback_type_t type, uint16
         ESP_LOGI(TAG, "Light level set to %u/254", light_level);
     } else if (cluster_id == ColorControl::Id && attribute_id == ColorControl::Attributes::CurrentHue::Id) {
         light_hue = val->val.u8;
+#if COLOR_LIGHT_COLOR_MODE == COLOR_LIGHT_MODE_RGBWW
+        light_color_source = COLOR_SOURCE_HS;
+#endif
         set_output();
         ESP_LOGI(TAG, "Hue set to %u/254", light_hue);
     } else if (cluster_id == ColorControl::Id && attribute_id == ColorControl::Attributes::CurrentSaturation::Id) {
         light_saturation = val->val.u8;
+#if COLOR_LIGHT_COLOR_MODE == COLOR_LIGHT_MODE_RGBWW
+        light_color_source = COLOR_SOURCE_HS;
+#endif
         set_output();
         ESP_LOGI(TAG, "Saturation set to %u/254", light_saturation);
+#if COLOR_LIGHT_COLOR_MODE == COLOR_LIGHT_MODE_RGBWW
+    } else if (cluster_id == ColorControl::Id && attribute_id == ColorControl::Attributes::ColorTemperatureMireds::Id) {
+        light_mireds = val->val.u16;
+        light_color_source = COLOR_SOURCE_CCT;
+        set_output();
+        ESP_LOGI(TAG, "Color temperature set to %u mireds", light_mireds);
+#endif
     }
     return ESP_OK;
 }
@@ -373,8 +502,11 @@ extern "C" void app_main(void)
         { COLOR_LIGHT_LEDC_RED_CHANNEL, COLOR_LIGHT_RED_GPIO },
         { COLOR_LIGHT_LEDC_GREEN_CHANNEL, COLOR_LIGHT_GREEN_GPIO },
         { COLOR_LIGHT_LEDC_BLUE_CHANNEL, COLOR_LIGHT_BLUE_GPIO },
-#if COLOR_LIGHT_HAS_WHITE_CHANNEL
+#if COLOR_LIGHT_COLOR_MODE == COLOR_LIGHT_MODE_RGBW
         { COLOR_LIGHT_LEDC_WHITE_CHANNEL, COLOR_LIGHT_WHITE_GPIO },
+#elif COLOR_LIGHT_COLOR_MODE == COLOR_LIGHT_MODE_RGBWW
+        { COLOR_LIGHT_LEDC_COOL_WHITE_CHANNEL, COLOR_LIGHT_COOL_WHITE_GPIO },
+        { COLOR_LIGHT_LEDC_WARM_WHITE_CHANNEL, COLOR_LIGHT_WARM_WHITE_GPIO },
 #endif
     };
     for (size_t i = 0; i < sizeof(channels) / sizeof(channels[0]); i++) {
@@ -406,9 +538,9 @@ extern "C" void app_main(void)
 
     /* 3. Build the Matter data model: one node, one hand-assembled
      * Extended Color Light endpoint (Identify + Groups + OnOff +
-     * LevelControl + ColorControl[HueSaturation only] + ScenesManagement)
-     * — see the header comment on why this isn't
-     * endpoint::extended_color_light::create(). */
+     * LevelControl + ColorControl[HueSaturation, +ColorTemperature in
+     * RGBWW mode] + ScenesManagement) — see the header comment on why
+     * this isn't endpoint::extended_color_light::create(). */
     node::config_t node_config;
     node_t *node = node::create(&node_config, app_attribute_update_cb, app_identification_cb);
     if (!node) {
@@ -450,12 +582,27 @@ extern "C" void app_main(void)
     cluster::color_control::config_t color_control_config;
     color_control_config.color_mode = chip::to_underlying(ColorControl::ColorModeEnum::kCurrentHueAndCurrentSaturation);
     color_control_config.enhanced_color_mode = chip::to_underlying(ColorControl::ColorModeEnum::kCurrentHueAndCurrentSaturation);
-    color_control_config.color_capabilities = chip::to_underlying(ColorControl::ColorCapabilitiesBitmap::kHueSaturation);
+    {
+        uint16_t color_capabilities = chip::to_underlying(ColorControl::ColorCapabilitiesBitmap::kHueSaturation);
+#if COLOR_LIGHT_COLOR_MODE == COLOR_LIGHT_MODE_RGBWW
+        color_capabilities |= chip::to_underlying(ColorControl::ColorCapabilitiesBitmap::kColorTemperature);
+#endif
+        color_control_config.color_capabilities = color_capabilities;
+    }
     cluster_t *color_control_cluster = cluster::color_control::create(ep, &color_control_config, CLUSTER_FLAG_SERVER);
     cluster::color_control::feature::hue_saturation::config_t hue_saturation_config;
     hue_saturation_config.current_hue = COLOR_LIGHT_DEFAULT_HUE;
     hue_saturation_config.current_saturation = COLOR_LIGHT_DEFAULT_SATURATION;
     cluster::color_control::feature::hue_saturation::add(color_control_cluster, &hue_saturation_config);
+#if COLOR_LIGHT_COLOR_MODE == COLOR_LIGHT_MODE_RGBWW
+    cluster::color_control::feature::color_temperature::config_t color_temperature_config;
+    color_temperature_config.color_temperature_mireds = COLOR_LIGHT_COOL_WHITE_MIREDS;
+    color_temperature_config.color_temp_physical_min_mireds = COLOR_LIGHT_COOL_WHITE_MIREDS;
+    color_temperature_config.color_temp_physical_max_mireds = COLOR_LIGHT_WARM_WHITE_MIREDS;
+    color_temperature_config.couple_color_temp_to_level_min_mireds = COLOR_LIGHT_COOL_WHITE_MIREDS;
+    color_temperature_config.start_up_color_temperature_mireds = nullable<uint16_t>((uint16_t)COLOR_LIGHT_COOL_WHITE_MIREDS);
+    cluster::color_control::feature::color_temperature::add(color_control_cluster, &color_temperature_config);
+#endif
 
     cluster::scenes_management::config_t scenes_management_config;
     cluster_t *scenes_management_cluster = cluster::scenes_management::create(ep, &scenes_management_config, CLUSTER_FLAG_SERVER);
@@ -476,6 +623,10 @@ extern "C" void app_main(void)
                                                         ColorControl::Attributes::CurrentHue::Id));
     attribute::set_deferred_persistence(attribute::get(color_light_endpoint_id, ColorControl::Id,
                                                         ColorControl::Attributes::CurrentSaturation::Id));
+#if COLOR_LIGHT_COLOR_MODE == COLOR_LIGHT_MODE_RGBWW
+    attribute::set_deferred_persistence(attribute::get(color_light_endpoint_id, ColorControl::Id,
+                                                        ColorControl::Attributes::ColorTemperatureMireds::Id));
+#endif
 
     /* 4. Start Matter — begins BLE advertising so a controller can commission it. */
     err = esp_matter::start(app_event_cb);

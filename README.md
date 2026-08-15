@@ -266,33 +266,47 @@ header comment for the full explanation. Build-verified in Docker; not
 hardware-tested (no motor/relay hardware for this device type physically
 available when written).
 
-`firmware/color-light/` is a ninth example — an RGB light, still declared
-as the `ExtendedColorLight` Matter device type but implementing only its
-Hue/Saturation color mode, not esp-matter's `endpoint::extended_color_light
-::create()` default of Xy + ColorTemperature (confirmed in esp-matter's
-own source that helper never actually adds HueSaturation at all, despite
-that being what most controllers' color wheels drive first). Built by
-calling esp-matter's own lower-level free functions directly
-(`endpoint::create()`, `add_device_type()`, each cluster's own
+`firmware/color-light/` is a ninth example — an RGB/RGBW/RGBWW light,
+still declared as the `ExtendedColorLight` Matter device type but
+implementing only Hue/Saturation (plus ColorTemperatureMireds in RGBWW
+mode, see below), not esp-matter's `endpoint::extended_color_light
+::create()` default of Xy + ColorTemperature for every build (confirmed
+in esp-matter's own source that helper never actually adds HueSaturation
+at all, despite that being what most controllers' color wheels drive
+first). Built by calling esp-matter's own lower-level free functions
+directly (`endpoint::create()`, `add_device_type()`, each cluster's own
 `create()`/`feature::xxx::add()`) rather than the higher-level endpoint
 helper — the same public API that helper is itself built from, just
-composed to skip the two color modes (CIE xyY and correlated color
-temperature) this repo isn't implementing conversions for. OnOff/
-LevelControl/ColorControl's Hue and Saturation attributes are all plain
-ember attributes (confirmed against esp-matter's own
-`examples/light/main/app_driver.cpp`) — no Delegate needed. Three LEDC PWM
-channels (R/G/B, one shared timer) combine with LevelControl's brightness
-through a standard HSV→RGB conversion. An optional 4th channel
-(`COLOR_LIGHT_HAS_WHITE_CHANNEL`, off by default) drives an RGBW
-LED/strip's separate white channel, derived from the same Hue/Saturation
-color via the standard "extract common white" technique (`W =
-min(R,G,B)`, then subtract `W` from each of R/G/B) — the same approach
-Home Assistant's own color utility and WLED use, not something invented
-for this file; Matter's ColorControl cluster itself has no "white"
-concept, this is purely a local hardware-rendering choice. See its
-`app_main.cpp` header comment for the full explanation. Build-verified in
-Docker for both RGB (default) and RGBW; not hardware-tested (no RGB(W)
-LED/driver board physically available when written).
+composed to skip the CIE xyY color mode this repo isn't implementing a
+conversion for. OnOff/LevelControl/ColorControl's Hue and Saturation
+attributes are all plain ember attributes (confirmed against esp-matter's
+own `examples/light/main/app_driver.cpp`) — no Delegate needed. Three
+LEDC PWM channels (R/G/B, one shared timer) combine with LevelControl's
+brightness through a standard HSV→RGB conversion.
+
+`COLOR_LIGHT_COLOR_MODE` selects one of three build-time hardware
+variants. RGBW adds a 4th channel driving an RGBW LED/strip's separate
+white output, derived from the same Hue/Saturation color via the
+standard "extract common white" technique (`W = min(R,G,B)`, then
+subtract `W` from each of R/G/B) — the same approach Home Assistant's own
+color utility and WLED use, not something invented for this file;
+Matter's ColorControl cluster itself has no "white" concept, this is
+purely a local hardware-rendering choice. RGBWW (sold by LED strip
+vendors as "RGBCCT"/"RGB+CCT" — same 5-channel hardware) adds separate
+cool-white and warm-white channels instead, and is a genuinely different
+case: real RGBCCT hardware doesn't blend RGB and white simultaneously
+(the same "color_interlock" ESPHome's own rgbww light component
+documents), so this variant adds Matter's ColorTemperature feature
+alongside HueSaturation and locally tracks which color space a
+controller most recently commanded — driving either the RGB channels or
+the cool/warm channels, never both. The mireds→channel-duty conversion
+reuses ESPHome's own `light_call.cpp` formula (clamp into range,
+linear-interpolate the warm/cool fraction, normalize both by their max so
+one channel always stays at full strength). See its `app_main.cpp`
+header comment for the full explanation of all three variants. Build-
+verified in Docker for RGB (default), RGBW, and RGBWW; not
+hardware-tested (no RGB(W)(W) LED/driver board physically available when
+written).
 
 To add another type, copy any of the nine folders and swap the endpoint
 type in `app_main.cpp` — esp-matter provides ready-made types like

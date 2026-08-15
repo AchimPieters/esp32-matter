@@ -853,18 +853,27 @@ const COMPONENT_LIBRARY = {
     { key: "scl", label: "SCL", defineName: "ADE7953_SCL_GPIO", defaultsByModule: { esp32: 22, esp32c3: 22, esp32c6: 22, esp32s3: 22, esp32h2: 22 } },
   ] },
   // Outlet's Power Monitoring picker's `pins` mechanism (chip choice ->
-  // extra GPIO fields) turns out to fit firmware/color-light/'s optional
-  // 4th LED channel just as well: RGB vs RGBW isn't a variable-count or
+  // extra GPIO fields) turns out to fit firmware/color-light/'s color-mode
+  // choice just as well: RGB vs RGBW vs RGBWW isn't a variable-count or
   // toggleable-extra-LED situation like outlet's Status LED (different
   // shape, see the comment there) — it's a build-time hardware choice
-  // that also needs its own #define (COLOR_LIGHT_HAS_WHITE_CHANNEL) plus
-  // one extra GPIO when picked, exactly like a power-monitor chip
-  // selection. Reusing this existing mechanism needed zero new wizard
-  // code, only these two entries plus one extraPickers entry on
-  // color-light's DEVICE_TYPES entry.
-  COLOR_MODE_RGB: { name: "RGB", category: "color-mode", bus: "PWM (3ch)", verified: false, defineValue: "0" },
-  COLOR_MODE_RGBW: { name: "RGBW", category: "color-mode", bus: "PWM (4ch)", verified: false, defineValue: "1", note: "Adds a 4th LED channel. Converted from the same Hue/Saturation color via the standard RGB->RGBW \"extract common white\" technique (same algorithm Home Assistant's own color utility and WLED use) — see firmware/color-light/main/app_main.cpp's header comment.", pins: [
+  // that also needs its own #define (COLOR_LIGHT_COLOR_MODE) plus zero,
+  // one, or two extra GPIOs depending which is picked, exactly like a
+  // power-monitor chip selection. Reusing this existing mechanism needed
+  // zero new wizard code, only these three entries plus one extraPickers
+  // entry on color-light's DEVICE_TYPES entry. defineValue is the actual
+  // C constant name (COLOR_LIGHT_MODE_RGB / _RGBW / _RGBWW, #defined in
+  // app_main.cpp), not a raw 0/1/2 — RGBWW needed a real 3-way enum since
+  // it's not just "one more optional channel" (see app_main.cpp's header
+  // comment on the RGB/CCT interlock), so RGB/RGBW's defineValue changed
+  // from "0"/"1" to match once a third option existed.
+  COLOR_MODE_RGB: { name: "RGB", category: "color-mode", bus: "PWM (3ch)", verified: false, defineValue: "COLOR_LIGHT_MODE_RGB" },
+  COLOR_MODE_RGBW: { name: "RGBW", category: "color-mode", bus: "PWM (4ch)", verified: false, defineValue: "COLOR_LIGHT_MODE_RGBW", note: "Adds a 4th LED channel. Converted from the same Hue/Saturation color via the standard RGB->RGBW \"extract common white\" technique (same algorithm Home Assistant's own color utility and WLED use) — see firmware/color-light/main/app_main.cpp's header comment.", pins: [
     { key: "white", label: "White Channel", defineName: "COLOR_LIGHT_WHITE_GPIO", defaultsByModule: { esp32: 18, esp32c2: 18, esp32c3: 18, esp32c5: 18, esp32c6: 18, esp32c61: 18, esp32s3: 18, esp32h2: 18 } },
+  ] },
+  COLOR_MODE_RGBWW: { name: "RGBWW / RGBCCT", category: "color-mode", bus: "PWM (5ch)", verified: false, defineValue: "COLOR_LIGHT_MODE_RGBWW", note: "Adds separate cool-white + warm-white channels (what LED strip vendors usually sell as \"RGBCCT\"/\"RGB+CCT\" — same 5-channel hardware). Unlike RGBW, RGB and white aren't blended: the device switches between Hue/Saturation control and Matter's ColorTemperatureMireds control depending on which a controller last set, the same \"color interlock\" ESPHome's own rgbww light component documents for this class of hardware — see firmware/color-light/main/app_main.cpp's header comment for the full explanation and the mireds->channel-duty formula (sourced from ESPHome's own light_call.cpp).", pins: [
+    { key: "coolWhite", label: "Cool White Channel", defineName: "COLOR_LIGHT_COOL_WHITE_GPIO", defaultsByModule: { esp32: 18, esp32c2: 18, esp32c3: 18, esp32c5: 18, esp32c6: 18, esp32c61: 18, esp32s3: 18, esp32h2: 18 } },
+    { key: "warmWhite", label: "Warm White Channel", defineName: "COLOR_LIGHT_WARM_WHITE_GPIO", defaultsByModule: { esp32: 19, esp32c2: 19, esp32c3: 19, esp32c5: 19, esp32c6: 19, esp32c61: 19, esp32s3: 19, esp32h2: 19 } },
   ] },
 };
 
@@ -1355,17 +1364,18 @@ const DEVICE_TYPES = [
     // CHANNEL/GREEN CHANNEL/BLUE CHANNEL) in summary rows instead of the
     // switch-specific "BUTTON N" fallback.
     binName: "matter_color_light.bin",
-    // RGB vs RGBW — reuses outlet's Power Monitoring picker mechanism
-    // (chip choice -> extra GPIO field via COMPONENT_LIBRARY's `pins`),
-    // not a new one; see the comment on COLOR_MODE_RGB/COLOR_MODE_RGBW
-    // above for why this fits better than the Status LED pattern would.
+    // RGB vs RGBW vs RGBWW/RGBCCT — reuses outlet's Power Monitoring
+    // picker mechanism (chip choice -> extra GPIO field(s) via
+    // COMPONENT_LIBRARY's `pins`), not a new one; see the comment on
+    // COLOR_MODE_RGB/COLOR_MODE_RGBW/COLOR_MODE_RGBWW above for why this
+    // fits better than the Status LED pattern would.
     extraPickers: [
       {
         key: "colorMode",
         label: "Color Mode",
-        prompt: "RGB (3 channels), or RGBW if your LED/strip has a separate white channel",
-        options: ["COLOR_MODE_RGB", "COLOR_MODE_RGBW"],
-        defineName: "COLOR_LIGHT_HAS_WHITE_CHANNEL",
+        prompt: "RGB (3 channels), RGBW if your LED/strip has a separate white channel, or RGBWW/RGBCCT if it has separate cool-white and warm-white channels",
+        options: ["COLOR_MODE_RGB", "COLOR_MODE_RGBW", "COLOR_MODE_RGBWW"],
+        defineName: "COLOR_LIGHT_COLOR_MODE",
       },
     ],
     driverLabel: "Red Channel",
