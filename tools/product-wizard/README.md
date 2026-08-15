@@ -368,9 +368,15 @@ that happened to only work for a plain digital output. Configure Device
 labels the field "LED · PWM output (LEDC)" instead of "digital GPIO" to
 make clear it needs an LEDC-capable pin (true for nearly every GPIO
 except input-only ones), not any arbitrary GPIO the way a plain digital
-output field does. Build-verified in Docker; not hardware-tested (no
-board free to flash when it was added) — flagged the same way as any
-other build-only-verified piece in this repo.
+output field does. Validated end to end on real hardware shortly after
+being added — an ESP32 WROOM-32 with an LED on GPIO 2 (this device
+type's default pin, so no `#define` edits were needed at all), built and
+flashed via the wizard's own generated commands, commissioned into Home
+Assistant (clean PASE/CASE handshake), then both On/Off and the
+brightness slider exercised live from Home Assistant — confirmed via the
+serial log, which showed a distinct `Light level set to N/254` line for
+every step of a slider drag, matching what was actually done in the
+controller's UI.
 
 Reflashing a board that was previously commissioned with different
 firmware/identity (as happened testing this, repeatedly, across several
@@ -394,13 +400,6 @@ testing does.
   window covering/blind (the two options not picked when choosing
   dimmable light) are reasonable further `DEVICE_TYPES` entries (see the
   comment above that array in `index.html`).
-- The dimmable light is build-verified in Docker only, not tested against
-  real hardware — no board was free to flash when it was added. Everything
-  about it (LEDC/PWM setup, LevelControl integration) was checked directly
-  against esp-matter's own SDK headers and its `examples/light/` reference
-  before writing any code, same verification standard as every other
-  device type here — see `firmware/dimmable-light/main/app_main.cpp`'s
-  header comment for exactly what was checked.
 - The light sensor is the one device type in this list not actually
   confirmed against real hardware for both of its sensor options — no
   LDR or BH1750 module was on hand when either was built. Everything

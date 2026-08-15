@@ -236,8 +236,13 @@ is on/off state × level together — turning off doesn't forget the
 brightness, so turning back on restores it, same as a real dimmer. See
 its `app_main.cpp` header comment for the full explanation, including
 exactly what was checked against esp-matter's own SDK/reference example
-before writing any of it. Build-verified in Docker; not hardware-tested
-(no board free to flash when written).
+before writing any of it. Validated end to end on real hardware (ESP32
+WROOM-32, LED on GPIO 2 — this device type's own default, no `#define`
+edits needed): built and flashed via the wizard's own generated commands,
+commissioned into Home Assistant with a clean PASE/CASE handshake, then
+both On/Off and the brightness slider exercised live from Home
+Assistant's UI — confirmed via the serial log, not just the controller's
+own display.
 
 To add another type, copy any of the seven folders and swap the endpoint
 type in `app_main.cpp` — esp-matter provides ready-made types like

@@ -393,9 +393,19 @@ firmware/dimmable-light/  Dimmable light — seventh device type, and this
                            CurrentLevel (same call the official example
                            makes, for the same reason: avoids flash wear
                            from writing NVS on every step of a brightness
-                           slider drag). Build-verified in Docker; not
-                           hardware-tested (no board free to flash when
-                           written).
+                           slider drag). Build-verified in Docker and
+                           validated end to end on real hardware (ESP32
+                           WROOM-32, LED on GPIO 2): flashed via the
+                           wizard's own generated commands, commissioned
+                           into Home Assistant (full PASE/CASE handshake,
+                           zero errors — confirmed independently via the
+                           serial log, not just the controller's own UI),
+                           then both On/Off and the brightness slider
+                           exercised live from Home Assistant — every
+                           CurrentLevel change during a slider drag
+                           correctly reached set_output() and updated the
+                           LEDC duty, confirmed by the serial log's
+                           "Light level set to N/254" line for each step.
   partitions.csv           same OTA + fctry layout as firmware/light/
   sdkconfig.defaults        same as firmware/light/
 tools/
@@ -720,11 +730,24 @@ SECURITY.md               flash encryption / secure boot / signed OTA guidance
    `attribute::update()` pattern as OnOff, no special setter. See its own
    repository-layout entry above for the full detail (brightness scaling,
    boot-to-Off convention, deferred NVS persistence for CurrentLevel).
-   Build-verified in Docker; not hardware-tested (no board free to flash
-   when written). The wizard needed zero new mechanism for this one —
-   its `DEVICE_TYPES` entry is the same single-GPIO-plus-identify shape
-   `firmware/light/`'s own entry already uses, confirming that shape
-   really is generic rather than accidentally light-specific.
+   The wizard needed zero new mechanism for this one — its `DEVICE_TYPES`
+   entry is the same single-GPIO-plus-identify shape `firmware/light/`'s
+   own entry already uses, confirming that shape really is generic rather
+   than accidentally light-specific.
+
+   Taken through a real hardware test immediately after: built and
+   flashed via the wizard's own generated commands against an ESP32
+   WROOM-32 with an LED on GPIO 2 (this device type's own default pin —
+   no `#define` edits needed), commissioned into Home Assistant (full
+   PASE/CASE handshake, zero errors), then both On/Off and the brightness
+   slider exercised live — every serial-log line
+   (`Light turned ON`/`Light turned OFF`/`Light level set to N/254`)
+   matched what was actually done in Home Assistant's UI, including a
+   rapid slider drag producing a stream of distinct `CurrentLevel`
+   updates all correctly reaching the LEDC output. First device type to
+   have its dimming behavior specifically confirmed end to end, not just
+   commissioning; see its own repository-layout entry above for the full
+   detail now that this is hardware-verified, not just build-verified.
 2. Implement Matter **OTA** — partially done. All seven firmware types ship
    `CONFIG_ENABLE_OTA_REQUESTOR=y`, which adds the OTA Requestor cluster
    to the root node endpoint entirely via Kconfig — esp-matter's own core
