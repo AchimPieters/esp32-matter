@@ -84,6 +84,33 @@ open tools/product-wizard/index.html
     still gets written into `app_main.cpp` by Generate Firmware's sed
     command (harmlessly, since the driver never reads it) — this is a
     display-only fix, not a change to what firmware gets generated.
+  - The On/Off Switch supports **1-4 independent buttons**, added
+    directly on request ("meerdere buttons toevoegen met hun eigen
+    gpio"): a "How many buttons?" selector (`extraButtons` +
+    `buttonCountDefineName` on its `DEVICE_TYPES` entry) shows 0-3
+    additional per-button GPIO fields on top of the always-present
+    button 1. Each button becomes its own `on_off_light_switch` endpoint
+    in `app_main.cpp`, independently bindable to a different target
+    device — Matter's own way of modelling a physical multi-gang wall
+    switch. Button 1 keeps using the pre-existing `gpioPin` product
+    field (so switch products saved before this feature existed keep
+    working, unchanged, defaulting to 1 button); buttons 2-4 use a new
+    `buttonGpios` array field, only populated up to whatever
+    `buttonCount` is currently set to — shrinking the count doesn't
+    clear values for buttons beyond it, so growing it back later
+    restores what was there instead of re-defaulting. This is the first
+    device type needing a *variable* number of GPIO fields rather than a
+    fixed one or two — `buttonCountDefineName` sets the plain-integer
+    `#define SWITCH_BUTTON_COUNT` via the same non-`GPIO_NUM_` sed
+    pattern `componentDefineName` already used for `SENSOR_TYPE`. Only
+    the buttons actually enabled by the selected count get a sed line;
+    the rest keep the firmware's shipped default GPIO, harmlessly (same
+    "unused but harmless" pattern used elsewhere in this file). Flagged
+    in Generate Firmware's warning box whenever more than one button is
+    selected — only the original single-button configuration has been
+    tested on real hardware so far, though the multi-button code path
+    itself is build-verified in Docker up to 4 buttons and reuses the
+    exact debounce/dispatch logic the single-button path already proved.
 - **Test Product (step 4)** — a real Web Serial monitor (Chrome/Edge
   only, with a warning banner elsewhere). Connect to a board, pick a baud
   rate (115200 by default, matching `idf.py monitor`), and watch its live
@@ -268,10 +295,14 @@ testing does.
   additionally been boot-tested on a real board. `COMPONENT_LIBRARY`'s
   `verified: false` on both `LDR` and `BH1750` surfaces this in the
   Configure Device dropdown and the Generate Firmware warning box.
-- The switch's button sends a real OnOff Toggle to whatever it's bound to
-  (`client::cluster_update()`), but that binding itself has to be set up
-  through a controller with a Bindings UI (e.g. Home Assistant) — the
-  wizard doesn't help with that part.
+- The switch's buttons each send a real OnOff Toggle to whatever their own
+  endpoint is bound to (`client::cluster_update()`), but those bindings
+  themselves have to be set up through a controller with a Bindings UI
+  (e.g. Home Assistant) — the wizard doesn't help with that part. Only the
+  original single-button configuration (1 button, GPIO 4) has been tested
+  on real hardware; 2-4 buttons is build-verified in Docker only so far —
+  flagged in Generate Firmware's warning box whenever more than one
+  button is selected.
 - The generated `sed` commands match on the `#define`'s name, not its
   current value, so they're idempotent — but if a line's been hand-edited
   into some other shape entirely (not `#define NAME GPIO_NUM_<digits>`),

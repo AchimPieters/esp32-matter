@@ -90,15 +90,46 @@ firmware/light/          On/Off light — the reference device
   partitions.csv          OTA A/B slots + separate fctry partition (fits 4 MB)
   sdkconfig.defaults      factory-data provider + custom partition table
 firmware/switch/          On/Off switch — second device type, copied from light/
-  main/app_main.cpp       button on GPIO 4 (WROOM-32) sends a real OnOff
-                           Toggle command to bound device(s) via esp-matter's
-                           client invoke API (client::cluster_update() +
+  main/app_main.cpp       1-4 independent buttons (#define SWITCH_BUTTON_
+                           COUNT, default 1), each its own on_off_light_
+                           switch endpoint — the same way a physical multi-
+                           gang wall switch is modelled in Matter: one node,
+                           one endpoint per gang, each independently
+                           bindable to a different target device. Button 1
+                           is GPIO 4 (WROOM-32, this repo's original single-
+                           button default); buttons 2-4 default to GPIO
+                           16/17/18 (none of them strapping pins). Every
+                           button sends a real OnOff Toggle command to
+                           *its own* bound device(s) via esp-matter's client
+                           invoke API (client::cluster_update() +
                            client::interaction::invoke::send_request());
-                           reference wiring is a breadboard pushbutton
-                           (GND -> button -> GPIO), deliberately not the
-                           onboard BOOT/PROG button; requires a controller
-                           (e.g. Home Assistant) to set up a Binding-cluster
-                           entry to an actual target device first
+                           client::set_request_callback() is registered
+                           once, globally, not per endpoint — it's endpoint-
+                           agnostic by design, so one registration correctly
+                           serves every button. One shared FreeRTOS task +
+                           debounce queue handles all configured buttons
+                           (the original single-button logic, reused
+                           as-is) — known limitation: two buttons pressed
+                           at almost the same instant serialize (the second
+                           Toggle sends only after the first press is fully
+                           handled and released), acceptable for how these
+                           are actually used. With more than one button the
+                           Identify LED stops doubling as a local on/off
+                           indicator (see firmware/switch/'s own header
+                           comment for why: no single "switch state" is
+                           left for one shared LED to represent once
+                           buttons can be bound to different targets).
+                           Reference wiring per button is a breadboard
+                           pushbutton (GND -> button -> GPIO), deliberately
+                           not the onboard BOOT/PROG button; requires a
+                           controller (e.g. Home Assistant) to set up a
+                           Binding-cluster entry per endpoint to an actual
+                           target device first. SWITCH_BUTTON_COUNT=1
+                           (regression) and =4 both build-verified in
+                           Docker; only the original single-button/GPIO 4
+                           configuration has been tested on real hardware
+                           so far — multi-button is new and flagged as
+                           such in the wizard.
   partitions.csv           same OTA + fctry layout as firmware/light/
   sdkconfig.defaults        same as firmware/light/
 firmware/contact-sensor/  Contact sensor — third device type, copied from switch/
@@ -417,6 +448,25 @@ SECURITY.md               flash encryption / secure boot / signed OTA guidance
    actuator beyond simple on/off (e.g. a dimmable/color light, or a
    cover/blind) is a reasonable next one, to cover ground no existing
    device type here does.
+
+   `firmware/switch/` was then extended (not a new device type — a
+   capability added to the existing one) to support 1-4 independent
+   buttons instead of exactly one, prompted directly by wanting several
+   physical buttons on one board, each controlling a different bound
+   device. Each button is its own `on_off_light_switch` endpoint — same
+   modelling Matter itself uses for a physical multi-gang wall switch.
+   `SWITCH_BUTTON_COUNT` (default 1, matching every switch product from
+   before this existed) selects how many; build-verified in Docker for
+   both 1 (regression) and 4 (new path), but only the original single-
+   button/GPIO 4 configuration has been tested on real hardware — flagged
+   in the wizard for `SWITCH_BUTTON_COUNT` > 1 accordingly. The wizard
+   gained a new "How many buttons?" selector plus up to 3 additional
+   per-button GPIO fields (`extraButtons` on the `DEVICE_TYPES` entry,
+   `buttonCountDefineName` for the non-GPIO `SWITCH_BUTTON_COUNT` sed
+   target — same non-GPIO-pattern mechanism `componentDefineName` already
+   used for the temperature/light sensors' `SENSOR_TYPE`) — the first
+   device type needing a *variable number* of GPIO fields rather than a
+   fixed one or two.
 2. Implement Matter **OTA** — partially done. All six firmware types ship
    `CONFIG_ENABLE_OTA_REQUESTOR=y`, which adds the OTA Requestor cluster
    to the root node endpoint entirely via Kconfig — esp-matter's own core

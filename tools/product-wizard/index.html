@@ -799,15 +799,26 @@ const DEVICE_TYPES = [
   {
     id: "switch",
     name: "On/Off Switch",
-    desc: "Matter on/off switch: a physical button sends an OnOff Toggle command to whatever device(s) it's bound to. Reference device in firmware/switch/.",
+    desc: "Matter on/off switch: 1-4 independent buttons, each its own endpoint sending an OnOff Toggle command to whatever it's bound to. Reference device in firmware/switch/.",
     // Matches project(matter_switch) in firmware/switch/CMakeLists.txt.
     binName: "matter_switch.bin",
+    // How many independent buttons/endpoints this device type supports —
+    // each becomes its own on_off_light_switch endpoint, independently
+    // bindable to a different target device (the same way a physical
+    // multi-gang wall switch is modelled in Matter: one node, one endpoint
+    // per gang). `driver` below is always button 1; `extraButtons` are
+    // buttons 2-maxButtons, shown/sed'd only up to however many the
+    // "How many buttons?" selector is set to. See app_main.cpp's header
+    // comment for the full explanation, including why more than one
+    // button means the Identify LED stops doubling as an on/off indicator.
+    maxButtons: 4,
+    buttonCountDefineName: "SWITCH_BUTTON_COUNT",
     driver: {
-      summary: "GPIO (digital input, active-low)",
-      fieldLabel: "Button GPIO pin",
-      blockTitle: "Button · digital GPIO input",
+      summary: "Button 1 · GPIO (digital input, active-low)",
+      fieldLabel: "Button 1 GPIO pin",
+      blockTitle: "Button 1 · digital GPIO input",
       filePath: "firmware/switch/main/app_main.cpp",
-      defineName: "SWITCH_BUTTON_GPIO",
+      defineName: "SWITCH_BUTTON_1_GPIO",
       // The literal value app_main.cpp ships with today — this is the
       // sed baseline. Reference wiring is a breadboard pushbutton: GND ->
       // button -> GPIO. Deliberately not the onboard BOOT/PROG button
@@ -820,6 +831,35 @@ const DEVICE_TYPES = [
       // specific board.
       defaultsByModule: { esp32: 4, esp32c3: 4, esp32c6: 4, esp32s3: 4, esp32h2: 4 },
     },
+    // Buttons 2-4 — only rendered/sed'd up to the selected button count.
+    // Defaults mirror app_main.cpp's SWITCH_BUTTON_2_GPIO/_3_GPIO/_4_GPIO
+    // (GPIO 16/17/18 on classic ESP32 — none of them strapping pins).
+    extraButtons: [
+      {
+        fieldLabel: "Button 2 GPIO pin",
+        blockTitle: "Button 2 · digital GPIO input",
+        filePath: "firmware/switch/main/app_main.cpp",
+        defineName: "SWITCH_BUTTON_2_GPIO",
+        currentGpio: 16,
+        defaultsByModule: { esp32: 16, esp32c3: 16, esp32c6: 16, esp32s3: 16, esp32h2: 16 },
+      },
+      {
+        fieldLabel: "Button 3 GPIO pin",
+        blockTitle: "Button 3 · digital GPIO input",
+        filePath: "firmware/switch/main/app_main.cpp",
+        defineName: "SWITCH_BUTTON_3_GPIO",
+        currentGpio: 17,
+        defaultsByModule: { esp32: 17, esp32c3: 17, esp32c6: 17, esp32s3: 17, esp32h2: 17 },
+      },
+      {
+        fieldLabel: "Button 4 GPIO pin",
+        blockTitle: "Button 4 · digital GPIO input",
+        filePath: "firmware/switch/main/app_main.cpp",
+        defineName: "SWITCH_BUTTON_4_GPIO",
+        currentGpio: 18,
+        defaultsByModule: { esp32: 18, esp32c3: 18, esp32c6: 18, esp32s3: 18, esp32h2: 18 },
+      },
+    ],
     identify: {
       summary: "GPIO (digital output)",
       fieldLabel: "Identify LED GPIO pin",
@@ -1270,6 +1310,7 @@ function renderConfigureDevice(p) {
   const secondary = deviceType ? deviceType.secondary : null;
   const identify = deviceType ? deviceType.identify : null;
   const componentOptions = deviceType ? deviceType.componentOptions : null;
+  const extraButtons = deviceType ? deviceType.extraButtons : null;
   const defaultGpio = driver ? (driver.defaultsByModule[p.target] != null ? driver.defaultsByModule[p.target] : 2) : 2;
   const defaultSecondaryGpio = secondary ? (secondary.defaultsByModule[p.target] != null ? secondary.defaultsByModule[p.target] : 4) : 4;
   const defaultIdentifyGpio = identify ? (identify.defaultsByModule[p.target] != null ? identify.defaultsByModule[p.target] : 4) : 4;
@@ -1278,6 +1319,26 @@ function renderConfigureDevice(p) {
   if (componentOptions && p.component == null) p.component = componentOptions[0];
   const selectedComponent = componentOptions ? (findComponent(p.component) || findComponent(componentOptions[0])) : null;
 
+  // Multi-button (currently just the switch): button 1 is always the
+  // existing `driver` field, unchanged, so single-button products (every
+  // switch created before this feature existed) keep working with zero
+  // migration. Buttons 2+ are extraButtons, shown/sed'd up to whatever
+  // buttonCount is set to (1 = just button 1, same as before this feature
+  // existed at all).
+  const maxButtons = extraButtons ? extraButtons.length + 1 : 1;
+  if (extraButtons) {
+    if (!Number.isInteger(p.buttonCount) || p.buttonCount < 1 || p.buttonCount > maxButtons) p.buttonCount = 1;
+    if (!Array.isArray(p.buttonGpios)) p.buttonGpios = [];
+  }
+  const buttonCount = extraButtons ? p.buttonCount : 1;
+  const activeExtraButtons = extraButtons ? extraButtons.slice(0, buttonCount - 1) : [];
+  activeExtraButtons.forEach((b, i) => {
+    if (p.buttonGpios[i] == null) {
+      p.buttonGpios[i] = b.defaultsByModule[p.target] != null ? b.defaultsByModule[p.target] : b.currentGpio;
+    }
+  });
+  const extraButtonsValid = activeExtraButtons.every((b, i) => Number.isInteger(p.buttonGpios[i]) && p.buttonGpios[i] >= 0);
+
   if (p.gpioPin == null) p.gpioPin = defaultGpio;
   if (secondary && p.secondaryGpioPin == null) p.secondaryGpioPin = defaultSecondaryGpio;
   if (p.identifyGpioPin == null) p.identifyGpioPin = defaultIdentifyGpio;
@@ -1285,7 +1346,7 @@ function renderConfigureDevice(p) {
   const secondaryGpioValid = !secondary || (Number.isInteger(p.secondaryGpioPin) && p.secondaryGpioPin >= 0);
   const identifyGpioValid = !identifyOn || (Number.isInteger(p.identifyGpioPin) && p.identifyGpioPin >= 0);
   const sameGpio = identifyOn && gpioValid && identifyGpioValid && p.gpioPin === p.identifyGpioPin;
-  const allValid = gpioValid && secondaryGpioValid && identifyGpioValid;
+  const allValid = gpioValid && secondaryGpioValid && identifyGpioValid && extraButtonsValid;
 
   // Component-aware field labels: falls back to the device type's own
   // static text when there's no componentOptions list (every device type
@@ -1337,6 +1398,21 @@ function renderConfigureDevice(p) {
         <h2>Configure device</h2>
         <p class="step-hint">Set the driver options for this ${escapeHtml(deviceTypeName(p.deviceType))} on ${escapeHtml(moduleName(p.target))}.</p>
 
+        ${extraButtons ? `
+          <div class="driver-block">
+            <h3>How many buttons?</h3>
+            <label class="field-label" for="button-count">Each button becomes its own independently-bindable switch endpoint</label>
+            <select id="button-count">
+              ${Array.from({ length: maxButtons }, (_, i) => i + 1).map((n) => `<option value="${n}" ${n === buttonCount ? "selected" : ""}>${n} button${n === 1 ? "" : "s"}</option>`).join("")}
+            </select>
+            <p class="field-note">
+              ${buttonCount === 1
+                ? `A single button, same as this device type has always had — its Identify LED also doubles as a local on/off indicator (see below).`
+                : `${buttonCount} independent buttons, each its own on_off_light_switch endpoint — bind each one to a different device through your controller's Bindings UI. With more than one button, the Identify LED no longer doubles as an on/off indicator (there's no longer one single "switch state" it could represent).`}
+            </p>
+          </div>
+        ` : ""}
+
         <div class="driver-block">
           <h3>${escapeHtml(driverBlockTitle)}</h3>
           <label class="field-label" for="gpio-pin">${escapeHtml(driverLabel)}</label>
@@ -1347,6 +1423,19 @@ function renderConfigureDevice(p) {
             is a common default for ${escapeHtml(moduleName(p.target))} devkits, not a guarantee for yours.
           </p>
         </div>
+
+        ${activeExtraButtons.map((b, i) => `
+          <div class="driver-block">
+            <h3>${escapeHtml(b.blockTitle)}</h3>
+            <label class="field-label" for="extra-button-gpio-${i}">${escapeHtml(b.fieldLabel)}</label>
+            <input type="number" id="extra-button-gpio-${i}" min="0" max="48" value="${p.buttonGpios[i]}">
+            <div class="field-error">${Number.isInteger(p.buttonGpios[i]) && p.buttonGpios[i] >= 0 ? "" : "Enter a valid GPIO number (0 or higher)."}</div>
+            <p class="field-note">
+              Adjust to match your board — GPIO ${b.defaultsByModule[p.target] != null ? b.defaultsByModule[p.target] : b.currentGpio}
+              is a common default for ${escapeHtml(moduleName(p.target))} devkits, not a guarantee for yours.
+            </p>
+          </div>
+        `).join("")}
 
         ${secondaryFieldNeeded ? `
           <div class="driver-block">
@@ -1392,7 +1481,9 @@ function renderConfigureDevice(p) {
         <p class="note-box">
           This only records your choices for now — it doesn't edit
           <code>${escapeHtml(driver ? driver.filePath : "app_main.cpp")}</code> yet. Applying them
-          (replacing <code>${escapeHtml(driver ? driver.defineName : "")}</code>${secondary ? `,
+          (replacing <code>${escapeHtml(driver ? driver.defineName : "")}</code>${activeExtraButtons.map((b) => `,
+          <code>${escapeHtml(b.defineName)}</code>`).join("")}${extraButtons ? `,
+          <code>${escapeHtml(deviceType.buttonCountDefineName)}</code>` : ""}${secondary ? `,
           <code>${escapeHtml(secondary.defineName)}</code>${secondaryFieldNeeded ? "" : " (kept at its default — unused by this sensor)"}` : ""}${identifyOn ? ` and
           <code>${escapeHtml(identify ? identify.defineName : "IDENTIFY_LED_GPIO")}</code>` : ""}) happens
           in the Generate Firmware step.
@@ -1412,10 +1503,16 @@ function renderConfigureDevice(p) {
           <div class="summary-value">${escapeHtml(moduleName(p.target))}</div>
         </div>
         <div class="summary-row">
-          <div class="summary-label">DRIVER</div>
+          <div class="summary-label">${escapeHtml(extraButtons ? "BUTTON 1" : "DRIVER")}</div>
           <div class="summary-value">${escapeHtml(selectedComponent ? `${selectedComponent.pin1Label} (${selectedComponent.bus})` : (driver ? driver.summary : "—"))}</div>
           <div class="summary-detail">IO pin: GPIO ${gpioValid ? p.gpioPin : "?"}</div>
         </div>
+        ${activeExtraButtons.map((b, i) => `
+          <div class="summary-row">
+            <div class="summary-label">BUTTON ${i + 2}</div>
+            <div class="summary-detail">IO pin: GPIO ${Number.isInteger(p.buttonGpios[i]) && p.buttonGpios[i] >= 0 ? p.buttonGpios[i] : "?"}</div>
+          </div>
+        `).join("")}
         ${secondaryFieldNeeded ? `
           <div class="summary-row">
             <div class="summary-label">${escapeHtml((secondary.label || "SECONDARY").toUpperCase())}</div>
@@ -1557,9 +1654,17 @@ function isProductComplete(p) {
     (Number.isInteger(p.identifyGpioPin) && p.identifyGpioPin >= 0);
   const secondaryOk = !(deviceType && deviceType.secondary) ||
     (Number.isInteger(p.secondaryGpioPin) && p.secondaryGpioPin >= 0);
+  // Multi-button devices (currently just the switch): every button GPIO up
+  // to the selected buttonCount has to be valid too — buttonCount itself
+  // defaults to 1 (just the always-present `driver` field) whenever the
+  // device type doesn't define extraButtons at all.
+  const extraButtons = deviceType ? deviceType.extraButtons : null;
+  const buttonCount = extraButtons ? (Number.isInteger(p.buttonCount) ? p.buttonCount : 1) : 1;
+  const buttonsOk = !extraButtons || extraButtons.slice(0, buttonCount - 1).every((b, i) =>
+    Array.isArray(p.buttonGpios) && Number.isInteger(p.buttonGpios[i]) && p.buttonGpios[i] >= 0);
   return !!p.deviceType && !!p.target &&
     Number.isInteger(p.gpioPin) && p.gpioPin >= 0 &&
-    secondaryOk && identifyOk;
+    secondaryOk && identifyOk && buttonsOk;
 }
 
 function buildConfigPreview(p) {
@@ -1612,11 +1717,25 @@ function renderCustomiseReview(p) {
         ` : ""}
         <div class="review-row">
           <div>
-            <div class="summary-label">DRIVER</div>
+            <div class="summary-label">${escapeHtml(findDeviceType(p.deviceType) && findDeviceType(p.deviceType).extraButtons ? "BUTTON 1" : "DRIVER")}</div>
             <div class="summary-value">${escapeHtml(driverSummary(p.deviceType))} &middot; IO pin GPIO ${p.gpioPin != null ? p.gpioPin : "?"}</div>
           </div>
           <button class="link" data-goto-step="2">Edit</button>
         </div>
+        ${(() => {
+          const dt = findDeviceType(p.deviceType);
+          if (!dt || !dt.extraButtons) return "";
+          const buttonCount = Number.isInteger(p.buttonCount) ? p.buttonCount : 1;
+          return dt.extraButtons.slice(0, buttonCount - 1).map((b, i) => `
+            <div class="review-row">
+              <div>
+                <div class="summary-label">BUTTON ${i + 2}</div>
+                <div class="summary-value">IO pin GPIO ${Array.isArray(p.buttonGpios) && p.buttonGpios[i] != null ? p.buttonGpios[i] : "?"}</div>
+              </div>
+              <button class="link" data-goto-step="2">Edit</button>
+            </div>
+          `).join("");
+        })()}
         ${findDeviceType(p.deviceType) && findDeviceType(p.deviceType).secondary ? `
           <div class="review-row">
             <div>
@@ -1702,6 +1821,12 @@ function renderGenerateFirmware(p) {
   const selectedSensor = deviceType && deviceType.componentOptions
     ? (findComponent(p.component) || findComponent(deviceType.componentOptions[0]))
     : null;
+  const buttonCount = deviceType && deviceType.extraButtons
+    ? (Number.isInteger(p.buttonCount) ? p.buttonCount : 1)
+    : 1;
+  const extraButtonGpios = deviceType && deviceType.extraButtons
+    ? deviceType.extraButtons.slice(0, buttonCount - 1).map((b, i) => (Array.isArray(p.buttonGpios) && p.buttonGpios[i] != null ? p.buttonGpios[i] : b.currentGpio))
+    : [];
 
   return `
     <div class="step-panel">
@@ -1709,11 +1834,26 @@ function renderGenerateFirmware(p) {
       <p class="step-hint">
         For "${escapeHtml(p.name)}" —
         <strong>${escapeHtml(deviceTypeName(p.deviceType))}</strong>${selectedSensor ? ` (<strong>${escapeHtml(selectedSensor.name)}</strong>)` : ""} on
-        <strong>${escapeHtml(moduleName(p.target))}</strong>, GPIO ${p.gpioPin}${deviceType && deviceType.secondary ? ` (${escapeHtml((deviceType.secondary.label || "secondary").toLowerCase())} on GPIO ${p.secondaryGpioPin})` : ""}${identifyIsEnabled(p) ? ` (identify LED on GPIO ${p.identifyGpioPin})` : ""}.
+        <strong>${escapeHtml(moduleName(p.target))}</strong>, GPIO ${p.gpioPin}${extraButtonGpios.length ? ` (+ button${extraButtonGpios.length === 1 ? "" : "s"} on GPIO ${extraButtonGpios.join(", ")})` : ""}${deviceType && deviceType.secondary ? ` (${escapeHtml((deviceType.secondary.label || "secondary").toLowerCase())} on GPIO ${p.secondaryGpioPin})` : ""}${identifyIsEnabled(p) ? ` (identify LED on GPIO ${p.identifyGpioPin})` : ""}.
         This is the exact two-step flow validated end to end on real
         hardware for this device type: build, then flash. Nothing runs
         automatically — you paste and run each command yourself.
       </p>
+
+      ${buttonCount > 1 ? `
+        <div class="warn-box">
+          &#9888; ${buttonCount} buttons: this exact configuration hasn't
+          been tested on real hardware yet — only the single-button
+          default (button 1 on GPIO ${p.gpioPin}) has. The multi-button
+          code path itself (each button its own independently-bindable
+          endpoint) has been build-verified in Docker for
+          <code>SWITCH_BUTTON_COUNT</code> up to 4, reusing the exact
+          same debounce/dispatch logic the single-button path already
+          proved on real hardware — see the header comment in
+          firmware/switch/main/app_main.cpp for exactly what that covers
+          and what it doesn't yet.
+        </div>
+      ` : ""}
 
       ${selectedSensor && !selectedSensor.verified ? `
         <div class="warn-box">
@@ -1848,6 +1988,7 @@ function buildSedCommands(p) {
   const secondary = deviceType ? deviceType.secondary : null;
   const identify = deviceType ? deviceType.identify : null;
   const componentOptions = deviceType ? deviceType.componentOptions : null;
+  const extraButtons = deviceType ? deviceType.extraButtons : null;
   const filePath = driver ? driver.filePath.split("/").slice(2).join("/") : "main/app_main.cpp"; // relative to firmwareDir
   const cmds = [];
   if (componentOptions && deviceType.componentDefineName) {
@@ -1857,8 +1998,28 @@ function buildSedCommands(p) {
     // so it needs its own pattern rather than reusing the GPIO one.
     cmds.push(`sed -i 's/^#define ${deviceType.componentDefineName} .*/#define ${deviceType.componentDefineName} ${selectedSensor.defineValue}/' ${filePath}`);
   }
+  if (extraButtons && deviceType.buttonCountDefineName) {
+    // Also not a GPIO_NUM_<n> value — this is the plain integer button
+    // count (#define SWITCH_BUTTON_COUNT <n>), same non-GPIO pattern as
+    // componentDefineName above. Defaults to 1 (just button 1 / `driver`)
+    // when unset, matching every switch product created before this
+    // feature existed.
+    const buttonCount = Number.isInteger(p.buttonCount) ? p.buttonCount : 1;
+    cmds.push(`sed -i 's/^#define ${deviceType.buttonCountDefineName} .*/#define ${deviceType.buttonCountDefineName} ${buttonCount}/' ${filePath}`);
+  }
   if (driver) {
     cmds.push(`sed -i 's/^#define ${driver.defineName} GPIO_NUM_[0-9][0-9]*/#define ${driver.defineName} GPIO_NUM_${p.gpioPin}/' ${filePath}`);
+  }
+  if (extraButtons) {
+    // Only the buttons actually enabled by the selected button count get a
+    // sed line — buttons beyond that stay at the firmware's shipped
+    // default, harmlessly (same "unused but harmless" pattern used
+    // elsewhere in this file, e.g. temperature-sensor's unused pin 2).
+    const buttonCount = Number.isInteger(p.buttonCount) ? p.buttonCount : 1;
+    extraButtons.slice(0, buttonCount - 1).forEach((b, i) => {
+      const gpio = Array.isArray(p.buttonGpios) && p.buttonGpios[i] != null ? p.buttonGpios[i] : b.currentGpio;
+      cmds.push(`sed -i 's/^#define ${b.defineName} GPIO_NUM_[0-9][0-9]*/#define ${b.defineName} GPIO_NUM_${gpio}/' ${filePath}`);
+    });
   }
   if (secondary) {
     cmds.push(`sed -i 's/^#define ${secondary.defineName} GPIO_NUM_[0-9][0-9]*/#define ${secondary.defineName} GPIO_NUM_${p.secondaryGpioPin}/' ${filePath}`);
@@ -2069,6 +2230,8 @@ function bindEvents() {
         state.currentProduct.secondaryGpioPin = null;
         state.currentProduct.identifyGpioPin = null;
         state.currentProduct.component = null;
+        state.currentProduct.buttonCount = null;
+        state.currentProduct.buttonGpios = null;
       }
       state.currentProduct.deviceType = newType;
       saveProducts();
@@ -2093,6 +2256,32 @@ function bindEvents() {
       state.currentProduct.component = el.value;
       saveProducts();
       render();
+    });
+  });
+
+  const buttonCountSelect = document.getElementById("button-count");
+  if (buttonCountSelect) {
+    buttonCountSelect.addEventListener("change", () => {
+      // Only ever grows/shrinks which prefix of buttonGpios is "active" —
+      // shrinking doesn't clear the values for buttons beyond the new
+      // count, so growing back later restores what was there rather than
+      // re-defaulting (buttonGpios is initialised as [] in
+      // renderConfigureDevice if this is the first time it's touched).
+      state.currentProduct.buttonCount = parseInt(buttonCountSelect.value, 10);
+      saveProducts();
+      render();
+    });
+  }
+
+  document.querySelectorAll('[id^="extra-button-gpio-"]').forEach((el) => {
+    el.addEventListener("input", () => {
+      const idx = parseInt(el.id.replace("extra-button-gpio-", ""), 10);
+      if (!Array.isArray(state.currentProduct.buttonGpios)) state.currentProduct.buttonGpios = [];
+      const raw = el.value;
+      state.currentProduct.buttonGpios[idx] = raw === "" ? null : parseInt(raw, 10);
+      saveProducts();
+      render();
+      document.getElementById(el.id).focus();
     });
   });
 

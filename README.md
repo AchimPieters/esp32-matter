@@ -97,8 +97,18 @@ esp32-matter/
 ## Adding more device types
 
 `firmware/switch/` is a second example, copied from `firmware/light/` with the
-endpoint type swapped to `on_off_light_switch` — its button sends a real OnOff
-Toggle command to whatever it's bound to, via esp-matter's client invoke API.
+endpoint type swapped to `on_off_light_switch` — each button sends a real
+OnOff Toggle command to whatever it's bound to, via esp-matter's client
+invoke API. Supports 1-4 independent buttons (`#define SWITCH_BUTTON_COUNT`,
+default 1), each its own endpoint independently bindable to a different
+target device — the same way Matter models a physical multi-gang wall
+switch. `client::set_request_callback()` only needs registering once
+regardless of button count (it's endpoint-agnostic by design). Both the
+single-button default and the 4-button path are build-verified in Docker;
+only the single-button configuration has been tested on real hardware so
+far. See its `app_main.cpp` header comment for the full explanation,
+including a documented limitation around two buttons pressed at almost the
+same instant (the second Toggle waits for the first press to fully release).
 
 `firmware/contact-sensor/` is a third example (`contact_sensor` endpoint
 type): a digital input (e.g. a door/window reed switch) reported through the
