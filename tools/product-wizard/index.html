@@ -758,6 +758,18 @@ const COMPONENT_LIBRARY = {
   BME280: { name: "BME280", category: "temp-humidity", bus: "I2C", pin1Label: "SDA", pin2Label: "SCL", usesPin2: true, verified: false, defineValue: "SENSOR_BME280" },
   LDR: { name: "LDR / photoresistor", category: "light", bus: "ADC", pin1Label: "ADC", pin2Label: null, usesPin2: false, verified: false, defineValue: "LIGHT_SENSOR_LDR", note: "Needs an ADC1-capable GPIO (32-39 on classic ESP32) — the driver is hardcoded to GPIO 34/ADC1 channel 6; see LIGHT_SENSOR_ADC_CHANNEL in app_main.cpp if you use a different ADC1 pin." },
   BH1750: { name: "BH1750", category: "light", bus: "I2C", pin1Label: "SDA", pin2Label: "SCL", usesPin2: true, verified: false, defineValue: "LIGHT_SENSOR_BH1750", note: "Needs bidirectional I2C-capable GPIOs — avoid GPIO 32-39 (input-only on classic ESP32, can't do I2C). GPIO 21/22 are good defaults, same as the temperature sensor's I2C pins." },
+  // Contact sensor components — deliberately cosmetic, no defineValue: a
+  // reed switch, a Hall-effect IC, and a plain mechanical microswitch are
+  // all, from app_main.cpp's point of view, just "read one GPIO, HIGH or
+  // LOW" — there's no protocol/command-set difference the way there is
+  // between temperature or light sensor chips, so there's nothing for a
+  // sed command to actually switch. Listed anyway, on request, purely so
+  // Configure Device looks and behaves consistently across every sensor-
+  // style device type — see contact's `componentsPurelyVisual` flag below
+  // for where that's made explicit to the person using the wizard too.
+  REED_SWITCH: { name: "Reed Switch (magnetic)", category: "contact", bus: "GPIO", pin1Label: "Contact", pin2Label: null, usesPin2: false, verified: true },
+  HALL_SENSOR: { name: "Hall-Effect Sensor (e.g. A3144, US5881)", category: "contact", bus: "GPIO", pin1Label: "Contact", pin2Label: null, usesPin2: false, verified: false },
+  MICROSWITCH: { name: "Microswitch / mechanical contact", category: "contact", bus: "GPIO", pin1Label: "Contact", pin2Label: null, usesPin2: false, verified: false },
 };
 
 /* Device types this repo actually has firmware for (see firmware/). Each
@@ -880,6 +892,20 @@ const DEVICE_TYPES = [
     desc: "Matter contact sensor: a digital input (e.g. a door/window reed switch) reports open/closed via the Boolean State cluster. Reference device in firmware/contact-sensor/.",
     // Matches project(matter_contact_sensor) in firmware/contact-sensor/CMakeLists.txt.
     binName: "matter_contact_sensor.bin",
+    // Component list added on request, purely for visual/interface
+    // continuity with the temperature and light sensors' pickers above —
+    // NOT because it selects a different driver the way those do. Every
+    // option here compiles to the exact same code (a contact sensor is
+    // always just "read GPIO, HIGH or LOW" regardless of which physical
+    // part is wired up), so there's deliberately no componentDefineName:
+    // buildSedCommands() only emits a component sed line when that field
+    // is set, so this picker records a choice without ever touching
+    // app_main.cpp. componentsPurelyVisual drives the explanatory copy in
+    // renderConfigureDevice/renderGenerateFirmware so this doesn't read
+    // as "verified/unverified driver" the way it correctly does for
+    // temperature and light.
+    componentOptions: ["REED_SWITCH", "HALL_SENSOR", "MICROSWITCH"],
+    componentsPurelyVisual: true,
     driver: {
       summary: "GPIO (digital input, active-low)",
       fieldLabel: "Contact GPIO pin",
@@ -1389,10 +1415,12 @@ function renderConfigureDevice(p) {
             `).join("")}
           </div>
           <p class="field-note">
-            ${selectedComponent.verified
-              ? `Verified on real hardware in this repo.`
-              : `Implemented from the sensor's datasheet/reference driver, but not personally tested on real hardware in this repo — see the comment above its section in ${escapeHtml(driver ? driver.filePath : "app_main.cpp")} for exactly what was checked.`}
-            ${!selectedComponent.usesPin2 ? ` This sensor only needs one data pin (${escapeHtml(selectedComponent.pin1Label)}) — the "pin 2" field is hidden since its driver doesn't use it.` : ""}
+            ${deviceType.componentsPurelyVisual
+              ? `Cosmetic choice only — every option here compiles to the exact same driver in app_main.cpp (a contact sensor is always just HIGH or LOW to the microcontroller, regardless of which physical part you wire up). Picking one doesn't change the generated firmware; it's here for visual consistency with the sensor pickers other device types have.${selectedComponent.verified ? ` This specific part is the one actually wired up and tested on real hardware in this repo.` : ` This specific part hasn't been physically tried here — though since the driver is identical either way, that's a much smaller gap than it is for a genuinely different sensor chip.`}`
+              : (selectedComponent.verified
+                ? `Verified on real hardware in this repo.`
+                : `Implemented from the sensor's datasheet/reference driver, but not personally tested on real hardware in this repo — see the comment above its section in ${escapeHtml(driver ? driver.filePath : "app_main.cpp")} for exactly what was checked.`)}
+            ${secondary && !selectedComponent.usesPin2 ? ` This sensor only needs one data pin (${escapeHtml(selectedComponent.pin1Label)}) — the "pin 2" field is hidden since its driver doesn't use it.` : ""}
             ${selectedComponent.note ? ` ${escapeHtml(selectedComponent.note)}` : ""}
           </p>
         </div>
@@ -1719,7 +1747,8 @@ function renderCustomiseReview(p) {
               <div class="summary-value">${(() => {
                 const dt = findDeviceType(p.deviceType);
                 const s = findComponent(p.component) || findComponent(dt.componentOptions[0]);
-                return `${escapeHtml(s.name)} (${escapeHtml(s.bus)})${s.verified ? "" : " — not hardware-verified in this repo"}`;
+                const caveat = dt.componentsPurelyVisual ? " — cosmetic only, no effect on the generated firmware" : (s.verified ? "" : " — not hardware-verified in this repo");
+                return `${escapeHtml(s.name)} (${escapeHtml(s.bus)})${caveat}`;
               })()}</div>
             </div>
             <button class="link" data-goto-step="2">Edit</button>
@@ -1865,7 +1894,7 @@ function renderGenerateFirmware(p) {
         </div>
       ` : ""}
 
-      ${selectedSensor && !selectedSensor.verified ? `
+      ${selectedSensor && !selectedSensor.verified && !(deviceType && deviceType.componentsPurelyVisual) ? `
         <div class="warn-box">
           &#9888; ${escapeHtml(selectedSensor.name)}'s driver was implemented
           from its datasheet/reference source but hasn't been personally
@@ -1875,6 +1904,14 @@ function renderGenerateFirmware(p) {
           section in ${escapeHtml(deviceType ? deviceType.driver.filePath : "app_main.cpp")}
           for exactly what was checked and against which source.
         </div>
+      ` : ""}
+
+      ${selectedSensor && deviceType && deviceType.componentsPurelyVisual ? `
+        <p class="field-note">
+          Note: ${escapeHtml(selectedSensor.name)} was picked above purely
+          for reference — every option in that list compiles to the exact
+          same driver, so it has no effect on the commands below.
+        </p>
       ` : ""}
 
       ${repoRoot ? `

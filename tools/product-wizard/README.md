@@ -87,6 +87,29 @@ open tools/product-wizard/index.html
     still gets written into `app_main.cpp` by Generate Firmware's sed
     command (harmlessly, since the driver never reads it) — this is a
     display-only fix, not a change to what firmware gets generated.
+  - The Contact Sensor also got a `componentOptions` picker (Reed
+    Switch, Hall-Effect Sensor, Microswitch), added on request purely
+    for **visual/interface continuity** with the temperature and light
+    sensors' pickers — explicitly *not* because it selects a different
+    driver: unlike a temperature or light sensor chip, every contact-
+    sensing option here is, from `app_main.cpp`'s point of view, just
+    "read one GPIO, HIGH or LOW" — there's no protocol/command-set
+    difference for a picker to actually switch between. Its
+    `DEVICE_TYPES` entry deliberately has no `componentDefineName`, so
+    `buildSedCommands()` never emits a component-related sed line for
+    it — picking an option records a choice in the product but has zero
+    effect on the generated firmware, unlike every other
+    `componentOptions` device type. A new `componentsPurelyVisual: true`
+    flag drives honest copy explaining exactly that in three places:
+    the sidebar's detail note ("Cosmetic choice only..."), Customise &
+    Review's summary row ("— cosmetic only, no effect on the generated
+    firmware" instead of a verified/unverified claim), and Generate
+    Firmware (a plain `field-note`, not a `warn-box`, since there's
+    nothing to actually warn about). `COMPONENT_LIBRARY`'s per-component
+    `verified` flag still applies (Reed Switch is the one physically
+    tested in this repo; the other two aren't) — but framed as "which
+    exact part has been tried," not "which driver has been tested," since
+    here they're the same driver either way.
   - The On/Off Switch supports **1-4 independent buttons**, added
     directly on request ("meerdere buttons toevoegen met hun eigen
     gpio"): a "How many buttons?" checkable list (`extraButtons` +
