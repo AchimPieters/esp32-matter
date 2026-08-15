@@ -542,6 +542,28 @@ headless-Chromium screenshot of both chip selections' Configure Device
 panels. Build-verified in Docker for both chips; not hardware-tested (no
 WS2812B/SK6812 strip physically available when written).
 
+Its pixel count (`ADDRESSABLE_LIGHT_PIXEL_COUNT`) was then made
+wizard-configurable too — originally left as a hand-edit-only `#define`
+since the wizard had no field type for a plain integer, only GPIO pins
+and named enum choices. Rather than a one-off fix, this became a new
+general-purpose `numberField` mechanism on `DEVICE_TYPES` entries
+(`key`/`label`/`fieldLabel`/`blockTitle`/`defineName`/`defaultValue`/
+`min`/`max`/`helpText`) — reusable by any future device type needing a
+plain numeric `#define`, following the same "generalize it" precedent
+`extraPickers`/`componentOptions`/`hasVariableButtonCount` set earlier.
+Touched the same layers a GPIO field already does (render, validate,
+sed generation, review summary, device-type-switch reset) plus a new
+delegated `data-number-field` input handler mirroring `data-pin-define`'s
+shape. Verified with a Node.js sandboxed re-exec and a headless-Chromium
+screenshot across three states (default, an out-of-range value showing
+the field error and disabling "Next step", and the review step's summary
+row + generated sed command). One thing worth remembering for future
+sandbox checks: the Node sandbox's fake `document.createElement` stub
+initially didn't implement `textContent`/`innerHTML`, so every
+`escapeHtml()` call silently returned `undefined` *inside the sandbox
+only* — a test-harness gap, not a real bug, caught by cross-checking
+against an actual Playwright screenshot before concluding otherwise.
+
 Reflashing a board that was previously commissioned with different
 firmware/identity (as happened testing this, repeatedly, across several
 of these device types) leaves stale fabric data in NVS — the write-flash

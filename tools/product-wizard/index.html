@@ -1437,14 +1437,28 @@ const DEVICE_TYPES = [
     // not an extraPickers one — see the comment on ADDR_WS2812B/ADDR_SK6812
     // in COMPONENT_LIBRARY for why that mechanism fits despite both chips
     // sharing the same single-pin shape. Pixel count
-    // (ADDRESSABLE_LIGHT_PIXEL_COUNT in app_main.cpp) isn't wizard-
-    // configurable — it's a plain integer, not a GPIO or enum choice, and
-    // the wizard has no field type for that yet; adjust it by hand to
-    // match your actual strip's LED count, same as e.g. the light sensor's
-    // LDR_R10_OHMS/LDR_GAMMA constants.
+    // (ADDRESSABLE_LIGHT_PIXEL_COUNT in app_main.cpp) uses the new
+    // `numberField` mechanism — a plain integer #define, not a GPIO or
+    // enum choice, so it needed a genuinely new field type (see the
+    // `numberField` handling in renderConfigureDevice/isProductComplete/
+    // buildSedCommands for the generic, device-type-agnostic
+    // implementation — the first thing in this wizard that isn't a GPIO
+    // pin or a named enum choice).
     binName: "matter_addressable_light.bin",
     componentOptions: ["ADDR_WS2812B", "ADDR_SK6812"],
     componentDefineName: "ADDRESSABLE_LIGHT_CHIP",
+    numberField: {
+      key: "pixelCount",
+      label: "Pixel Count",
+      fieldLabel: "Number of pixels",
+      blockTitle: "Pixel count",
+      filePath: "firmware/addressable-light/main/app_main.cpp",
+      defineName: "ADDRESSABLE_LIGHT_PIXEL_COUNT",
+      defaultValue: 8,
+      min: 1,
+      max: 1000,
+      helpText: "Must match how many pixels are actually wired up on your strip. Fewer configured than wired just leaves the extras dark; more configured than wired is harmless too (the last real pixel passes the extra bits through). 1000 is an arbitrary upper bound, not a real hardware limit — see ADDRESSABLE_LIGHT_PIXEL_COUNT's comment in app_main.cpp if you need more.",
+    },
     driver: {
       summary: "Data (DIN) · single-wire (RMT)",
       fieldLabel: "Data (DIN) GPIO pin",
@@ -1876,6 +1890,7 @@ function renderConfigureDevice(p) {
   const componentOptions = deviceType ? deviceType.componentOptions : null;
   const extraButtons = deviceType ? deviceType.extraButtons : null;
   const extraPickers = deviceType ? deviceType.extraPickers : null;
+  const numberField = deviceType ? deviceType.numberField : null;
   const defaultGpio = driver ? (driver.defaultsByModule[p.target] != null ? driver.defaultsByModule[p.target] : 2) : 2;
   const defaultSecondaryGpio = secondary ? (secondary.defaultsByModule[p.target] != null ? secondary.defaultsByModule[p.target] : 4) : 4;
   const defaultIdentifyGpio = identify ? (identify.defaultsByModule[p.target] != null ? identify.defaultsByModule[p.target] : 4) : 4;
@@ -1964,7 +1979,13 @@ function renderConfigureDevice(p) {
   const sameGpio = identifyOn && gpioValid && identifyGpioValid && p.gpioPin === p.identifyGpioPin;
   if (statusLed && p.statusLedGpioPin == null) p.statusLedGpioPin = defaultStatusLedGpio;
   const statusLedGpioValid = !statusLedOn || (Number.isInteger(p.statusLedGpioPin) && p.statusLedGpioPin >= 0);
-  const allValid = gpioValid && secondaryGpioValid && identifyGpioValid && extraButtonsValid && statusLedGpioValid && pickerPinsValid;
+  // numberField (currently just the addressable light's pixel count): a
+  // plain integer #define, not a GPIO — validated against its own
+  // min/max rather than the GPIO fields' "0 or higher" rule.
+  if (numberField && p[numberField.key] == null) p[numberField.key] = numberField.defaultValue;
+  const numberFieldValid = !numberField ||
+    (Number.isInteger(p[numberField.key]) && p[numberField.key] >= numberField.min && p[numberField.key] <= numberField.max);
+  const allValid = gpioValid && secondaryGpioValid && identifyGpioValid && extraButtonsValid && statusLedGpioValid && pickerPinsValid && numberFieldValid;
 
   // Component-aware field labels: falls back to the device type's own
   // static text when there's no componentOptions list (every device type
@@ -2124,6 +2145,16 @@ function renderConfigureDevice(p) {
           `;
         }).join("") : ""}
 
+        ${numberField ? `
+          <div class="driver-block">
+            <h3>${escapeHtml(numberField.blockTitle)}</h3>
+            <label class="field-label" for="number-field-${escapeHtml(numberField.key)}">${escapeHtml(numberField.fieldLabel)}</label>
+            <input type="number" id="number-field-${escapeHtml(numberField.key)}" data-number-field="${escapeHtml(numberField.key)}" min="${numberField.min}" max="${numberField.max}" value="${p[numberField.key]}">
+            <div class="field-error">${numberFieldValid ? "" : `Enter a number between ${numberField.min} and ${numberField.max}.`}</div>
+            <p class="field-note">${escapeHtml(numberField.helpText)}</p>
+          </div>
+        ` : ""}
+
         ${statusLed ? `
           <div class="driver-block">
             <label class="checkbox-label" for="status-led-enabled">
@@ -2186,7 +2217,8 @@ function renderConfigureDevice(p) {
           (replacing <code>${escapeHtml(driver ? driver.defineName : "")}</code>${activeExtraButtons.map((b) => `,
           <code>${escapeHtml(b.defineName)}</code>`).join("")}${hasVariableButtonCount ? `,
           <code>${escapeHtml(deviceType.buttonCountDefineName)}</code>` : ""}${secondary ? `,
-          <code>${escapeHtml(secondary.defineName)}</code>${secondaryFieldNeeded ? "" : " (kept at its default — unused by this sensor)"}` : ""}${statusLedOn ? `,
+          <code>${escapeHtml(secondary.defineName)}</code>${secondaryFieldNeeded ? "" : " (kept at its default — unused by this sensor)"}` : ""}${numberField ? `,
+          <code>${escapeHtml(numberField.defineName)}</code>` : ""}${statusLedOn ? `,
           <code>${escapeHtml(statusLed.defineName)}</code>` : ""}${identifyOn ? `,
           <code>${escapeHtml(identify ? identify.defineName : "IDENTIFY_LED_GPIO")}</code>` : ""}${activePickerPins.map(({ pin }) => `,
           <code>${escapeHtml(pin.defineName)}</code>`).join("")}) happens
@@ -2230,6 +2262,12 @@ function renderConfigureDevice(p) {
             <div class="summary-detail">IO pin: GPIO ${Number.isInteger(p.pickerPins[pin.defineName]) && p.pickerPins[pin.defineName] >= 0 ? p.pickerPins[pin.defineName] : "?"}</div>
           </div>
         `).join("")}
+        ${numberField ? `
+          <div class="summary-row">
+            <div class="summary-label">${escapeHtml(numberField.label.toUpperCase())}</div>
+            <div class="summary-detail">${numberFieldValid ? p[numberField.key] : "?"}</div>
+          </div>
+        ` : ""}
         ${statusLed ? `
           <div class="summary-row">
             <div class="summary-label">STATUS LED</div>
@@ -2400,9 +2438,16 @@ function isProductComplete(p) {
     return selected.pins.every((pin) =>
       p.pickerPins && Number.isInteger(p.pickerPins[pin.defineName]) && p.pickerPins[pin.defineName] >= 0);
   });
+  // numberField (currently just the addressable light's pixel count) —
+  // computed independently here too, same "don't trust p[...] being
+  // pre-filled" reasoning as buttonCount/hasVariableButtonCount above,
+  // since this can be called before renderConfigureDevice ever has.
+  const numberField = deviceType ? deviceType.numberField : null;
+  const numberFieldOk = !numberField ||
+    (Number.isInteger(p[numberField.key]) && p[numberField.key] >= numberField.min && p[numberField.key] <= numberField.max);
   return !!p.deviceType && !!p.target &&
     Number.isInteger(p.gpioPin) && p.gpioPin >= 0 &&
-    secondaryOk && identifyOk && buttonsOk && statusLedOk && pickerPinsOk;
+    secondaryOk && identifyOk && buttonsOk && statusLedOk && pickerPinsOk && numberFieldOk;
 }
 
 function buildConfigPreview(p) {
@@ -2520,6 +2565,20 @@ function renderCustomiseReview(p) {
             <button class="link" data-goto-step="2">Edit</button>
           </div>
         ` : ""}
+        ${(() => {
+          const dt = findDeviceType(p.deviceType);
+          if (!dt || !dt.numberField) return "";
+          const nf = dt.numberField;
+          return `
+            <div class="review-row">
+              <div>
+                <div class="summary-label">${escapeHtml(nf.label.toUpperCase())}</div>
+                <div class="summary-value">${p[nf.key] != null ? p[nf.key] : "?"}</div>
+              </div>
+              <button class="link" data-goto-step="2">Edit</button>
+            </div>
+          `;
+        })()}
         ${findDeviceType(p.deviceType) && findDeviceType(p.deviceType).statusLed ? `
           <div class="review-row">
             <div>
@@ -2858,6 +2917,14 @@ function buildSedCommands(p) {
   if (secondary) {
     cmds.push(`sed -i 's/^#define ${secondary.defineName} GPIO_NUM_[0-9][0-9]*/#define ${secondary.defineName} GPIO_NUM_${p.secondaryGpioPin}/' ${filePath}`);
   }
+  if (deviceType && deviceType.numberField) {
+    // Plain integer #define, same broad `.*` pattern as componentDefineName
+    // above (not the narrow GPIO_NUM_[0-9]* one — there's no GPIO_NUM_
+    // prefix here at all).
+    const nf = deviceType.numberField;
+    const value = Number.isInteger(p[nf.key]) ? p[nf.key] : nf.defaultValue;
+    cmds.push(`sed -i 's/^#define ${nf.defineName} .*/#define ${nf.defineName} ${value}/' ${filePath}`);
+  }
   if (statusLed && statusLedIsEnabled(p)) {
     // Broad `.*` match, not the narrow GPIO_NUM_[0-9]* pattern below — the
     // firmware ships this one as GPIO_NUM_NC (ESP-IDF's "not connected"
@@ -3088,6 +3155,14 @@ function bindEvents() {
         // (off) rather than inheriting a previous type's choice.
         state.currentProduct.statusLedGpioPin = null;
         state.currentProduct.statusLedEnabled = null;
+        // numberField (currently just the addressable light's pixel
+        // count): same stale-value risk as everything above — reset every
+        // key any device type's numberField might use, same
+        // forward-compatible "loop over all device types" approach as the
+        // extraPickers reset above.
+        DEVICE_TYPES.forEach((dt) => {
+          if (dt.numberField) state.currentProduct[dt.numberField.key] = null;
+        });
       }
       state.currentProduct.deviceType = newType;
       saveProducts();
@@ -3209,6 +3284,22 @@ function bindEvents() {
       }
       const raw = el.value;
       state.currentProduct.pickerPins[defineName] = raw === "" ? null : parseInt(raw, 10);
+      saveProducts();
+      render();
+      document.getElementById(el.id).focus();
+    });
+  });
+
+  // numberField (currently just the addressable light's pixel count) —
+  // generic delegated handler keyed by data-number-field, same shape as
+  // data-pin-define above but writing straight to state.currentProduct[key]
+  // rather than a nested pickerPins object, since a numberField is a
+  // single top-level value, not one of several pins on a chip choice.
+  document.querySelectorAll('input[data-number-field]').forEach((el) => {
+    el.addEventListener("input", () => {
+      const key = el.getAttribute("data-number-field");
+      const raw = el.value;
+      state.currentProduct[key] = raw === "" ? null : parseInt(raw, 10);
       saveProducts();
       render();
       document.getElementById(el.id).focus();

@@ -681,20 +681,12 @@ firmware/addressable-light/  Addressable WS2812B/SK6812 LED strip — tenth
                            copied from the example's own round numbers.
                            #define ADDRESSABLE_LIGHT_PIXEL_COUNT (default
                            8, a small common test-strip length) is a plain
-                           integer, not wizard-configurable — adjust by
-                           hand to match your actual strip, same as e.g.
-                           the light sensor's LDR_R10_OHMS/LDR_GAMMA.
-                           Wizard integration needed zero new mechanism:
-                           the WS2812B/SK6812 chip choice reuses the same
-                           componentOptions/componentDefineName pattern
-                           the temperature/light sensors already use for
-                           their chip pickers, despite both options here
-                           sharing the same single-pin shape (no usesPin2
-                           difference the way I2C-vs-single-wire sensors
-                           have) — still a real protocol/#define switch,
-                           which is what the mechanism is for either way.
-                           Build-verified in Docker for both chips; not
-                           hardware-tested (no WS2812B/SK6812 strip
+                           integer, adjustable via the wizard's own
+                           `numberField` mechanism — see the wizard-
+                           integration paragraph below for why this needed
+                           genuinely new wizard machinery, unlike the
+                           chip choice. Build-verified in Docker for both
+                           chips; not hardware-tested (no WS2812B/SK6812 strip
                            physically available when written).
   partitions.csv           same OTA + fctry layout as firmware/light/
   sdkconfig.defaults        same as firmware/light/
@@ -1237,6 +1229,45 @@ SECURITY.md               flash encryption / secure boot / signed OTA guidance
    entry above for the full detail, including the exact datasheet-sourced
    timing constants and the reasoning for a deliberately generous
    WS2812B reset time.
+
+   `firmware/addressable-light/`'s pixel count
+   (`ADDRESSABLE_LIGHT_PIXEL_COUNT`) was then made wizard-configurable, on
+   request, immediately after the device type itself shipped — it had
+   been left as a hand-edit-only `#define` because the wizard had no
+   field type for a plain integer, only GPIO pins and named enum
+   choices. Rather than a one-off addressable-light-specific hack, this
+   became a new generic `numberField` mechanism on `DEVICE_TYPES`
+   entries (`key`/`label`/`fieldLabel`/`blockTitle`/`filePath`/
+   `defineName`/`defaultValue`/`min`/`max`/`helpText`), following the
+   same "build the general case, not the specific one" precedent as
+   `extraPickers`/`componentOptions`/`hasVariableButtonCount` before it
+   — reusable by any future device type that needs a plain numeric
+   `#define` (a poll interval, a channel count, etc.), not just this one.
+   Touched every layer a GPIO field already does —
+   `renderConfigureDevice` (render + validate + default-fill),
+   `isProductComplete` (validated independently of any prior render, same
+   defensive pattern as `hasVariableButtonCount`'s fix), `buildSedCommands`
+   (broad `.*` pattern, since there's no `GPIO_NUM_` prefix to match),
+   `renderCustomiseReview`'s summary row, and the device-type-switch
+   reset logic (looped over every device type's `numberField`, same
+   forward-compatible shape as the existing `extraPickers` reset loop) —
+   plus a new delegated `data-number-field` input handler, mirroring
+   `data-pin-define`'s existing shape but writing directly to
+   `state.currentProduct[key]` instead of a nested `pickerPins` object,
+   since a `numberField` is a single top-level value, not one of several
+   pins on a chip choice. Verified with a Node.js sandboxed re-exec (the
+   `isProductComplete`-before-any-render regression check, an
+   out-of-range value, and the exact generated sed command) and a
+   headless-Chromium screenshot across three states (default value,
+   an invalid value showing the field-level error and disabling "Next
+   step", and the Customise & Review step showing both the summary row
+   and the correct sed command) — the sandboxed HTML-content assertions
+   initially all failed for an unrelated reason (the test harness's
+   fake `document.createElement` stub didn't implement `textContent`/
+   `innerHTML`, so every `escapeHtml()` call returned `undefined`
+   inside the sandbox only) — worth remembering as a harness pitfall,
+   not a wizard bug, next time a Node sandbox check inspects rendered
+   HTML content rather than just data structures.
 2. Implement Matter **OTA** — partially done. All ten firmware types ship
    `CONFIG_ENABLE_OTA_REQUESTOR=y`, which adds the OTA Requestor cluster
    to the root node endpoint entirely via Kconfig — esp-matter's own core
