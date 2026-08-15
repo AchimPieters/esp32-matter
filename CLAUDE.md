@@ -603,6 +603,101 @@ firmware/color-light/     RGB/RGBW/RGBWW color light — ninth device type,
                            physically available when written).
   partitions.csv           same OTA + fctry layout as firmware/light/
   sdkconfig.defaults        same as firmware/light/
+firmware/addressable-light/  Addressable WS2812B/SK6812 LED strip — tenth
+                           device type, and this repo's first over an
+                           addressable single-wire LED protocol (RMT
+                           peripheral) rather than plain PWM
+  main/app_main.cpp       Same hand-assembled ExtendedColorLight endpoint
+                           as firmware/color-light/ (Identify + Groups +
+                           OnOff + LevelControl + ColorControl[HueSaturation
+                           only] + ScenesManagement) — copied from that
+                           file, changed only where the addressable output
+                           needs something different from LEDC PWM. Crucial
+                           scoping decision, verified rather than assumed:
+                           "addressable" does NOT mean per-pixel/RGBIC-style
+                           control here — every pixel is always set to the
+                           same color, because Matter itself has no
+                           ratified way to ask for anything else. Checked
+                           directly in connectedhomeip's own
+                           controller-clusters.matter: there IS a
+                           `provisional cluster DynamicLighting = 773`
+                           (0x0305) with EffectStruct/EffectColorStruct
+                           types that look exactly like what real per-pixel
+                           effects would need — but it's marked
+                           `provisional` and absent from every ratified
+                           data_model spec folder checked (1.0 through
+                           1.6), so no real controller (Apple/Google Home,
+                           Home Assistant) can command it today, and
+                           esp-matter has no cluster support for it either.
+                           #define ADDRESSABLE_LIGHT_CHIP selects WS2812B
+                           (default, 24-bit/3 bytes per pixel) or SK6812
+                           (32-bit RGBW/4 bytes per pixel) — timing AND
+                           byte order for both independently verified
+                           against Worldsemi's own datasheets (not a
+                           secondary source, per this repo's established
+                           practice; fetched as PDFs and read via
+                           `pdftotext`, not assumed from search-engine
+                           summaries, which turned up two conflicting
+                           "official" WS2812B timing tables): WS2812B is
+                           T0H=0.4us/T0L=0.85us/T1H=0.8us/T1L=0.45us,
+                           reset>=50us, GRB byte order; SK6812RGBW
+                           (Document No. SPC/SK6812RGBW Rev.01) is
+                           T0H=0.3us/T0L=0.9us/T1H=0.6us/T1L=0.6us,
+                           reset=80us, RGBW byte order — flagged in a code
+                           comment as a real point of disagreement with
+                           several community Arduino/ESPHome libraries,
+                           which default to GRBW instead; if a real
+                           SK6812 strip's colors come out swapped, that
+                           library-vs-datasheet mismatch (not a bug in
+                           this file) is the first thing to check.
+                           ADDRESSABLE_LIGHT_RESET_US is set to 300us for
+                           WS2812B — well above the 50us datasheet
+                           minimum, since a second, separately-circulated
+                           Worldsemi datasheet revision documents newer
+                           "-V5" silicon needing up to ~300us, and the
+                           reset only costs time once per full-strip
+                           update, so being generous is free. RGB->RGBW
+                           for SK6812 reuses firmware/color-light/'s exact
+                           "extract common white" technique, not
+                           re-derived. Driven via ESP-IDF's
+                           `driver/rmt_tx.h` (the RMT hardware peripheral,
+                           built exactly for precise pulse-timed waveforms
+                           like this) — the first driver in this repo to
+                           use RMT rather than bit-banged GPIO timing
+                           (unlike firmware/temperature-sensor/'s
+                           DHT11/DHT22/DS18B20, which predate this). Exact
+                           API pattern (`rmt_new_tx_channel()`,
+                           `rmt_new_simple_encoder()` with a byte-by-byte
+                           callback, `rmt_transmit()`,
+                           `rmt_tx_wait_all_done()`) checked directly
+                           against Espressif's own official reference
+                           example
+                           (`examples/peripherals/rmt/led_strip_simple_encoder`
+                           in this repo's pinned ESP-IDF v5.5.4, which
+                           lists classic ESP32 among its supported
+                           targets) — only the per-chip timing constants
+                           and pixel byte order differ from that example,
+                           sourced from the datasheets above rather than
+                           copied from the example's own round numbers.
+                           #define ADDRESSABLE_LIGHT_PIXEL_COUNT (default
+                           8, a small common test-strip length) is a plain
+                           integer, not wizard-configurable — adjust by
+                           hand to match your actual strip, same as e.g.
+                           the light sensor's LDR_R10_OHMS/LDR_GAMMA.
+                           Wizard integration needed zero new mechanism:
+                           the WS2812B/SK6812 chip choice reuses the same
+                           componentOptions/componentDefineName pattern
+                           the temperature/light sensors already use for
+                           their chip pickers, despite both options here
+                           sharing the same single-pin shape (no usesPin2
+                           difference the way I2C-vs-single-wire sensors
+                           have) — still a real protocol/#define switch,
+                           which is what the mechanism is for either way.
+                           Build-verified in Docker for both chips; not
+                           hardware-tested (no WS2812B/SK6812 strip
+                           physically available when written).
+  partitions.csv           same OTA + fctry layout as firmware/light/
+  sdkconfig.defaults        same as firmware/light/
 tools/
   dev.sh                  opens the Docker dev environment
   gen_factory.sh          local QR + factory partition generator
@@ -1098,7 +1193,51 @@ SECURITY.md               flash encryption / secure boot / signed OTA guidance
    one pin per option, rather than guessing. Build-verified in Docker for
    all three color modes; not hardware-tested (no RGB(W)(W) LED/driver
    board physically available when written).
-2. Implement Matter **OTA** — partially done. All nine firmware types ship
+
+   A tenth device type, `firmware/addressable-light/`, followed directly
+   from the user's request to add addressable LED strip support (WS2812B,
+   SK6812, "and other common ones") after RGBWW shipped — a genuinely
+   different technology from every prior light in this repo (single-wire
+   NRZ protocol via the RMT peripheral, not PWM), so it got its own
+   folder rather than becoming another firmware/color-light/ mode. Before
+   writing any driver code, checked what "addressable" could actually
+   mean over Matter: connectedhomeip's own
+   `controller-clusters.matter` does define a `DynamicLighting` cluster
+   (0x0305, EffectStruct/EffectColorStruct — exactly the shape a real
+   per-pixel/gradient effect would need) but it's marked `provisional`
+   and absent from every ratified data_model spec folder (checked 1.0
+   through 1.6) — not usable against any real, certified controller
+   today. So this device type does exactly what firmware/color-light/
+   does (one Hue/Saturation/Level color for the whole accessory) over a
+   different physical layer — explicitly documented as NOT "RGBIC"
+   per-zone control, to avoid over-promising what Matter can actually
+   drive. `#define ADDRESSABLE_LIGHT_CHIP` selects WS2812B (default,
+   24-bit/3 bytes per pixel, GRB order) or SK6812 (32-bit RGBW/4 bytes
+   per pixel, RGBW order) — both independently verified against
+   Worldsemi's own datasheets (fetched as PDFs and read via `pdftotext`
+   rather than trusted from search-engine summaries, which turned up two
+   conflicting "official" WS2812B timing tables in the process — a
+   useful reminder that even "primary source" web results need the
+   actual document read, not just a snippet). SK6812's RGBW byte order
+   is flagged in a code comment as a real point of disagreement with
+   several community Arduino/ESPHome libraries (which default to GRBW
+   instead) — if a real strip's colors come out swapped, that's the
+   first thing to check. Implemented via ESP-IDF's `driver/rmt_tx.h` —
+   this repo's first RMT-based driver (every prior timing-sensitive
+   driver, e.g. DHT11/DHT22/DS18B20, bit-bangs a GPIO instead) — with the
+   exact API pattern checked against Espressif's own official
+   `examples/peripherals/rmt/led_strip_simple_encoder` reference (which
+   lists classic ESP32 among its supported targets), using only that
+   example's API shape, not its timing numbers (those come from the
+   datasheets). Wizard integration needed zero new mechanism: the chip
+   choice reuses the same componentOptions/componentDefineName pattern
+   the temperature/light sensors already use. Build-verified in Docker
+   for both chips; not hardware-tested (no WS2812B/SK6812 strip
+   physically available when written). See its own repository-layout
+   entry above for the full detail, including the exact datasheet-sourced
+   timing constants and the reasoning for a deliberately generous
+   WS2812B reset time.
+2. Implement Matter **OTA** — partially done. All ten firmware types ship
    `CONFIG_ENABLE_OTA_REQUESTOR=y`, which adds the OTA Requestor cluster
    to the root node endpoint entirely via Kconfig — esp-matter's own core
    startup (`esp_matter_core.cpp`) calls

@@ -308,7 +308,30 @@ verified in Docker for RGB (default), RGBW, and RGBWW; not
 hardware-tested (no RGB(W)(W) LED/driver board physically available when
 written).
 
-To add another type, copy any of the nine folders and swap the endpoint
+`firmware/addressable-light/` is a tenth example — the same Matter
+capability as `firmware/color-light/` (one Hue/Saturation/brightness
+color), but driving an addressable WS2812B or SK6812 LED strip over a
+single data pin via the ESP32's RMT peripheral instead of plain PWM
+channels. Every pixel is always set to the same color: Matter has no
+ratified way to command anything else (its `DynamicLighting` cluster,
+which would cover per-pixel/gradient effects, is still `provisional` and
+absent from every shipped Matter spec version — confirmed directly in
+connectedhomeip's own `controller-clusters.matter`), so this is a
+different physical layer for the same single-color light, not "RGBIC"
+per-zone control. `ADDRESSABLE_LIGHT_CHIP` selects WS2812B (24-bit, GRB
+byte order) or SK6812 (32-bit RGBW, RGBW byte order) — both independently
+verified against Worldsemi's own datasheets, including exact bit timing
+and a documented caveat that some community libraries assume a different
+byte order for SK6812 than its own datasheet specifies. Implemented via
+ESP-IDF's `driver/rmt_tx.h` (this repo's first RMT-based driver, rather
+than the bit-banged GPIO timing `firmware/temperature-sensor/`'s
+DHT11/DHT22/DS18B20 use), with the exact API pattern checked against
+Espressif's own official reference example. See its `app_main.cpp`
+header comment for the full explanation. Build-verified in Docker for
+both chips; not hardware-tested (no WS2812B/SK6812 strip physically
+available when written).
+
+To add another type, copy any of the ten folders and swap the endpoint
 type in `app_main.cpp` — esp-matter provides ready-made types like
 `occupancy_sensor`, `thermostat`, and many more.
 
@@ -319,7 +342,7 @@ but the multi-GB Docker image stalled out on GitHub-hosted runners, so it
 was reverted rather than left flaky). Build + flash a new version yourself
 following the Quick Start steps above whenever you change `app_main.cpp`.
 
-All nine device types also ship with Matter's **OTA Requestor** cluster
+All ten device types also ship with Matter's **OTA Requestor** cluster
 enabled (`CONFIG_ENABLE_OTA_REQUESTOR=y`), so once a device is bound to an
 OTA Provider node on the same fabric, it can fetch and install updates over
 the air using the existing `ota_0`/`ota_1` A/B partition slots — no app

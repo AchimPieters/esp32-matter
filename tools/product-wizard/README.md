@@ -28,8 +28,9 @@ open tools/product-wizard/index.html
   "Temperature Sensor" (`firmware/temperature-sensor/`), "Light
   Sensor" (`firmware/light-sensor/`), "Dimmable Light"
   (`firmware/dimmable-light/`), "Window Covering"
-  (`firmware/window-covering/`), or "Color Light"
-  (`firmware/color-light/`). All nine are real, buildable
+  (`firmware/window-covering/`), "Color Light"
+  (`firmware/color-light/`), or "Addressable LED Strip"
+  (`firmware/addressable-light/`). All ten are real, buildable
   firmware, not just UI placeholders. Each card has its own hand-drawn
   line-art icon (`DEVICE_TYPE_ICONS` in `index.html`), in the spirit of
   Apple's own SF Symbols/HomeKit accessory icons — not the actual Apple
@@ -509,6 +510,38 @@ SDA/SCL) rather than assuming it would need extending. Build-verified in
 Docker for all three color modes; not hardware-tested (no RGB(W)(W)
 LED/driver board physically available when written).
 
+A tenth device type, `firmware/addressable-light/` ("Addressable LED
+Strip"), followed directly on the user's request for WS2812B/SK6812
+addressable-strip support. It's the same Matter capability as `Color
+Light` — one Hue/Saturation/brightness color for the whole accessory —
+over a genuinely different physical layer: a single-wire addressable
+protocol (WS2812B/SK6812) driven via the ESP32's RMT peripheral, rather
+than PWM. Explicitly documented as NOT per-pixel "RGBIC" control: Matter
+does define a `DynamicLighting` cluster (0x0305) with exactly the
+struct shapes real per-pixel effects would need, but it's marked
+`provisional` in connectedhomeip's own `controller-clusters.matter` and
+absent from every ratified spec version checked (1.0 through 1.6) — not
+usable against any real, certified controller today, so this device
+just drives every pixel to the same color, same as `Color Light`.
+`ADDRESSABLE_LIGHT_CHIP` selects WS2812B (24-bit GRB) or SK6812 (32-bit
+RGBW) — both chips' bit timing AND byte order independently verified
+against Worldsemi's own datasheets (downloaded as PDFs and read via
+`pdftotext` rather than trusted from search-engine summaries, which
+surfaced two conflicting "official" WS2812B timing tables — the actual
+document had to be read to resolve which). SK6812's datasheet-specified
+RGBW byte order is flagged as disagreeing with several community
+libraries' GRBW default — a real, documented caveat, not a guess. Uses
+ESP-IDF's `driver/rmt_tx.h` — this repo's first RMT-based driver, with
+the exact API pattern checked against Espressif's own official
+`led_strip_simple_encoder` reference example rather than assumed. The
+wizard's WS2812B/SK6812 chip picker reuses the same
+componentOptions/componentDefineName mechanism the temperature/light
+sensors' chip pickers already use, needing zero new wizard code —
+confirmed by a Node.js sandboxed re-exec of the wizard's script and a
+headless-Chromium screenshot of both chip selections' Configure Device
+panels. Build-verified in Docker for both chips; not hardware-tested (no
+WS2812B/SK6812 strip physically available when written).
+
 Reflashing a board that was previously commissioned with different
 firmware/identity (as happened testing this, repeatedly, across several
 of these device types) leaves stale fabric data in NVS — the write-flash
@@ -521,18 +554,24 @@ testing does.
 
 ## Known limitations
 
-- Nine device types exist (`On/Off Light`, `On/Off Switch`, `Contact
+- Ten device types exist (`On/Off Light`, `On/Off Switch`, `Contact
   Sensor`, `Outlet`, `Temperature Sensor`, `Light Sensor`, `Dimmable
-  Light`, `Window Covering`, `Color Light`) — light/switch/contact/outlet
-  are all digital GPIO, temperature is this repo's first non-GPIO sensor
-  (I2C, single-wire, or 1-Wire depending which of its 7 supported chips
-  you pick), light sensor is the first analog/ADC one, dimmable light is
-  the first with a real actuator beyond simple on/off (PWM output via
-  LEDC), window covering is the first with continuous, multi-second
-  physical movement (two relays + time-based position estimation, no
-  position sensor), and color light is the first with more than one PWM
-  output channel driving one light (RGB, three channels). All three
-  options from the original "next actuator" offer have now been built.
+  Light`, `Window Covering`, `Color Light`, `Addressable LED Strip`) —
+  light/switch/contact/outlet are all digital GPIO, temperature is this
+  repo's first non-GPIO sensor (I2C, single-wire, or 1-Wire depending
+  which of its 7 supported chips you pick), light sensor is the first
+  analog/ADC one, dimmable light is the first with a real actuator
+  beyond simple on/off (PWM output via LEDC), window covering is the
+  first with continuous, multi-second physical movement (two relays +
+  time-based position estimation, no position sensor), color light is
+  the first with more than one PWM output channel driving one light
+  (RGB/RGBW/RGBWW, up to 5 channels), and the addressable LED strip is
+  the first over a single-wire addressable protocol (WS2812B/SK6812 via
+  the RMT peripheral) rather than plain PWM — though, like color light,
+  it only ever shows one uniform color across the whole strip, since
+  Matter itself has no ratified per-pixel/effects concept (see its own
+  `app_main.cpp` header comment). All three options from the original
+  "next actuator" offer have now been built.
 - The window covering has no position sensor of any kind — position is
   estimated purely from calibrated motor-on time (linear interpolation),
   the same technique ESPHome's/Tasmota's own time-based cover components

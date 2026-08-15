@@ -793,6 +793,14 @@ const COMPONENT_LIBRARY = {
   BME280: { name: "BME280", category: "temp-humidity", bus: "I2C", pin1Label: "SDA", pin2Label: "SCL", usesPin2: true, verified: false, defineValue: "SENSOR_BME280" },
   LDR: { name: "LDR / photoresistor", category: "light", bus: "ADC", pin1Label: "ADC", pin2Label: null, usesPin2: false, verified: false, defineValue: "LIGHT_SENSOR_LDR", note: "Needs an ADC1-capable GPIO (32-39 on classic ESP32) — the driver is hardcoded to GPIO 34/ADC1 channel 6; see LIGHT_SENSOR_ADC_CHANNEL in app_main.cpp if you use a different ADC1 pin." },
   BH1750: { name: "BH1750", category: "light", bus: "I2C", pin1Label: "SDA", pin2Label: "SCL", usesPin2: true, verified: false, defineValue: "LIGHT_SENSOR_BH1750", note: "Needs bidirectional I2C-capable GPIOs — avoid GPIO 32-39 (input-only on classic ESP32, can't do I2C). GPIO 21/22 are good defaults, same as the temperature sensor's I2C pins." },
+  // Addressable-light chip choice — same componentOptions/componentDefineName
+  // mechanism as the temperature/light sensors' chip pickers, even though
+  // (unlike those) both options here share the same single-pin shape
+  // (pin1Label/usesPin2 identical for both) — there's still a real protocol
+  // difference (24-bit GRB vs 32-bit RGBW, different bit timing) driving a
+  // real #define switch, which is what this mechanism is for either way.
+  ADDR_WS2812B: { name: "WS2812B", category: "addressable", bus: "single-wire (RMT)", pin1Label: "Data (DIN)", pin2Label: null, usesPin2: false, verified: false, defineValue: "ADDRESSABLE_LIGHT_CHIP_WS2812B", note: "24-bit RGB (3 bytes/pixel, GRB order). Timing/order confirmed against Worldsemi's own WS2812B datasheet — see firmware/addressable-light/main/app_main.cpp's header comment for the exact values and sourcing." },
+  ADDR_SK6812: { name: "SK6812 (RGBW)", category: "addressable", bus: "single-wire (RMT)", pin1Label: "Data (DIN)", pin2Label: null, usesPin2: false, verified: false, defineValue: "ADDRESSABLE_LIGHT_CHIP_SK6812", note: "32-bit RGBW (4 bytes/pixel, RGBW order per Worldsemi's own SK6812RGBW datasheet — flagged in app_main.cpp's header comment as a real point of disagreement with some community libraries, which default to GRBW instead). Timing differs from WS2812B — see that same header comment." },
   // Contact sensor components — deliberately cosmetic, no defineValue: a
   // reed switch, a Hall-effect IC, and a plain mechanical microswitch are
   // all, from app_main.cpp's point of view, just "read one GPIO, HIGH or
@@ -1418,6 +1426,44 @@ const DEVICE_TYPES = [
       defaultsByModule: { esp32: 15, esp32c2: 15, esp32c3: 15, esp32c5: 15, esp32c6: 15, esp32c61: 15, esp32s3: 15, esp32h2: 15 },
     },
   },
+  {
+    id: "addressable-light",
+    name: "Addressable LED Strip",
+    desc: "Matter color light (same Hue/Saturation/brightness capability as Color Light) driving an addressable WS2812B or SK6812 LED strip over one data pin via the ESP32's RMT peripheral, instead of plain PWM channels. Every pixel is always set to the same color — Matter has no per-pixel/effects concept (its DynamicLighting cluster exists but is still provisional, not usable against a real controller), so this is not \"RGBIC\" per-zone control, just a different physical layer for the same single-color Matter light. Reference device in firmware/addressable-light/.",
+    shortDesc: "Addressable WS2812B/SK6812 strip, one color for all pixels.",
+    // Matches project(matter_addressable_light) in
+    // firmware/addressable-light/CMakeLists.txt. WS2812B vs SK6812 is a
+    // componentOptions chip choice (like the temperature/light sensors'),
+    // not an extraPickers one — see the comment on ADDR_WS2812B/ADDR_SK6812
+    // in COMPONENT_LIBRARY for why that mechanism fits despite both chips
+    // sharing the same single-pin shape. Pixel count
+    // (ADDRESSABLE_LIGHT_PIXEL_COUNT in app_main.cpp) isn't wizard-
+    // configurable — it's a plain integer, not a GPIO or enum choice, and
+    // the wizard has no field type for that yet; adjust it by hand to
+    // match your actual strip's LED count, same as e.g. the light sensor's
+    // LDR_R10_OHMS/LDR_GAMMA constants.
+    binName: "matter_addressable_light.bin",
+    componentOptions: ["ADDR_WS2812B", "ADDR_SK6812"],
+    componentDefineName: "ADDRESSABLE_LIGHT_CHIP",
+    driver: {
+      summary: "Data (DIN) · single-wire (RMT)",
+      fieldLabel: "Data (DIN) GPIO pin",
+      blockTitle: "Data (DIN) · addressable strip output (RMT)",
+      filePath: "firmware/addressable-light/main/app_main.cpp",
+      defineName: "ADDRESSABLE_LIGHT_GPIO",
+      currentGpio: 2,
+      defaultsByModule: { esp32: 2, esp32c2: 2, esp32c3: 2, esp32c5: 2, esp32c6: 2, esp32c61: 2, esp32s3: 2, esp32h2: 2 },
+    },
+    identify: {
+      summary: "GPIO (digital output)",
+      fieldLabel: "Identify LED GPIO pin",
+      blockTitle: "Identify LED · digital output",
+      filePath: "firmware/addressable-light/main/app_main.cpp",
+      defineName: "IDENTIFY_LED_GPIO",
+      currentGpio: 15,
+      defaultsByModule: { esp32: 15, esp32c2: 15, esp32c3: 15, esp32c5: 15, esp32c6: 15, esp32c61: 15, esp32s3: 15, esp32h2: 15 },
+    },
+  },
 ];
 
 function findDeviceType(id) {
@@ -1692,6 +1738,18 @@ const DEVICE_TYPE_ICONS = {
     <circle cx="18.5" cy="38.5" r="5"/>
     <circle cx="24" cy="38.5" r="5"/>
     <circle cx="29.5" cy="38.5" r="5"/>
+  </svg>`,
+  // A strip body with distinct, individually-filled dots — the discrete-
+  // pixels motif, deliberately different from color-light's blended-circles
+  // one, since this device type's whole point is per-pixel hardware (even
+  // though Matter itself only ever drives them all to the same color — see
+  // this device type's own `desc`).
+  "addressable-light": `<svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+    <rect x="6" y="19" width="36" height="10" rx="5"/>
+    <circle cx="13" cy="24" r="1.8" fill="currentColor" stroke="none"/>
+    <circle cx="20.5" cy="24" r="1.8" fill="currentColor" stroke="none"/>
+    <circle cx="28" cy="24" r="1.8" fill="currentColor" stroke="none"/>
+    <circle cx="35.5" cy="24" r="1.8" fill="currentColor" stroke="none"/>
   </svg>`,
 };
 
