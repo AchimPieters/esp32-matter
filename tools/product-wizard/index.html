@@ -376,22 +376,32 @@
 
   .badge-row {
     display: flex;
-    gap: 6px;
+    gap: 4px;
     flex-wrap: wrap;
   }
 
   .conn-badge {
-    font-size: 11px;
+    display: inline-block;
+    font-size: 9px;
     font-weight: 600;
-    padding: 2px 8px;
-    border-radius: 999px;
-    background: #eef1f6;
+    letter-spacing: 0.02em;
+    padding: 1px 6px;
+    border-radius: 6px;
+    border: 1px solid currentColor;
+    background: transparent;
     color: var(--text-muted);
+    line-height: 1.6;
   }
 
-  .conn-badge.wifi { background: #e6f4ff; color: #0b6bcb; }
-  .conn-badge.ble { background: #eef0ff; color: #4338ca; }
-  .conn-badge.thread { background: #e9f9ee; color: #1a7f37; }
+  .conn-badge.matter { color: #12100b; font-weight: 700; }
+  .conn-badge.wifi { color: #0b6bcb; }
+  .conn-badge.ble { color: #4338ca; }
+  .conn-badge.thread { color: #1a7f37; }
+  /* Deliberately more muted than the others — this badge documents a
+     hardware capability the firmware in this repo never actually uses
+     (see the comment on CONN_LABELS.zigbee), so it shouldn't look as
+     "active"/prominent as a badge for a transport this repo really builds. */
+  .conn-badge.zigbee { color: #8a6d00; opacity: 0.75; }
 
   .option-card.selected .conn-badge {
     background: #ffffff;
@@ -1266,10 +1276,31 @@ const MODULES = [
     offsetsVerified: true,
   },
   {
+    id: "esp32c2",
+    name: "ESP32-C2",
+    // Espressif's lowest-cost Wi-Fi+BLE chip; the bare silicon is also sold
+    // under the die-level part number ESP8684 (same chip, different
+    // packaging/marketing name — not a separate module to pick between).
+    desc: "Single-core RISC-V, Espressif's lowest-cost Wi-Fi/BLE chip (die also sold as ESP8684).",
+    conn: ["wifi", "ble"],
+    bootloaderOffset: "0x0",
+    offsetsVerified: false,
+  },
+  {
     id: "esp32c3",
     name: "ESP32-C3",
-    desc: "Single-core RISC-V, compact and low-cost.",
+    // Same die-vs-module-name relationship as C2 above: the bare silicon is
+    // also sold as ESP8685.
+    desc: "Single-core RISC-V, compact and low-cost (die also sold as ESP8685).",
     conn: ["wifi", "ble"],
+    bootloaderOffset: "0x0",
+    offsetsVerified: false,
+  },
+  {
+    id: "esp32c5",
+    name: "ESP32-C5",
+    desc: "Dual-band (2.4/5 GHz) Wi-Fi 6 plus 802.15.4 — can run Matter over Thread.",
+    conn: ["wifi", "ble", "thread", "zigbee"],
     bootloaderOffset: "0x0",
     offsetsVerified: false,
   },
@@ -1277,7 +1308,21 @@ const MODULES = [
     id: "esp32c6",
     name: "ESP32-C6",
     desc: "Wi-Fi 6 plus 802.15.4 — can run Matter over Thread.",
-    conn: ["wifi", "ble", "thread"],
+    conn: ["wifi", "ble", "thread", "zigbee"],
+    bootloaderOffset: "0x0",
+    offsetsVerified: false,
+  },
+  {
+    id: "esp32c61",
+    name: "ESP32-C61",
+    // Has 802.15.4-capable silicon like C5/C6, but on this repo's pinned
+    // ESP-IDF version (v5.5.4) that radio's SOC_IEEE802154_SUPPORTED define
+    // is commented out in ESP-IDF's own soc_caps.h — checked directly
+    // rather than assumed, since C61 looks identical to C6 on paper
+    // otherwise. No Thread/Zigbee badge here as a result; Wi-Fi 6 + BLE
+    // still work normally.
+    desc: "Wi-Fi 6 plus BLE. Has 802.15.4-capable silicon like C5/C6, but Thread/Zigbee support isn't enabled for it on this repo's pinned ESP-IDF version (v5.5.4).",
+    conn: ["wifi", "ble"],
     bootloaderOffset: "0x0",
     offsetsVerified: false,
   },
@@ -1292,8 +1337,8 @@ const MODULES = [
   {
     id: "esp32h2",
     name: "ESP32-H2",
-    desc: "802.15.4 (Thread/Zigbee) only — no Wi-Fi. Needs a Thread border router.",
-    conn: ["ble", "thread"],
+    desc: "802.15.4 (Thread/Zigbee-capable) only — no Wi-Fi. Needs a Thread border router.",
+    conn: ["ble", "thread", "zigbee"],
     bootloaderOffset: "0x0",
     offsetsVerified: false,
   },
@@ -1390,7 +1435,23 @@ function renderSetup() {
 
 /* ---------- Wizard shell ---------- */
 
-const CONN_LABELS = { wifi: "Wi-Fi", ble: "BLE", thread: "Thread" };
+// `title` becomes each badge's hover tooltip. `zigbee` deliberately says
+// "(hw)" right in the visible label, not just the tooltip — these chips'
+// 802.15.4 radio can physically run Zigbee, but this repo/wizard only ever
+// builds Matter firmware for it (via esp-matter, Matter-over-Thread) —
+// never Zigbee firmware. Making that explicit in the badge itself, not
+// just a footnote, avoids anyone assuming this wizard can produce Zigbee
+// devices just because the badge is here.
+// Not user-facing text data like CONN_LABELS below — a single constant so
+// the "Matter" badge's label only needs updating in one place.
+const MATTER_BADGE_LABEL = "✳ Matter";
+
+const CONN_LABELS = {
+  wifi: { label: "Wi-Fi", title: "Wi-Fi station — this repo's WiFi devices connect to your existing network." },
+  ble: { label: "BLE", title: "Bluetooth Low Energy — used for the initial Matter commissioning handshake." },
+  thread: { label: "Thread", title: "802.15.4 radio running Matter-over-Thread — needs a Thread Border Router on your network." },
+  zigbee: { label: "Zigbee (hw)", title: "The 802.15.4 radio can physically run Zigbee, but this repo only ever builds Matter firmware for it — never Zigbee." },
+};
 
 function renderWizard() {
   const p = state.currentProduct;
@@ -1446,14 +1507,19 @@ function renderGetStarted(p) {
 function renderSelectModule(p) {
   const cards = MODULES.map((m) => {
     const selected = p.target === m.id;
+    // "Matter" isn't part of `conn` — every module listed in this wizard is
+    // Matter-capable by definition (that's the entire point of the repo),
+    // so it's always shown first rather than repeated in every entry's conn
+    // array.
+    const matterBadge = `<span class="conn-badge matter" title="This module builds and runs Matter firmware.">${escapeHtml(MATTER_BADGE_LABEL)}</span>`;
     const badges = m.conn
-      .map((c) => `<span class="conn-badge ${c}">${CONN_LABELS[c]}</span>`)
+      .map((c) => `<span class="conn-badge ${c}" title="${escapeHtml(CONN_LABELS[c].title)}">${escapeHtml(CONN_LABELS[c].label)}</span>`)
       .join("");
     return `
       <button class="option-card ${selected ? "selected" : ""}" data-select-module="${m.id}">
         <h3>${escapeHtml(m.name)}</h3>
         <p class="desc">${escapeHtml(m.desc)}</p>
-        <div class="badge-row">${badges}</div>
+        <div class="badge-row">${matterBadge}${badges}</div>
       </button>`;
   }).join("");
 

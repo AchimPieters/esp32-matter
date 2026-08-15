@@ -68,7 +68,7 @@ use the absolute path to get there.
 
 ```bash
 cd /project/firmware/light
-idf.py set-target esp32          # or esp32c3 / esp32c6 / esp32s3 / esp32h2
+idf.py set-target esp32          # or esp32c2 / esp32c3 / esp32c5 / esp32c6 / esp32c61 / esp32s3 / esp32h2
 idf.py build
 ```
 

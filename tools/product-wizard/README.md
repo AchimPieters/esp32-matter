@@ -29,10 +29,29 @@ open tools/product-wizard/index.html
   Sensor" (`firmware/light-sensor/`), or "Dimmable Light"
   (`firmware/dimmable-light/`). All seven are real, buildable
   firmware, not just UI placeholders.
-- **Select Module (step 2)** — pick a target chip (ESP32 / C3 / C6 / S3 /
-  H2), mirroring what `tools/dev.sh` + `idf.py set-target` actually
-  support. Connectivity badges (Wi-Fi/BLE/Thread) reflect each chip's real
-  radios — e.g. ESP32-H2 has no Wi-Fi.
+- **Select Module (step 2)** — pick a target chip (ESP32, C2, C3, C5, C6,
+  C61, S3, H2), mirroring what `tools/dev.sh` + `idf.py set-target`
+  actually support. A small bordered "✳ Matter" badge (every module here
+  builds Matter firmware, so it's always shown) plus connectivity badges
+  (Wi-Fi/BLE/Thread/Zigbee) reflect each chip's real radios — e.g.
+  ESP32-H2 has no Wi-Fi. "Zigbee" is deliberately labeled "Zigbee (hw)"
+  and shown more muted than the other badges: C5/C6/H2's 802.15.4 radio
+  can physically run Zigbee, but this repo/wizard only ever builds Matter
+  firmware for it (via esp-matter, Matter-over-Thread) — never Zigbee —
+  so the badge documents a hardware capability, not a feature this repo
+  implements. Checked directly against ESP-IDF's own `soc_caps.h` per
+  chip before adding any of this — ESP32-C61 has 802.15.4-capable
+  silicon like C5/C6 on paper, but its `SOC_IEEE802154_SUPPORTED` define
+  is commented out on this repo's pinned ESP-IDF version (v5.5.4), so it
+  gets no Thread/Zigbee badge; ESP32-H4 and ESP32-H21 were left out of
+  the module list entirely for the same reason (both have their radio
+  capability defines commented out in this exact SDK version — not
+  reliably usable here, unlike H2/C5/C6/C61's Wi-Fi/BLE); ESP32-P4 was
+  left out because it has no Wi-Fi/BLE/802.15.4 radio of its own at all
+  (needs an external companion radio chip); ESP32-S2 was left out because
+  it has Wi-Fi but no BLE, so it can't do Matter's standard commissioning
+  flow (esp-matter's own `light` example doesn't ship an S2 config
+  either, for the same reason).
 - **Configure Device (step 3)** — set the GPIO(s) each device type's
   driver actually exposes: the LED pin for the light, the button pin for
   the switch, the contact pin for the contact sensor, the output + button

@@ -39,8 +39,16 @@ Open the environment:
 ./tools/dev.sh          # wraps: docker run --rm -it -v "$PWD":/project -w /project espressif/esp-matter:release-v1.6_idf_v5.5.4 /bin/bash
 ```
 
-Default build target: classic **ESP32 (WROOM-32)**. Also supports esp32c3 / c6 /
-s3 / h2. (C6/H2 additionally support Thread; classic ESP32 is Wi-Fi.)
+Default build target: classic **ESP32 (WROOM-32)**. Also supports esp32c2 / c3 /
+c5 / c6 / c61 / s3 / h2. (C5/C6/H2 additionally support Thread — their
+802.15.4 radio can physically run Zigbee too, but this repo never builds
+Zigbee firmware for it, only Matter-over-Thread; classic ESP32/C2/C3/C61/S3
+are Wi-Fi-only. ESP32-H4 and ESP32-H21 exist in the SDK but are excluded
+here — their radio capability defines are commented out in ESP-IDF's own
+`soc_caps.h` on this repo's pinned v5.5.4, so they're not reliably usable
+on this exact SDK version. ESP32-P4 is excluded too — no Wi-Fi/BLE/802.15.4
+radio of its own, needs an external companion chip. ESP32-S2 is excluded —
+has Wi-Fi but no BLE, so it can't do Matter's standard commissioning flow.)
 
 ## Common commands
 

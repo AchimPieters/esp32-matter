@@ -12,7 +12,7 @@ your home unless you deliberately add a cloud hub. With Home Assistant it stays
 entirely local.
 
 Default target is the classic **ESP32 (WROOM-32)** to match the StudioPieters
-setup; the code also runs on ESP32-C3/C6/S3/H2.
+setup; the code also runs on ESP32-C2/C3/C5/C6/C61/S3/H2.
 
 > Dev environment reference: <https://www.studiopieters.nl/esp32-homekit-development/>
 
@@ -73,14 +73,14 @@ esp32-matter/
    `$ESP_MATTER_PATH`, not `/project` — use the absolute path:
    ```bash
    cd /project/firmware/light
-   idf.py set-target esp32        # or esp32c3 / esp32c6 / esp32s3 / esp32h2
+   idf.py set-target esp32        # or esp32c2 / esp32c3 / esp32c5 / esp32c6 / esp32c61 / esp32s3 / esp32h2
    idf.py build
    ```
 
 6. **Flash from your host** (Docker Desktop on macOS can't see the USB port, so
    flash outside the container — install esptool with `pip3 install esptool`).
    `0x1000` is the bootloader offset for classic ESP32 specifically — it's
-   `0x0` on every later chip (C3/C6/S3/H2). `ota_data_initial.bin` is
+   `0x0` on every later chip (C2/C3/C5/C6/C61/S3/H2). `ota_data_initial.bin` is
    required too: this partition table has no "factory" app slot, so the
    bootloader needs it to know which OTA slot to boot.
    ```bash
