@@ -31,15 +31,16 @@ open tools/product-wizard/index.html
   firmware, not just UI placeholders.
 - **Select Module (step 2)** — pick a target chip (ESP32, C2, C3, C5, C6,
   C61, S3, H2), mirroring what `tools/dev.sh` + `idf.py set-target`
-  actually support. A small bordered "✳ Matter" badge (every module here
+  actually support. A small bordered "Matter" badge (every module here
   builds Matter firmware, so it's always shown) plus connectivity badges
   (Wi-Fi/BLE/Thread/Zigbee) reflect each chip's real radios — e.g.
-  ESP32-H2 has no Wi-Fi. "Zigbee" is deliberately labeled "Zigbee (hw)"
-  and shown more muted than the other badges: C5/C6/H2's 802.15.4 radio
-  can physically run Zigbee, but this repo/wizard only ever builds Matter
-  firmware for it (via esp-matter, Matter-over-Thread) — never Zigbee —
-  so the badge documents a hardware capability, not a feature this repo
-  implements. Checked directly against ESP-IDF's own `soc_caps.h` per
+  ESP32-H2 has no Wi-Fi. The "Zigbee" badge is deliberately shown more
+  muted (lower opacity) than the other badges, and its hover tooltip
+  explains why: C5/C6/H2's 802.15.4 radio can physically run Zigbee, but
+  this repo/wizard only ever builds Matter firmware for it (via
+  esp-matter, Matter-over-Thread) — never Zigbee — so the badge documents
+  a hardware capability, not a feature this repo implements. Checked
+  directly against ESP-IDF's own `soc_caps.h` per
   chip before adding any of this — ESP32-C61 has 802.15.4-capable
   silicon like C5/C6 on paper, but its `SOC_IEEE802154_SUPPORTED` define
   is commented out on this repo's pinned ESP-IDF version (v5.5.4), so it

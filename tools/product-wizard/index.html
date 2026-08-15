@@ -1435,22 +1435,22 @@ function renderSetup() {
 
 /* ---------- Wizard shell ---------- */
 
-// `title` becomes each badge's hover tooltip. `zigbee` deliberately says
-// "(hw)" right in the visible label, not just the tooltip — these chips'
-// 802.15.4 radio can physically run Zigbee, but this repo/wizard only ever
-// builds Matter firmware for it (via esp-matter, Matter-over-Thread) —
-// never Zigbee firmware. Making that explicit in the badge itself, not
-// just a footnote, avoids anyone assuming this wizard can produce Zigbee
-// devices just because the badge is here.
+// `title` becomes each badge's hover tooltip. `zigbee`'s tooltip carries
+// the "hardware-capable, not actually built here" caveat since the visible
+// label is just "Zigbee" — these chips' 802.15.4 radio can physically run
+// Zigbee, but this repo/wizard only ever builds Matter firmware for it (via
+// esp-matter, Matter-over-Thread), never Zigbee firmware. The muted/lower-
+// opacity styling (see .conn-badge.zigbee below) is what visually
+// distinguishes it from the transports this repo actually builds.
 // Not user-facing text data like CONN_LABELS below — a single constant so
 // the "Matter" badge's label only needs updating in one place.
-const MATTER_BADGE_LABEL = "✳ Matter";
+const MATTER_BADGE_LABEL = "Matter";
 
 const CONN_LABELS = {
   wifi: { label: "Wi-Fi", title: "Wi-Fi station — this repo's WiFi devices connect to your existing network." },
   ble: { label: "BLE", title: "Bluetooth Low Energy — used for the initial Matter commissioning handshake." },
   thread: { label: "Thread", title: "802.15.4 radio running Matter-over-Thread — needs a Thread Border Router on your network." },
-  zigbee: { label: "Zigbee (hw)", title: "The 802.15.4 radio can physically run Zigbee, but this repo only ever builds Matter firmware for it — never Zigbee." },
+  zigbee: { label: "Zigbee", title: "The 802.15.4 radio can physically run Zigbee, but this repo only ever builds Matter firmware for it — never Zigbee." },
 };
 
 function renderWizard() {
