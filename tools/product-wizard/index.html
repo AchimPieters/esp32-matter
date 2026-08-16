@@ -773,6 +773,60 @@
     color: #1a7f37;
   }
 
+  /* ---------- Interactive Build & Flash panel (only rendered when this
+     page was served by tools/product-wizard/server.py — see that
+     function's own header comment) ---------- */
+
+  .interactive-panel {
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 16px;
+    margin-top: 14px;
+  }
+
+  .interactive-buttons {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+    margin: 12px 0;
+  }
+
+  .interactive-port-picker {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+    margin: 12px 0;
+  }
+
+  .interactive-port-picker select {
+    padding: 8px 10px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    font-size: 13px;
+  }
+
+  /* Same dark terminal look as .code-block, but scrolls vertically and
+     wraps long lines instead of .code-block's horizontal-scroll-a-single-
+     command shape — this one is a live, growing log, not one fixed
+     command. */
+  .interactive-console {
+    max-height: 280px;
+    overflow-y: auto;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+
+  .interactive-qrcode {
+    width: 160px;
+    height: 160px;
+    image-rendering: pixelated;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 8px;
+    background: #fff;
+  }
+
 </style>
 </head>
 <body>
@@ -992,6 +1046,26 @@ const COMPONENT_LIBRARY = {
   DOOR_LOCK_OUTPUT_SERVO: { name: "Servo (thumb-turn retrofit)", category: "door-lock-output", bus: "PWM", verified: false, defineValue: "DOOR_LOCK_OUTPUT_SERVO", note: "A hobby servo (e.g. SG90-class) turning an existing deadbolt thumb-turn from the inside — the same retrofit approach countless DIY/ESPHome smart-lock projects use. Uses the \"Output\" GPIO field above.", pins: [] },
   DOOR_LOCK_OUTPUT_RELAY: { name: "Relay (electric strike)", category: "door-lock-output", bus: "GPIO (relay)", verified: false, defineValue: "DOOR_LOCK_OUTPUT_RELAY", note: "Drives an electric strike or solenoid, active-LOW — the same class of hardware a real commercial electric-strike lock uses.", pins: [
     { key: "relay", label: "Relay", defineName: "DOOR_LOCK_RELAY_GPIO", defaultsByModule: { esp32: 4, esp32c2: 4, esp32c3: 4, esp32c5: 4, esp32c6: 4, esp32c61: 4, esp32s3: 4, esp32h2: 4 } },
+  ] },
+  // Smoke/CO Alarm's Sensor picker — same extraPickers `pins`-per-option
+  // mechanism as door-lock's Output above, not componentOptions: this
+  // device type's two MQ-series sensors are read via two DIFFERENT,
+  // chip-specific #defines (SMOKE_CO_ALARM_MQ2_GPIO/_MQ7_GPIO), not one
+  // pair of generic SENSOR_PIN_1/PIN_2 names the way the temperature/
+  // light sensors' single-chip-at-a-time pickers do — so there's no
+  // single "pin 1 GPIO" whose meaning cleanly retargets per option the
+  // way componentOptions' pin1Label/usesPin2 shape assumes. The MQ2 pin
+  // is covered by the device type's regular `driver` field (visible even
+  // when the MQ7-only option is selected, same small, documented,
+  // harmless quirk as door-lock's Servo/Relay case); MQ7's pin rides on
+  // this picker's own `pins` array, present on both options that actually
+  // read it (the dual sensor and the MQ7-only option).
+  SMOKE_MQ2_MQ7: { name: "MQ-2 (Smoke) + MQ-7 (CO)", category: "smoke-co-sensor", bus: "ADC × 2", verified: false, defineValue: "SENSOR_MQ2_MQ7", note: "Both an MQ-2 (smoke/combustible gas) and an MQ-7 (carbon monoxide) sensor, matching how real combination smoke+CO alarms are sold as one product. Enables both the SmokeAlarm and COAlarm cluster features. Threshold-based classifier, not a calibrated ppm reading — see app_main.cpp's header comment.", pins: [
+    { key: "mq7", label: "MQ7 (CO)", defineName: "SMOKE_CO_ALARM_MQ7_GPIO", defaultsByModule: { esp32: 35, esp32c2: 35, esp32c3: 35, esp32c5: 35, esp32c6: 35, esp32c61: 35, esp32s3: 35, esp32h2: 35 } },
+  ] },
+  SMOKE_MQ2: { name: "MQ-2 only (Smoke)", category: "smoke-co-sensor", bus: "ADC", verified: false, defineValue: "SENSOR_MQ2", note: "Smoke/combustible-gas sensing only — enables just the SmokeAlarm cluster feature. Uses the MQ2 GPIO field above; there's no MQ7 pin field in this mode since the firmware never reads it.", pins: [] },
+  SMOKE_MQ7: { name: "MQ-7 only (CO)", category: "smoke-co-sensor", bus: "ADC", verified: false, defineValue: "SENSOR_MQ7", note: "Carbon-monoxide sensing only — enables just the COAlarm cluster feature. The “MQ2 GPIO” field above goes unused in this mode — this option's own MQ7 pin field below is what the firmware actually reads.", pins: [
+    { key: "mq7", label: "MQ7 (CO)", defineName: "SMOKE_CO_ALARM_MQ7_GPIO", defaultsByModule: { esp32: 35, esp32c2: 35, esp32c3: 35, esp32c5: 35, esp32c6: 35, esp32c61: 35, esp32s3: 35, esp32h2: 35 } },
   ] },
 };
 
@@ -1829,6 +1903,56 @@ const DEVICE_TYPES = [
       defaultsByModule: { esp32: 2, esp32c2: 2, esp32c3: 2, esp32c5: 2, esp32c6: 2, esp32c61: 2, esp32s3: 2, esp32h2: 2 },
     },
   },
+  {
+    id: "smoke-co-alarm",
+    name: "Smoke/CO Alarm",
+    desc: "Matter Smoke/CO Alarm: an MQ-2 (smoke) and/or MQ-7 (CO) gas sensor drives the SmokeCoAlarm cluster's SmokeState/COState attributes via a plain adjustable-millivolt-threshold classifier, not a calibrated ppm reading (Matter's own cluster has no numeric concentration attribute either — only the Normal/Warning/Critical tri-state). A real controller's SelfTestRequest command is fully supported (simulated locally, since there's no real self-test routine to run against a plain analog sensor). Reference device in firmware/smoke-co-alarm/.",
+    shortDesc: "MQ-2 smoke and/or MQ-7 CO, threshold-based.",
+    // Matches project(matter_smoke_co_alarm) in
+    // firmware/smoke-co-alarm/CMakeLists.txt.
+    binName: "matter_smoke_co_alarm.bin",
+    // Sensor picker only — see the COMPONENT_LIBRARY comment on
+    // SMOKE_MQ2_MQ7/SMOKE_MQ2/SMOKE_MQ7 above for why this is an
+    // extraPickers entry (pins-per-option) rather than a componentOptions
+    // sensor-model picker (this device type's two sensors use two
+    // different, chip-specific #defines, not one pair of generic
+    // SENSOR_PIN_1/PIN_2 names the way the temperature/light sensors do).
+    extraPickers: [
+      {
+        key: "smokeCoAlarmSensor",
+        label: "Sensor",
+        prompt: "Which gas sensor(s) do you have wired up?",
+        options: ["SMOKE_MQ2_MQ7", "SMOKE_MQ2", "SMOKE_MQ7"],
+        defineName: "SENSOR_TYPE",
+      },
+    ],
+    // `driver` renders unconditionally (no null-check gate in
+    // renderConfigureDevice) — same door-lock precedent this entry
+    // follows: this is the MQ2 (Smoke) pin, which stays visible (but
+    // unused) when "MQ-7 only" is selected above, a small, honest,
+    // harmless UX quirk, not a bug. MQ7's own pin rides on the Sensor
+    // extraPicker's `pins` array instead, present on whichever options
+    // actually read it.
+    driver: {
+      summary: "MQ2 GPIO (ADC1)",
+      fieldLabel: "MQ2 (Smoke) GPIO pin",
+      blockTitle: "MQ2 (Smoke) · ADC input",
+      filePath: "firmware/smoke-co-alarm/main/app_main.cpp",
+      defineName: "SMOKE_CO_ALARM_MQ2_GPIO",
+      currentGpio: 34,
+      defaultsByModule: { esp32: 34, esp32c2: 34, esp32c3: 34, esp32c5: 34, esp32c6: 34, esp32c61: 34, esp32s3: 34, esp32h2: 34 },
+    },
+    rgbStatusLed: makeRgbStatusLed(25, 26, 27),
+    identify: {
+      summary: "GPIO (digital output)",
+      fieldLabel: "Identify LED GPIO pin",
+      blockTitle: "Identify LED · digital output",
+      filePath: "firmware/smoke-co-alarm/main/app_main.cpp",
+      defineName: "IDENTIFY_LED_GPIO",
+      currentGpio: 2,
+      defaultsByModule: { esp32: 2, esp32c2: 2, esp32c3: 2, esp32c5: 2, esp32c6: 2, esp32c61: 2, esp32s3: 2, esp32h2: 2 },
+    },
+  },
 ];
 
 function findDeviceType(id) {
@@ -2129,6 +2253,14 @@ const DEVICE_TYPE_ICONS = {
     <path d="M16 21v-6a8 8 0 0 1 16 0v6"/>
     <circle cx="24" cy="28.5" r="2.2" fill="currentColor" stroke="none"/>
     <path d="M24 30.5v4"/>
+  </svg>`,
+  // Ceiling-mount smoke/CO alarm motif — round body (the near-universal
+  // shape for this product category) + a small test-button dot, echoing
+  // the SelfTestRequest command this device type actually implements.
+  "smoke-co-alarm": `<svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+    <circle cx="24" cy="22" r="15"/>
+    <circle cx="24" cy="22" r="9"/>
+    <circle cx="24" cy="22" r="2" fill="currentColor" stroke="none"/>
   </svg>`,
 };
 
@@ -3462,9 +3594,299 @@ function renderGenerateFirmware(p) {
         to check or run them yourself.
       </p>
 
+      ${renderInteractiveBuildPanel(p)}
+
       ${renderWizardFooter(p, true)}
     </div>
   `;
+}
+
+/* --- Interactive Build & Flash / Generate update bin ------------------
+ * Progressive enhancement on top of everything above, which keeps working
+ * completely unchanged: opening this file directly (file://) never defines
+ * window.__WIZARD_TOKEN__, so this whole panel renders nothing and the
+ * step is exactly the copy-paste-only experience it always was. It only
+ * appears when this page was itself served by tools/product-wizard/
+ * server.py (see that file's own header comment for why it injects the
+ * token this checks for, and its full security model) — the wizard talks
+ * back to that same local server via fetch()/EventSource(), which runs the
+ * *exact* same two commands (buildDockerRunCmd/buildFlashCmd above) this
+ * step already shows as copy-paste text, just server-side instead of in
+ * your own terminal. Deliberately reuses the existing Web-Serial-based
+ * Test Product step (interactiveState.js's serialState) for the "watch it
+ * boot live" part after a flash, rather than building a second, redundant
+ * serial-reading path here — esptool needs exclusive access to the port
+ * during flashing anyway, so a live serial view during Build & Flash
+ * itself wouldn't work regardless. */
+function interactiveModeAvailable() {
+  return typeof window !== "undefined" && !!window.__WIZARD_TOKEN__;
+}
+
+// Every fetch() to the companion server carries this header — the server
+// rejects anything without the exact per-run token (see server.py's
+// _check_auth()). Centralised here so every call site stays consistent.
+function wizardApiHeaders(extra) {
+  return Object.assign({ "X-Wizard-Token": window.__WIZARD_TOKEN__ }, extra || {});
+}
+
+const interactiveState = {
+  productId: null, // which product this state belongs to — see the reset check below
+  phase: "idle", // idle | building | built | flashing | flashed | packaging | packaged | error
+  log: [],
+  qrcodeJobId: null,
+  packageJobId: null,
+  ports: [],
+  selectedPort: null,
+  errorMessage: "",
+};
+
+// Guards against stale state leaking between products (e.g. seeing "built"
+// with the previous product's console log still showing after switching to
+// a different one) — this state lives outside the render cycle
+// (see renderInteractivePanelInPlace()'s own comment on why), so nothing
+// else clears it automatically the way saveProducts()/render() would for
+// state.currentProduct itself.
+function resetInteractiveStateIfNewProduct(productId) {
+  if (interactiveState.productId === productId) return;
+  interactiveState.productId = productId;
+  interactiveState.phase = "idle";
+  interactiveState.log = [];
+  interactiveState.qrcodeJobId = null;
+  interactiveState.packageJobId = null;
+  interactiveState.selectedPort = null;
+  interactiveState.errorMessage = "";
+}
+
+function interactiveLog(line) {
+  interactiveState.log.push(line);
+  const el = document.getElementById("interactive-console");
+  if (el) {
+    el.textContent = interactiveState.log.join("\n");
+    el.scrollTop = el.scrollHeight;
+  }
+}
+
+function interactiveSetPhase(phase, errorMessage) {
+  interactiveState.phase = phase;
+  interactiveState.errorMessage = errorMessage || "";
+  renderInteractivePanelInPlace();
+}
+
+// Re-renders just this panel's own DOM subtree rather than the whole
+// wizard — a full render() would tear down the <pre> console element and
+// any in-flight EventSource callbacks referencing it, the same reason
+// serialState's own UI updates (updateSerialUI() above) touch the DOM
+// directly instead of going through render().
+function renderInteractivePanelInPlace() {
+  const container = document.getElementById("interactive-panel");
+  if (!container || !state.currentProduct) return;
+  container.outerHTML = renderInteractiveBuildPanel(state.currentProduct);
+  bindInteractivePanelEvents();
+}
+
+function renderInteractiveBuildPanel(p) {
+  if (!interactiveModeAvailable()) return "";
+  resetInteractiveStateIfNewProduct(p.id);
+
+  const phase = interactiveState.phase;
+  const busy = phase === "building" || phase === "flashing" || phase === "packaging";
+
+  return `
+    <div class="interactive-panel" id="interactive-panel">
+      <h3 style="margin-top:24px;">Or: build &amp; flash it right now</h3>
+      <p class="field-note">
+        This page is being served by <code>tools/product-wizard/server.py</code>
+        — it can run the two commands above for you and show live output
+        below, instead of you pasting them into your own terminal. Fully
+        optional; the commands above still work exactly the same if you'd
+        rather run them yourself.
+      </p>
+
+      <div class="interactive-buttons">
+        <button class="primary" id="interactive-build-flash-btn" ${busy ? "disabled" : ""}>
+          ${phase === "building" ? "Building…" : phase === "flashing" ? "Flashing…" : "Build &amp; Flash"}
+        </button>
+        <button class="secondary" id="interactive-package-btn" ${busy ? "disabled" : ""}>
+          ${phase === "packaging" ? "Packaging…" : "Generate update bin"}
+        </button>
+      </div>
+
+      ${phase === "built" ? `
+        <div class="interactive-port-picker">
+          <label class="field-label" for="interactive-port-select">Serial port</label>
+          <select id="interactive-port-select">
+            ${interactiveState.ports.length ? interactiveState.ports.map((port) => `
+              <option value="${escapeHtml(port)}" ${port === interactiveState.selectedPort ? "selected" : ""}>${escapeHtml(port)}</option>
+            `).join("") : `<option value="">No ports detected — plug in your board</option>`}
+          </select>
+          <button class="secondary" id="interactive-refresh-ports-btn" type="button">Refresh</button>
+          <button class="primary" id="interactive-flash-now-btn" ${interactiveState.ports.length ? "" : "disabled"}>Flash to this port</button>
+        </div>
+      ` : ""}
+
+      ${phase === "error" ? `
+        <div class="warn-box">&#9888; ${escapeHtml(interactiveState.errorMessage)}</div>
+      ` : ""}
+
+      ${phase === "flashed" ? `
+        <div class="note-box">
+          Flashed. <button class="link" data-goto-step="3">Go to Test Product to watch it boot live &rarr;</button>
+          (uses the Web Serial API directly in your browser — a live
+          serial monitor needs the port free, which it now is again now
+          that flashing finished.)
+        </div>
+      ` : ""}
+
+      ${interactiveState.log.length ? `
+        <div class="code-block-wrap" style="margin-top:14px;">
+          <div class="code-block-label">LIVE OUTPUT</div>
+          <pre class="code-block interactive-console" id="interactive-console">${escapeHtml(interactiveState.log.join("\n"))}</pre>
+        </div>
+      ` : ""}
+
+      ${interactiveState.qrcodeJobId ? `
+        <div style="margin-top:14px;">
+          <div class="code-block-label">QR CODE</div>
+          <img class="interactive-qrcode" alt="Commissioning QR code"
+               src="/api/qrcode/${escapeHtml(interactiveState.qrcodeJobId)}?token=${escapeHtml(window.__WIZARD_TOKEN__)}">
+        </div>
+      ` : ""}
+
+      ${interactiveState.packageJobId && phase === "packaged" ? `
+        <p class="field-note" style="margin-top:14px;">
+          <a href="/api/download/${escapeHtml(interactiveState.packageJobId)}?token=${escapeHtml(window.__WIZARD_TOKEN__)}" download>
+            Download the packaged .zip
+          </a>
+          (app image + bootloader + partition table + a flash.sh script —
+          no factory/QR data, generate that separately per physical unit).
+        </p>
+      ` : ""}
+    </div>
+  `;
+}
+
+// Streams one job's SSE output into interactiveLog(), resolving once the
+// server sends its terminal "done" event. Rejects on a non-zero return
+// code so callers can chain build -> flash without flashing a broken
+// build.
+function streamInteractiveJob(jobId) {
+  return new Promise((resolve, reject) => {
+    const source = new EventSource(`/api/jobs/${jobId}/stream?token=${encodeURIComponent(window.__WIZARD_TOKEN__)}`);
+    source.onmessage = (event) => {
+      const data = JSON.parse(event.data);
+      if (data.line !== undefined) interactiveLog(data.line);
+    };
+    source.addEventListener("done", (event) => {
+      const data = JSON.parse(event.data);
+      source.close();
+      if (data.returncode === 0) {
+        resolve(data.extra || {});
+      } else {
+        reject(new Error(`Command exited with code ${data.returncode} — see the output above.`));
+      }
+    });
+    source.onerror = () => {
+      source.close();
+      reject(new Error("Lost connection to the companion server (tools/product-wizard/server.py) — is it still running?"));
+    };
+  });
+}
+
+async function interactiveRefreshPorts() {
+  try {
+    const res = await fetch("/api/ports", { headers: wizardApiHeaders() });
+    const data = await res.json();
+    interactiveState.ports = data.ports || [];
+    if (!interactiveState.ports.includes(interactiveState.selectedPort)) {
+      interactiveState.selectedPort = interactiveState.ports[0] || null;
+    }
+  } catch (err) {
+    interactiveState.ports = [];
+  }
+  renderInteractivePanelInPlace();
+}
+
+async function interactiveBuildAndFlash(p) {
+  interactiveState.log = [];
+  interactiveSetPhase("building");
+  try {
+    const buildRes = await fetch("/api/build", {
+      method: "POST",
+      headers: wizardApiHeaders({ "Content-Type": "application/json" }),
+      body: JSON.stringify({
+        deviceType: p.deviceType,
+        target: p.target,
+        productName: shellSafeName(p.name),
+        sedCommands: buildSedCommandPairs(p),
+      }),
+    });
+    if (!buildRes.ok) throw new Error((await buildRes.json()).error || "Build request failed");
+    const { jobId: buildJobId } = await buildRes.json();
+    const extra = await streamInteractiveJob(buildJobId);
+    if (extra.qrcode_path) interactiveState.qrcodeJobId = buildJobId;
+
+    await interactiveRefreshPorts();
+    interactiveSetPhase("built");
+  } catch (err) {
+    interactiveSetPhase("error", err.message);
+  }
+}
+
+async function interactiveFlashNow(p) {
+  const select = document.getElementById("interactive-port-select");
+  const port = select ? select.value : interactiveState.selectedPort;
+  if (!port) {
+    interactiveSetPhase("error", "No serial port selected.");
+    return;
+  }
+  interactiveState.selectedPort = port;
+  interactiveSetPhase("flashing");
+  try {
+    const flashRes = await fetch("/api/flash", {
+      method: "POST",
+      headers: wizardApiHeaders({ "Content-Type": "application/json" }),
+      body: JSON.stringify({ deviceType: p.deviceType, target: p.target, port }),
+    });
+    if (!flashRes.ok) throw new Error((await flashRes.json()).error || "Flash request failed");
+    const { jobId: flashJobId } = await flashRes.json();
+    await streamInteractiveJob(flashJobId);
+    interactiveSetPhase("flashed");
+  } catch (err) {
+    interactiveSetPhase("error", err.message);
+  }
+}
+
+async function interactivePackage(p) {
+  interactiveState.log = [];
+  interactiveSetPhase("packaging");
+  try {
+    const res = await fetch("/api/package", {
+      method: "POST",
+      headers: wizardApiHeaders({ "Content-Type": "application/json" }),
+      body: JSON.stringify({ deviceType: p.deviceType, target: p.target }),
+    });
+    if (!res.ok) throw new Error((await res.json()).error || "Package request failed");
+    const { jobId } = await res.json();
+    await streamInteractiveJob(jobId);
+    interactiveState.packageJobId = jobId;
+    interactiveSetPhase("packaged");
+  } catch (err) {
+    interactiveSetPhase("error", err.message);
+  }
+}
+
+function bindInteractivePanelEvents() {
+  const buildFlashBtn = document.getElementById("interactive-build-flash-btn");
+  if (buildFlashBtn) buildFlashBtn.addEventListener("click", () => interactiveBuildAndFlash(state.currentProduct));
+
+  const packageBtn = document.getElementById("interactive-package-btn");
+  if (packageBtn) packageBtn.addEventListener("click", () => interactivePackage(state.currentProduct));
+
+  const flashNowBtn = document.getElementById("interactive-flash-now-btn");
+  if (flashNowBtn) flashNowBtn.addEventListener("click", () => interactiveFlashNow(state.currentProduct));
+
+  const refreshPortsBtn = document.getElementById("interactive-refresh-ports-btn");
+  if (refreshPortsBtn) refreshPortsBtn.addEventListener("click", () => interactiveRefreshPorts());
 }
 
 // Strips anything that would need escaping inside a double-quoted shell
@@ -3485,6 +3907,107 @@ function shellSafeName(str) {
 // substitution anchored on the #define's name has no such format to get
 // wrong, doesn't care what the current value is (`GPIO_NUM_[0-9]+`
 // matches whatever's there), and needs no line numbers at all.
+// Structured {name, value} version of buildSedCommands() below, for
+// server.py's /api/build — the companion server validates and constructs
+// its own `sed -i` invocations from these pairs rather than trusting an
+// opaque shell-command string from the browser (see server.py's own header
+// comment on why). Deliberately a parallel duplicate of buildSedCommands()'
+// own field-selection logic rather than refactoring that function to build
+// on top of this one: buildSedCommands() is exercised by every existing
+// device type's copy-paste text today, so leaving it untouched is the
+// lower-risk choice, matching this repo's own established "copy-and-adapt
+// over premature shared abstraction" convention (e.g. makeRotaryEncoder()'s
+// own comment). One real, documented behavior difference from the
+// copy-paste version: every pair here gets matched against the companion
+// server's single broad `sed -i 's/^#define NAME .*/.../'` pattern, not
+// the narrower `GPIO_NUM_[0-9]+`-only pattern buildSedCommands() uses for
+// driver/secondary/extraButtons/identify/picker-pin fields — so Build &
+// Flash always overwrites those #defines to match your current
+// configuration, where the copy-paste commands intentionally no-op on a
+// line you've hand-edited into some other shape. Safe on a fresh checkout
+// (the normal case); don't use Build & Flash if you've manually customized
+// app_main.cpp beyond what this wizard already tracks — use the copy-paste
+// commands above instead in that case.
+function buildSedCommandPairs(p) {
+  const deviceType = findDeviceType(p.deviceType);
+  const driver = deviceType ? deviceType.driver : null;
+  const secondary = deviceType ? deviceType.secondary : null;
+  const identify = deviceType ? deviceType.identify : null;
+  const componentOptions = deviceType ? deviceType.componentOptions : null;
+  const extraButtons = deviceType ? deviceType.extraButtons : null;
+  const extraPickers = deviceType ? deviceType.extraPickers : null;
+  const statusLed = deviceType ? deviceType.statusLed : null;
+  const positionSensor = deviceType ? deviceType.positionSensor : null;
+  const pairs = [];
+  if (componentOptions && deviceType.componentDefineName) {
+    const selectedSensor = findComponent(p.component) || findComponent(componentOptions[0]);
+    pairs.push({ name: deviceType.componentDefineName, value: selectedSensor.defineValue });
+  }
+  if (extraButtons && deviceType.buttonCountDefineName) {
+    const buttonCount = Number.isInteger(p.buttonCount) ? p.buttonCount : 1;
+    pairs.push({ name: deviceType.buttonCountDefineName, value: String(buttonCount) });
+  }
+  if (extraPickers) {
+    extraPickers.forEach((picker) => {
+      if (picker.cosmetic) return;
+      const selected = findComponent(p[picker.key]) || findComponent(picker.options[0]);
+      pairs.push({ name: picker.defineName, value: selected.defineValue });
+      if (selected && Array.isArray(selected.pins)) {
+        selected.pins.forEach((pin) => {
+          const gpio = p.pickerPins && p.pickerPins[pin.defineName] != null
+            ? p.pickerPins[pin.defineName]
+            : (pin.defaultsByModule[p.target] != null ? pin.defaultsByModule[p.target] : 0);
+          pairs.push({ name: pin.defineName, value: `GPIO_NUM_${gpio}` });
+        });
+      }
+    });
+  }
+  if (driver) {
+    pairs.push({ name: driver.defineName, value: `GPIO_NUM_${p.gpioPin}` });
+  }
+  if (extraButtons) {
+    const buttonCount = Number.isInteger(p.buttonCount) ? p.buttonCount : 1;
+    extraButtons.slice(0, buttonCount - 1).forEach((b, i) => {
+      const gpio = Array.isArray(p.buttonGpios) && p.buttonGpios[i] != null ? p.buttonGpios[i] : b.currentGpio;
+      pairs.push({ name: b.defineName, value: `GPIO_NUM_${gpio}` });
+    });
+  }
+  if (secondary) {
+    pairs.push({ name: secondary.defineName, value: `GPIO_NUM_${p.secondaryGpioPin}` });
+  }
+  if (deviceType && deviceType.numberField) {
+    const nf = deviceType.numberField;
+    const value = Number.isInteger(p[nf.key]) ? p[nf.key] : nf.defaultValue;
+    pairs.push({ name: nf.defineName, value: String(value) });
+  }
+  if (statusLed && statusLedIsEnabled(p)) {
+    pairs.push({ name: statusLed.defineName, value: `GPIO_NUM_${p.statusLedGpioPin}` });
+  }
+  if (positionSensor && positionSensorIsEnabled(p)) {
+    pairs.push({ name: positionSensor.defineName, value: `GPIO_NUM_${p.positionSensorGpioPin}` });
+  }
+  if (deviceType && deviceType.rgbStatusLed && rgbStatusLedIsEnabled(p)) {
+    deviceType.rgbStatusLed.pins.forEach((pin) => {
+      const gpio = p.rgbStatusLedPins && p.rgbStatusLedPins[pin.defineName] != null
+        ? p.rgbStatusLedPins[pin.defineName]
+        : (pin.defaultsByModule[p.target] != null ? pin.defaultsByModule[p.target] : 0);
+      pairs.push({ name: pin.defineName, value: `GPIO_NUM_${gpio}` });
+    });
+  }
+  if (deviceType && deviceType.rotaryEncoder && rotaryEncoderIsEnabled(p)) {
+    deviceType.rotaryEncoder.pins.forEach((pin) => {
+      const gpio = p.rotaryEncoderPins && p.rotaryEncoderPins[pin.defineName] != null
+        ? p.rotaryEncoderPins[pin.defineName]
+        : (pin.defaultsByModule[p.target] != null ? pin.defaultsByModule[p.target] : 0);
+      pairs.push({ name: pin.defineName, value: `GPIO_NUM_${gpio}` });
+    });
+  }
+  if (identify && identifyIsEnabled(p)) {
+    pairs.push({ name: identify.defineName, value: `GPIO_NUM_${p.identifyGpioPin}` });
+  }
+  return pairs;
+}
+
 function buildSedCommands(p) {
   const deviceType = findDeviceType(p.deviceType);
   const driver = deviceType ? deviceType.driver : null;
@@ -4139,6 +4662,8 @@ function bindEvents() {
       }
     });
   }
+
+  bindInteractivePanelEvents();
 }
 
 function escapeHtml(str) {

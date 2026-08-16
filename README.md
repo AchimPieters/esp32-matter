@@ -384,9 +384,43 @@ build-verified across servo/relay and with/without the position sensor;
 not yet hardware-tested (no servo/relay/reed-switch hardware for this
 device type was physically available when written).
 
-To add another (simpler) type, copy any of the other twelve folders and
+`firmware/smoke-co-alarm/` (Matter Smoke/CO Alarm) is this repo's
+fourteenth device type — its first over the SmokeCoAlarm cluster, a real
+life-safety alarm class rather than a plain sensor readout. An MQ-2 smoke
+sensor, an MQ-7 CO sensor, or both together (the default, matching how
+real combination smoke+CO alarms are sold) drive the cluster's
+SmokeState/COState through a plain adjustable-millivolt-threshold
+classifier — deliberately not a calibrated ppm reading, since MQ-series
+datasheets only document ppm as curves that shift per sensor/module, and
+Matter's own cluster has no numeric concentration attribute to report one
+into anyway. A real controller's SelfTestRequest command is fully
+supported, including a genuine SDK gap this file works around: the
+cluster sets `TestInProgress=true` on its own with no Delegate needed,
+but nothing clears it afterwards unless the app does — confirmed by
+reading `SmokeCoAlarmCluster`'s own source rather than assumed. See
+CLAUDE.md's repository-layout entry for the full detail. Docker
+build-verified across all 3 sensor configs (MQ2+MQ7, MQ2-only,
+MQ7-only); not yet hardware-tested (no MQ-2/MQ-7 module was physically
+available when written).
+
+To add another (simpler) type, copy any of the other thirteen folders and
 swap the endpoint type in `app_main.cpp` — esp-matter provides ready-made
-types like `occupancy_sensor`, `smoke_co_alarm`, and many more.
+types like `occupancy_sensor`, `air_quality`, and many more.
+
+### Optional: build &amp; flash straight from the wizard
+
+`tools/product-wizard/server.py` is a small local companion server (see
+its own header comment and `tools/product-wizard/README.md`'s "Optional:
+interactive Build & Flash" section) that adds real "Build & Flash" and
+"Generate update bin" buttons to the wizard's Generate Firmware step,
+with a live console and QR code — instead of only the copy-paste
+commands the wizard has always generated, which keep working exactly the
+same either way. Runs on `127.0.0.1` only, requires a per-run token on
+every request, and validates every value that reaches a shell command
+server-side against a fixed allow-list rather than trusting the browser.
+Genuinely tested end to end against real hardware while building it: a
+real Docker build, a real `esptool.py` flash to a connected board, and a
+real downloadable update-bin package.
 
 ## Updates
 
@@ -395,7 +429,7 @@ but the multi-GB Docker image stalled out on GitHub-hosted runners, so it
 was reverted rather than left flaky). Build + flash a new version yourself
 following the Quick Start steps above whenever you change `app_main.cpp`.
 
-All thirteen device types also ship with Matter's **OTA Requestor** cluster
+All fourteen device types also ship with Matter's **OTA Requestor** cluster
 enabled (`CONFIG_ENABLE_OTA_REQUESTOR=y`), so once a device is bound to an
 OTA Provider node on the same fabric, it can fetch and install updates over
 the air using the existing `ota_0`/`ota_1` A/B partition slots — no app
@@ -408,7 +442,7 @@ errors); the provider side and a full transfer are open, tracked in
 CLAUDE.md's next steps alongside the binding test, which hits the same
 "needs a second commissioned device + tooling" wall.
 
-All twelve device types other than `firmware/camera/` (Espressif's own
+All thirteen device types other than `firmware/camera/` (Espressif's own
 unmodified reference code) also have two optional, off-by-default
 features (see CLAUDE.md's "Open next steps" for the full sourcing/
 verification detail):
@@ -426,7 +460,7 @@ verification detail):
   Matter has started (confirmed against its own implementation and
   reference `app_reset` component).
 
-Both are Docker build-verified across all twelve of those device types, not yet
+Both are Docker build-verified across all thirteen of those device types, not yet
 hardware-tested. The product wizard (`tools/product-wizard/`) has a
 checkbox + 3 GPIO fields for the status LED and shows the factory-reset
 procedure as a standalone info box under Configuration Summary.

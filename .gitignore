@@ -72,3 +72,6 @@ tools/test-credentials/
 # Firmware images and signing keys — never commit (see CLAUDE.md)
 *.bin
 *.pem
+
+# tools/product-wizard/server.py's own generated "update bin" packages
+tools/product-wizard/_packages/

@@ -1327,13 +1327,117 @@ firmware/door-lock/       Door Lock — thirteenth device type, back to this
                            available when written).
   partitions.csv           same OTA + fctry layout as firmware/light/
   sdkconfig.defaults        same as firmware/light/
+firmware/smoke-co-alarm/  Smoke/CO Alarm — fourteenth device type, and this
+                           repo's first over the SmokeCoAlarm cluster
+                           (life-safety alarm class, not a plain sensor
+                           readout or actuator)
+  main/app_main.cpp        endpoint::smoke_co_alarm::create() (Identify +
+                           SmokeCoAlarm cluster) confirmed complete/directly
+                           usable by reading esp_matter_endpoint.cpp's own
+                           smoke_co_alarm::add(). Unlike firmware/door-lock/'s
+                           DoorLock, SmokeCoAlarm IS a "code-driven" cluster
+                           class in this SDK version (confirmed: a
+                           smoke_co_alarm/ folder exists under
+                           data_model_provider/clusters/, same signal
+                           firmware/contact-sensor/'s BooleanState and
+                           firmware/light-sensor/'s IlluminanceMeasurement
+                           already used) — so SmokeState/COState/
+                           TestInProgress/HardwareFaultAlert/etc. are all
+                           written through SmokeCoAlarmCluster's own setter
+                           API, looked up via the data model provider's
+                           registry, the same update_contact_state()/
+                           update_illuminance() pattern already established
+                           elsewhere in this repo. SmokeCoAlarmCluster's own
+                           setters already generate the right Matter events
+                           internally (SmokeAlarm/COAlarm on transitioning to
+                           Warning/Critical, AllClear on transitioning back
+                           to Normal) — no manual event-generation code
+                           needed. SetExpressedStateByPriority() computes
+                           the cluster's single "headline state" attribute
+                           from a fixed 9-entry priority order (life-safety
+                           alarms first, then self-test, then secondary
+                           conditions); interconnect/battery/end-of-service/
+                           inoperative states are left at their defaults
+                           (no interconnect wiring, no battery to monitor
+                           on USB/PSU power, no service-life tracking for a
+                           hobby MQ-series sensor) — same "smallest
+                           reasonable next step" scoping as firmware/
+                           door-lock/'s skipped PIN/credential/schedule
+                           features. A real gap worth remembering for any
+                           future *Request-style command cluster: a real
+                           controller's SelfTestRequest command succeeds
+                           entirely inside the SDK with no Delegate needed
+                           (sets TestInProgress=true and
+                           ExpressedState=Testing on its own), but nothing
+                           *clears* TestInProgress afterwards unless the app
+                           does it — confirmed by reading
+                           SmokeCoAlarmCluster::HandleRemoteSelfTestRequest()
+                           directly. sensor_task() polls GetTestInProgress()
+                           each cycle and, after
+                           SMOKE_CO_ALARM_SELF_TEST_DURATION_MS, calls
+                           SetTestInProgress(false) and recomputes
+                           ExpressedState, simulating a completed self-test.
+                           `SENSOR_TYPE` selects SENSOR_MQ2_MQ7 (default —
+                           both an MQ-2 smoke sensor and an MQ-7 CO sensor,
+                           matching how real combination smoke+CO alarms are
+                           sold as one product; enables both cluster
+                           features), SENSOR_MQ2 (smoke only), or SENSOR_MQ7
+                           (CO only). Both are the classic cheap analog
+                           gas-sensor modules (heated tin-dioxide element,
+                           resistance drops as gas concentration rises) —
+                           deliberately NOT converted to a calibrated ppm
+                           figure the way firmware/light-sensor/'s LDR is
+                           converted to lux: MQ-series datasheets only
+                           document ppm as a family of curves that shift
+                           with each sensor's own load resistance/heater
+                           voltage/burn-in state, and Matter's SmokeCoAlarm
+                           cluster has no numeric concentration attribute
+                           anyway (only the AlarmStateEnum Normal/Warning/
+                           Critical tri-state) — so this is a plain
+                           adjustable-millivolt-threshold classifier, meant
+                           to be tuned per module/environment, not a
+                           calibrated absolute reading. GPIO 34/35 (ADC1
+                           channels 6/7 on classic ESP32) are the MQ2/MQ7
+                           defaults — deliberately ADC1, not ADC2, same
+                           reasoning as the light sensor's LDR. A 60s
+                           SMOKE_CO_ALARM_WARMUP_MS window only suppresses
+                           the initial power-on resistance-settling
+                           transient from causing a false alarm — explicitly
+                           documented as NOT a substitute for the real
+                           24-48h burn-in MQ-series datasheets call for.
+                           HardwareFaultAlert is set from a simple, module-
+                           polarity-agnostic heuristic: several consecutive
+                           readings pinned at the ADC's extreme raw values.
+                           Standard RGB status LED + quick-power-cycle
+                           factory reset. Build-verified in Docker across
+                           all 3 sensor configs (MQ2+MQ7, MQ2-only,
+                           MQ7-only); not hardware-tested (no MQ-2/MQ-7
+                           module physically available when written).
+  partitions.csv           same OTA + fctry layout as firmware/light/
+  sdkconfig.defaults        same as firmware/light/
 tools/
   dev.sh                  opens the Docker dev environment
   gen_factory.sh          local QR + factory partition generator
   product-wizard/         local no-build web UI that walks through picking a
                            device type + module + GPIO and generates the
                            build + flash commands to run yourself (see its
-                           own README)
+                           own README). Optional companion:
+                           product-wizard/server.py — a small stdlib-only
+                           local HTTP+SSE server (127.0.0.1 only, per-run
+                           token) that lets Generate Firmware's "Build &
+                           Flash"/"Generate update bin" buttons actually
+                           run those same two commands live instead of
+                           only producing copy-paste text; every value
+                           that reaches a shell command is validated
+                           server-side against a fixed allow-list, never
+                           trusted from the browser directly. Genuinely
+                           tested end to end against real hardware (not
+                           just Docker-build-verified): a real build,
+                           real esptool.py flash to a connected board, and
+                           a real downloadable update-bin package were all
+                           exercised for real while building this. See
+                           the wizard's own README for the full detail
+                           and security model.
 docs/getting-started.md   step-by-step first-device guide
 SECURITY.md               flash encryption / secure boot / signed OTA guidance
 ```
@@ -2098,14 +2202,104 @@ SECURITY.md               flash encryption / secure boot / signed OTA guidance
    meaningful configs (servo/no-sensor, servo/with-sensor,
    relay/no-sensor); not hardware-tested (no servo/relay/reed-switch
    hardware for this device type physically available when written).
-2. Implement Matter **OTA** — partially done. All thirteen firmware types
+
+   A fourteenth device type, `firmware/smoke-co-alarm/` (Matter Smoke/CO
+   Alarm), followed door-lock — the user chose "Smoke/CO Alarm" from a
+   short AskUserQuestion list (Smoke/CO Alarm / Occupancy Sensor / Air
+   Quality Sensor / other). This repo's first device type over the
+   SmokeCoAlarm cluster — a genuine life-safety alarm class, not a plain
+   sensor readout or actuator — and, unlike firmware/door-lock/'s
+   DoorLock cluster, one that IS "code-driven" in this SDK version
+   (confirmed via a real `smoke_co_alarm/` folder under
+   `data_model_provider/clusters/`), so its attributes go through
+   `SmokeCoAlarmCluster`'s own setter API via the data model provider's
+   registry, the same pattern `firmware/contact-sensor/`'s BooleanState
+   and `firmware/light-sensor/`'s IlluminanceMeasurement already
+   established. A real, previously-undocumented SDK gap was found and
+   worked around by actually reading `SmokeCoAlarmCluster::
+   HandleRemoteSelfTestRequest()`'s source rather than assuming: a real
+   controller's SelfTestRequest command fully succeeds with no Delegate
+   configured (the cluster sets `TestInProgress=true` on its own), but
+   nothing ever clears that flag afterwards unless the app does — worth
+   remembering as a bug class for any future `*Request`-style command
+   cluster added to this repo (the SDK can set a flag on command receipt
+   without ever owning the job of clearing it again).
+   `SENSOR_TYPE` offers an MQ-2 (smoke) sensor, an MQ-7 (CO) sensor, or
+   both together (the default, matching how real combination smoke+CO
+   alarms are sold as one product) — deliberately a plain adjustable-
+   millivolt-threshold classifier rather than a calibrated ppm reading,
+   since MQ-series datasheets only document ppm as curves that shift per
+   sensor/module/burn-in state, and Matter's own cluster has no numeric
+   concentration attribute to report one into anyway (only the
+   Normal/Warning/Critical `AlarmStateEnum`). The wizard integration
+   needed one real design decision, resolved the same way as
+   firmware/door-lock/'s Servo/Relay case: since the regular `driver`
+   field always renders unconditionally, it was assigned to the MQ2 pin
+   (this device's own shipped default), with the MQ7 pin riding on the
+   Sensor picker's own `extraPickers` `pins` array instead — so the MQ2
+   field stays visible-but-unused when "MQ-7 only" is selected, the same
+   small, documented, harmless quirk as door-lock's own Servo/Relay
+   tradeoff, not a new mechanism. Standard RGB status LED + quick-power-
+   cycle factory reset. Build-verified in Docker across all 3 sensor
+   configs (MQ2+MQ7, MQ2-only, MQ7-only); not hardware-tested (no MQ-2/
+   MQ-7 module physically available when written).
+
+   Right after this, the product wizard itself gained a genuinely new
+   capability, requested directly: an optional local companion server
+   (`tools/product-wizard/server.py`) that turns Generate Firmware's
+   commands from copy-paste-only text into two real buttons — "Build &
+   Flash" and "Generate update bin" — with a live console and a live QR
+   code, while leaving the plain `file://` copy-paste workflow completely
+   unchanged for anyone who doesn't run it. Before writing any code, three
+   real architecture questions were resolved via AskUserQuestion rather
+   than assumed: how the browser could reach local processes at all (a
+   plain static page cannot spawn Docker or esptool — chosen: a small
+   Python stdlib-only local server, since Python is already a documented
+   prerequisite here for esptool.py/esp-matter-mfg-tool, over Node.js
+   which is a hard dependency nowhere else in this repo, or an
+   Electron/Tauri rewrite of the whole wizard); what "Generate update bin"
+   should actually produce (chosen: a distributable zip of the already-
+   built app image + bootloader + partition table + a `flash.sh` script,
+   over a full Matter OTA image, which is out of scope until the still-open
+   OTA work above has a real Provider to feed it); and, mid-request, that
+   the existing Test Product step's Web-Serial-based live serial monitor
+   should be reused for "watch the module live" rather than building a
+   second, redundant serial-reading path in Python — `esptool` needs
+   exclusive access to the port while flashing anyway, so a live serial
+   view *during* Build & Flash itself wouldn't work regardless; a "jump to
+   Test Product" link appears once flashing finishes instead. Security was
+   treated as a first-class design constraint, not an afterthought, since
+   this is a local server that executes shell commands based on browser
+   input: binds to `127.0.0.1` only; every request must carry a per-run
+   token baked into the page only when server.py itself serves it (closing
+   off both "guess the port" and "a malicious page open in another tab
+   pokes localhost" — the classic risk any local dev server with an HTTP
+   API has to consider) plus an origin check; and every value that reaches
+   a shell command (firmware directory, target chip, bin name, serial
+   port, `#define` name/value pairs) is validated server-side against a
+   fixed allow-list or the machine's own actually-detected serial ports —
+   never trusted from an opaque command string sent by the browser, even
+   though the browser's own string-building was already careful. Verified
+   directly, not assumed: injection attempts (a `defineName` containing
+   `; rm -rf /`, a value containing `$(whoami)`) were confirmed rejected,
+   as was a request forging a foreign `Origin` header. Then genuinely
+   tested end to end against real hardware, not just exercised via curl:
+   a real `idf.py build` + `tools/gen_factory.sh` run streamed live
+   output correctly; a real serial port was detected and `esptool.py`
+   flashed a real connected board over it, confirmed by the board hard-
+   resetting and rebooting on the new firmware; and Generate update bin's
+   downloaded zip was confirmed to contain exactly the expected 4 `.bin`
+   files plus a working `flash.sh`. See `tools/product-wizard/server.py`'s
+   own header comment and `tools/product-wizard/README.md`'s "Optional:
+   interactive Build & Flash" section for the complete detail.
+2. Implement Matter **OTA** — partially done. All fourteen firmware types
    ship `CONFIG_ENABLE_OTA_REQUESTOR=y`, which adds the OTA Requestor
    cluster to the root node endpoint entirely via Kconfig — esp-matter's
    own core startup (`esp_matter_core.cpp`) calls
    `esp_matter_ota_requestor_init()`/`_start()` automatically once that
    flag is on, so no app code was needed. Confirmed on real hardware for
    `firmware/contact-sensor/` and `firmware/switch/` (clean boot, cluster
-   registered, zero errors); the other eleven build identically since the
+   registered, zero errors); the other twelve build identically since the
    code path is generic to every device type, not device-specific.
 
    Still open: a real OTA **transfer** needs an OTA Provider node

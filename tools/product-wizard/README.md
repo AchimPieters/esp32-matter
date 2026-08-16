@@ -13,7 +13,85 @@ No server, no build step — just open the file:
 open tools/product-wizard/index.html
 ```
 
-(or double-click it in Finder / drag it into a browser tab).
+(or double-click it in Finder / drag it into a browser tab). Every device
+type's Generate Firmware step gives you the exact `docker run`/`esptool.py`
+commands to copy into your own terminal — that flow needs nothing from
+this section and keeps working exactly like this regardless of anything
+below.
+
+### Optional: interactive Build & Flash
+
+`tools/product-wizard/server.py` is a small, dependency-light local
+companion server that lets Generate Firmware's "Build & Flash" and
+"Generate update bin" buttons actually run those same two commands for
+you, with live output, instead of only handing you text to paste. Fully
+optional — skip this section entirely if you're happy with copy-paste.
+
+```bash
+cd tools/product-wizard
+python3 server.py
+```
+
+It prints a URL like `http://127.0.0.1:8787/?token=<random>` — open
+*that* instead of double-clicking `index.html`. The wizard behaves
+identically either way; opening it through the server just additionally
+unlocks the extra panel at the bottom of Generate Firmware:
+
+- **Build & Flash** — runs the same `sed` + `idf.py build` +
+  `tools/gen_factory.sh` steps as the Docker command above (server-side,
+  inside the same `espressif/esp-matter` image), streams the output live,
+  then lets you pick a detected serial port and flashes with
+  `esptool.py` — same as the flash command above, just run for you.
+  Once it's done, a link jumps you to the existing **Test Product** step
+  to watch the device boot live over the Web Serial API — the companion
+  server doesn't duplicate that, since `esptool` needs the port to itself
+  while flashing anyway.
+- **Generate update bin** — zips the already-built app image + bootloader
+  + partition table + a small `flash.sh` into one downloadable file, so
+  you can hand a flashable build to someone else without them needing the
+  Docker toolchain at all. Deliberately does *not* include a factory/QR
+  partition — that's per-device commissioning data
+  (`tools/gen_factory.sh`'s own output), generated fresh for each
+  physical unit, not something to bake into a shared package.
+- A live QR code appears once Build & Flash's `gen_factory.sh` step
+  finishes — same PNG the copy-paste flow tells you to find under
+  `firmware/<type>/out/*/*/`, just shown inline.
+
+**Why a server is needed at all**: a plain static HTML page has no way to
+run `docker`/`esptool.py` — browsers can't spawn local processes. This one
+Python file (standard library only, `pyserial` optional and only used for
+listing serial ports) is the smallest thing that closes that gap while
+running the *exact* commands documented above, not different ones.
+
+**Security model** (a local dev tool, proportionate for that — not
+enterprise-grade, but not naive either):
+- Binds to `127.0.0.1` only — nothing outside this machine can ever reach
+  it.
+- Every API request must carry the random per-run token this script
+  prints (baked into the page only when *this server* serves it) and
+  must originate from this same server's own origin — closes off both
+  "guess the port" and "malicious page in another tab pokes localhost"
+  attack shapes, the classic risk any local dev server with an HTTP API
+  has to consider.
+- Every value that ends up in a shell command — firmware directory,
+  target chip, bin name, serial port — is validated **server-side**
+  against a fixed allow-list (known device types/modules, and the
+  serial ports this machine currently actually reports), not trusted
+  from whatever the browser sends. A request that doesn't match is
+  rejected outright, never silently sanitized and run anyway. See
+  `server.py`'s own header comment for the full detail.
+- Flashing always runs directly on your host (never inside Docker) —
+  same reason the copy-paste flash command does: Docker Desktop can't
+  reach a USB serial port on macOS/Windows (see CLAUDE.md).
+
+Genuinely tested end to end against real hardware while building this
+(not just Docker-build-verified): `python3 server.py` → Build & Flash a
+real device type → live console showed the actual `idf.py build` +
+`gen_factory.sh` output → a real serial port was detected and flashed via
+`esptool.py` → the board hard-reset and rebooted on the new firmware,
+confirmed via the same serial rig documented in CLAUDE.md's hardware
+notes. Generate update bin was verified the same way: downloaded zip
+contains exactly the 4 expected `.bin` files plus a working `flash.sh`.
 
 ## What's implemented
 
@@ -719,6 +797,27 @@ configs (servo/no-sensor, servo/with-sensor, relay/no-sensor); not yet
 hardware-tested — no servo/relay/reed-switch hardware for this device
 type was physically available when this was built.
 
+A fourteenth device type, `firmware/smoke-co-alarm/` (Matter Smoke/CO
+Alarm), followed door-lock — this repo's first over the SmokeCoAlarm
+cluster. Unlike DoorLock, SmokeCoAlarm turned out to be a "code-driven"
+cluster class in this SDK version, so it reuses the exact registry-lookup
+setter pattern `firmware/contact-sensor/`/`firmware/light-sensor/` already
+established, not door-lock's weak-symbol-override approach. The wizard
+side needed exactly one new design decision, resolved the same way as
+door-lock's own Servo/Relay tradeoff: the always-visible `driver` field
+covers the MQ2 (smoke) pin, while the MQ7 (CO) pin rides on the Sensor
+`extraPickers` picker's own `pins` array — present on both options that
+actually read it (the dual-sensor default and the MQ7-only option), absent
+on MQ2-only. No new wizard mechanism at all; just a second COMPONENT_LIBRARY
+category (`smoke-co-sensor`) and one `extraPickers` entry. Docker
+build-verified across all 3 sensor configs (MQ2+MQ7, MQ2-only, MQ7-only);
+not yet hardware-tested — no MQ-2/MQ-7 module was physically available
+when this was built.
+
+Right after this, the wizard itself gained a real new capability: an
+optional local companion server, see this file's own "Optional:
+interactive Build & Flash" section near the top for the full detail.
+
 ## Known limitations
 
 - `firmware/camera/` (Matter Camera, this repo's twelfth device type)
@@ -729,10 +828,10 @@ type was physically available when this was built.
   one board. Forcing it into that model would misrepresent how it
   actually needs to be built and flashed. Build and flash it by hand
   following `firmware/camera/README.md`'s own instructions.
-- Twelve device types exist (`On/Off Light`, `On/Off Switch`, `Contact
+- Thirteen device types exist (`On/Off Light`, `On/Off Switch`, `Contact
   Sensor`, `Outlet`, `Temperature Sensor`, `Light Sensor`, `Dimmable
   Light`, `Window Covering`, `Color Light`, `Addressable LED Strip`,
-  `Thermostat`, `Door Lock`) —
+  `Thermostat`, `Door Lock`, `Smoke/CO Alarm`) —
   light/switch/contact/outlet are all digital GPIO, temperature is this
   repo's first non-GPIO sensor (I2C, single-wire, or 1-Wire depending
   which of its 7 supported chips you pick), light sensor is the first
@@ -814,11 +913,15 @@ type was physically available when this was built.
   "build-verified" and "hardware-verified" for a whole device type —
   worth closing before relying on it the way most of the others have
   been.
-- `firmware/door-lock/` is the newest device type offered here and has
-  the same kind of gap: no servo, relay, or reed-switch hardware was
-  available when it was built, so it's Docker build-verified across all
-  3 meaningful configs (servo/no-sensor, servo/with-sensor,
-  relay/no-sensor) but never tested against a real lock.
+- `firmware/door-lock/` has the same kind of gap: no servo, relay, or
+  reed-switch hardware was available when it was built, so it's Docker
+  build-verified across all 3 meaningful configs (servo/no-sensor,
+  servo/with-sensor, relay/no-sensor) but never tested against a real
+  lock.
+- `firmware/smoke-co-alarm/` is the newest device type offered here and
+  has the same kind of gap: no MQ-2 or MQ-7 module was available when it
+  was built, so it's Docker build-verified across all 3 sensor configs
+  (MQ2+MQ7, MQ2-only, MQ7-only) but never tested against real sensors.
 
 ## Design notes
 
