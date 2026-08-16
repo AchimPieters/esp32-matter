@@ -945,6 +945,43 @@ const COMPONENT_LIBRARY = {
     { key: "coolWhite", label: "Cool White Channel", defineName: "COLOR_LIGHT_COOL_WHITE_GPIO", defaultsByModule: { esp32: 18, esp32c2: 18, esp32c3: 18, esp32c5: 18, esp32c6: 18, esp32c61: 18, esp32s3: 18, esp32h2: 18 } },
     { key: "warmWhite", label: "Warm White Channel", defineName: "COLOR_LIGHT_WARM_WHITE_GPIO", defaultsByModule: { esp32: 19, esp32c2: 19, esp32c3: 19, esp32c5: 19, esp32c6: 19, esp32c61: 19, esp32s3: 19, esp32h2: 19 } },
   ] },
+  // Thermostat's Output picker — same extraPickers `pins`-per-option
+  // mechanism as outlet's Power Monitoring above. Each option is a real,
+  // independently verified way heat/cool demand actually reaches a
+  // boiler/AC — see firmware/thermostat/main/app_main.cpp's header
+  // comment for the full detail on all three.
+  THERMO_OUTPUT_RELAY: { name: "Relay (direct wiring)", category: "thermostat-output", bus: "GPIO (relay)", verified: false, defineValue: "THERMOSTAT_OUTPUT_RELAY", note: "Two active-LOW relay outputs wired in series with the boiler's/AC's own \"room thermostat\" volt-free contact loop (the T1-T2 input almost every European CV/gas-combi boiler has) — no separate power needed on this side, it's a dry contact closure.", pins: [
+    { key: "heat", label: "Heat Relay", defineName: "THERMOSTAT_HEAT_RELAY_GPIO", defaultsByModule: { esp32: 4, esp32c2: 4, esp32c3: 4, esp32c5: 4, esp32c6: 4, esp32c61: 4, esp32s3: 4, esp32h2: 4 } },
+    { key: "cool", label: "Cool Relay", defineName: "THERMOSTAT_COOL_RELAY_GPIO", defaultsByModule: { esp32: 16, esp32c2: 16, esp32c3: 16, esp32c5: 16, esp32c6: 16, esp32c61: 16, esp32s3: 16, esp32h2: 16 } },
+  ] },
+  THERMO_OUTPUT_BINDING: { name: "Binding (remote relay module)", category: "thermostat-output", bus: "Matter Binding cluster", verified: false, defineValue: "THERMOSTAT_OUTPUT_BINDING", note: "No local GPIO at all — sends real OnOff::On/Off commands to whatever this endpoint's Binding cluster is bound to (e.g. a second firmware/outlet/ unit physically wired to the boiler), the same client::cluster_update() mechanism firmware/switch/'s buttons use. Heat-only — covers the common \"small receiver module hangs at the boiler\" European installation style; Cool demand needs Relay or OpenTherm instead.", pins: [] },
+  THERMO_OUTPUT_OPENTHERM: { name: "OpenTherm", category: "thermostat-output", bus: "2-wire (Manchester)", verified: false, defineValue: "THERMOSTAT_OUTPUT_OPENTHERM", note: "A full OpenTherm master (protocol verified directly against the OpenTherm Association's own Protocol Specification v2.2 PDF; GPIO-level driver logic ported from Ihor Melnyk's widely-used opentherm_library) for modulating, not just on/off, boiler control. These two GPIOs connect to an OpenTherm adapter board's logic-level pins, NOT directly to the OpenTherm 2-wire bus — see app_main.cpp's header comment for why bare GPIO can't drive it directly.", pins: [
+    { key: "in", label: "Adapter IN", defineName: "THERMOSTAT_OPENTHERM_IN_GPIO", defaultsByModule: { esp32: 17, esp32c2: 17, esp32c3: 17, esp32c5: 17, esp32c6: 17, esp32c61: 17, esp32s3: 17, esp32h2: 17 } },
+    { key: "out", label: "Adapter OUT", defineName: "THERMOSTAT_OPENTHERM_OUT_GPIO", defaultsByModule: { esp32: 18, esp32c2: 18, esp32c3: 18, esp32c5: 18, esp32c6: 18, esp32c61: 18, esp32s3: 18, esp32h2: 18 } },
+  ] },
+  // Thermostat's optional local Display picker — same mechanism again,
+  // three genuinely different chips/protocols (2 SPI, 1 I2C), each with
+  // its own pin count. "None" (default) needs zero pins, same shape as
+  // outlet's POWER_NONE above.
+  THERMO_DISPLAY_NONE: { name: "None", category: "thermostat-display", bus: "—", verified: true, defineValue: "DISPLAY_NONE", pins: [] },
+  THERMO_DISPLAY_GC9A01: { name: "GC9A01 (1.28\" round, 240x240)", category: "thermostat-display", bus: "SPI", verified: false, defineValue: "DISPLAY_GC9A01", note: "RGB565 over SPI. Its own datasheet documents the standard MIPI-DCS commands but leaves most of its real power-on init sequence undocumented (a real, independently confirmed gap) — app_main.cpp's init sequence is ported verbatim from moononournation/Arduino_GFX, a real, widely-used open-source driver, rather than guessed.", pins: [
+    { key: "sclk", label: "SCLK", defineName: "DISPLAY_SCLK_GPIO", defaultsByModule: { esp32: 14, esp32c2: 14, esp32c3: 14, esp32c5: 14, esp32c6: 14, esp32c61: 14, esp32s3: 14, esp32h2: 14 } },
+    { key: "mosi", label: "MOSI", defineName: "DISPLAY_MOSI_GPIO", defaultsByModule: { esp32: 13, esp32c2: 13, esp32c3: 13, esp32c5: 13, esp32c6: 13, esp32c61: 13, esp32s3: 13, esp32h2: 13 } },
+    { key: "cs", label: "CS", defineName: "DISPLAY_CS_GPIO", defaultsByModule: { esp32: 15, esp32c2: 15, esp32c3: 15, esp32c5: 15, esp32c6: 15, esp32c61: 15, esp32s3: 15, esp32h2: 15 } },
+    { key: "dc", label: "DC", defineName: "DISPLAY_DC_GPIO", defaultsByModule: { esp32: 27, esp32c2: 27, esp32c3: 27, esp32c5: 27, esp32c6: 27, esp32c61: 27, esp32s3: 27, esp32h2: 27 } },
+    { key: "rst", label: "RST", defineName: "DISPLAY_RST_GPIO", defaultsByModule: { esp32: 26, esp32c2: 26, esp32c3: 26, esp32c5: 26, esp32c6: 26, esp32c61: 26, esp32s3: 26, esp32h2: 26 } },
+  ] },
+  THERMO_DISPLAY_ST7789: { name: "ST7789 (1.25\" bar, 76x284)", category: "thermostat-display", bus: "SPI", verified: false, defineValue: "DISPLAY_ST7789", note: "RGB565 over SPI. Unlike GC9A01, ST7789 itself is fully documented (Sitronix's own datasheet) — no undocumented registers needed. The 76x284 active-area offset within the chip's larger addressable range is this specific module's own glass panel, not the chip — adjust DISPLAY_ST7789_COL_OFFSET/_ROW_OFFSET in app_main.cpp if the image looks shifted on your exact module.", pins: [
+    { key: "sclk", label: "SCLK", defineName: "DISPLAY_SCLK_GPIO", defaultsByModule: { esp32: 14, esp32c2: 14, esp32c3: 14, esp32c5: 14, esp32c6: 14, esp32c61: 14, esp32s3: 14, esp32h2: 14 } },
+    { key: "mosi", label: "MOSI", defineName: "DISPLAY_MOSI_GPIO", defaultsByModule: { esp32: 13, esp32c2: 13, esp32c3: 13, esp32c5: 13, esp32c6: 13, esp32c61: 13, esp32s3: 13, esp32h2: 13 } },
+    { key: "cs", label: "CS", defineName: "DISPLAY_CS_GPIO", defaultsByModule: { esp32: 15, esp32c2: 15, esp32c3: 15, esp32c5: 15, esp32c6: 15, esp32c61: 15, esp32s3: 15, esp32h2: 15 } },
+    { key: "dc", label: "DC", defineName: "DISPLAY_DC_GPIO", defaultsByModule: { esp32: 27, esp32c2: 27, esp32c3: 27, esp32c5: 27, esp32c6: 27, esp32c61: 27, esp32s3: 27, esp32h2: 27 } },
+    { key: "rst", label: "RST", defineName: "DISPLAY_RST_GPIO", defaultsByModule: { esp32: 26, esp32c2: 26, esp32c3: 26, esp32c5: 26, esp32c6: 26, esp32c61: 26, esp32s3: 26, esp32h2: 26 } },
+  ] },
+  THERMO_DISPLAY_SSD1306: { name: "SSD1306 (0.96\" OLED, 128x64)", category: "thermostat-display", bus: "I2C", verified: false, defineValue: "DISPLAY_SSD1306", note: "Monochrome, its own dedicated I2C bus/pins (separate from the temperature sensor's, even if that sensor is also I2C) to avoid any address/bus-sharing complexity. One of the most standardized init sequences in hobby electronics — checked directly against that near-universal pattern.", pins: [
+    { key: "sda", label: "SDA", defineName: "DISPLAY_SDA_GPIO", defaultsByModule: { esp32: 5, esp32c2: 5, esp32c3: 5, esp32c5: 5, esp32c6: 5, esp32c61: 5, esp32s3: 5, esp32h2: 5 } },
+    { key: "scl", label: "SCL", defineName: "DISPLAY_SCL_GPIO", defaultsByModule: { esp32: 19, esp32c2: 19, esp32c3: 19, esp32c5: 19, esp32c6: 19, esp32c61: 19, esp32s3: 19, esp32h2: 19 } },
+  ] },
 };
 
 /* Optional RGB status LED — same 3 #define names
@@ -973,6 +1010,28 @@ function makeRgbStatusLed(redGpio, greenGpio, blueGpio) {
       { key: "red", label: "Red", defineName: "STATUS_LED_RED_GPIO", defaultsByModule: defaultsFor(redGpio) },
       { key: "green", label: "Green", defineName: "STATUS_LED_GREEN_GPIO", defaultsByModule: defaultsFor(greenGpio) },
       { key: "blue", label: "Blue", defineName: "STATUS_LED_BLUE_GPIO", defaultsByModule: defaultsFor(blueGpio) },
+    ],
+  };
+}
+
+/* Optional rotary encoder — firmware/thermostat/'s own local setpoint
+ * control (see that file's header comment: rotate to adjust whichever
+ * setpoint the current SystemMode uses, press to cycle Off -> Heat ->
+ * Cool -> Off). Same "off by default, checked at runtime via GPIO_NUM_NC"
+ * shape as makeRgbStatusLed() above, deliberately duplicated as its own
+ * parallel field/render path rather than generalizing rgbStatusLed into a
+ * shared "array of optional pin blocks" mechanism — this repo's own
+ * established convention (see CLAUDE.md) is copy-and-adapt over premature
+ * shared abstraction, and only one device type needs this so far. */
+function makeRotaryEncoder(aGpio, bGpio, buttonGpio) {
+  const modules = ["esp32", "esp32c2", "esp32c3", "esp32c5", "esp32c6", "esp32c61", "esp32s3", "esp32h2"];
+  const defaultsFor = (n) => Object.fromEntries(modules.map((m) => [m, n]));
+  return {
+    label: "Rotary Encoder",
+    pins: [
+      { key: "a", label: "A", defineName: "ROTARY_ENCODER_A_GPIO", defaultsByModule: defaultsFor(aGpio) },
+      { key: "b", label: "B", defineName: "ROTARY_ENCODER_B_GPIO", defaultsByModule: defaultsFor(bGpio) },
+      { key: "button", label: "Button", defineName: "ROTARY_ENCODER_BUTTON_GPIO", defaultsByModule: defaultsFor(buttonGpio) },
     ],
   };
 }
@@ -1620,6 +1679,81 @@ const DEVICE_TYPES = [
       note: "Defaults to the SAME GPIO as the Data pin above — no separate LED needed, since the firmware flashes the strip/fixture itself for Identify instead (see app_main.cpp's header comment for why this is safe here but wouldn't be for a plain PWM device). Set this to a different, real LED's GPIO for the classic separate-indicator behavior instead.",
     },
   },
+  {
+    id: "thermostat",
+    name: "Thermostat",
+    desc: "Matter Thermostat (Heat + Cool): a local-temperature sensor drives a bang-bang (hysteresis) control loop, with a choice of three ways to actually reach the boiler/AC — direct relay wiring, a bound remote relay module, or native OpenTherm. Optional rotary encoder for local setpoint control and a local display. Reference device in firmware/thermostat/.",
+    shortDesc: "Heat+Cool, relay/Binding/OpenTherm output.",
+    // Matches project(matter_thermostat) in firmware/thermostat/CMakeLists.txt.
+    binName: "matter_thermostat.bin",
+    // Same sensor-chip picker as Temperature Sensor (identical driver
+    // library, reused verbatim in firmware/thermostat/main/app_main.cpp —
+    // see its header comment). Only LocalTemperature is used; humidity
+    // (where the chip provides it) is read but has nowhere to go on a
+    // Thermostat cluster.
+    componentOptions: ["SHT3X", "SHT4X", "AHT20", "DHT11", "DHT22", "DS18B20", "BME280"],
+    componentDefineName: "SENSOR_TYPE",
+    // Two independent extraPickers — Output (how heat/cool demand reaches
+    // the boiler/AC) and Display (optional local screen) — same mechanism
+    // as outlet's Power Monitoring, just two of them on one device type
+    // (confirms extraPickers was worth designing as an array from the
+    // start, same lesson as color-light's own second use of it).
+    extraPickers: [
+      {
+        key: "thermostatOutput",
+        label: "Output",
+        prompt: "How heat/cool demand actually reaches your boiler/AC",
+        options: ["THERMO_OUTPUT_RELAY", "THERMO_OUTPUT_BINDING", "THERMO_OUTPUT_OPENTHERM"],
+        defineName: "THERMOSTAT_OUTPUT_TYPE",
+      },
+      {
+        key: "thermostatDisplay",
+        label: "Display",
+        prompt: "Optional — pick a chip only if you have a screen wired up",
+        options: ["THERMO_DISPLAY_NONE", "THERMO_DISPLAY_GC9A01", "THERMO_DISPLAY_ST7789", "THERMO_DISPLAY_SSD1306"],
+        defineName: "DISPLAY_TYPE",
+      },
+    ],
+    driver: {
+      summary: "Sensor pin 1 (SDA / DATA)",
+      fieldLabel: "Sensor pin 1 (SDA / DATA) GPIO",
+      blockTitle: "Sensor · pin 1",
+      filePath: "firmware/thermostat/main/app_main.cpp",
+      defineName: "SENSOR_PIN_1",
+      currentGpio: 21,
+      defaultsByModule: { esp32: 21, esp32c2: 21, esp32c3: 21, esp32c5: 21, esp32c6: 21, esp32c61: 21, esp32s3: 21, esp32h2: 21 },
+    },
+    secondary: {
+      label: "Pin 2",
+      summary: "Sensor pin 2 (SCL, I2C only)",
+      fieldLabel: "Sensor pin 2 (SCL) GPIO",
+      blockTitle: "Sensor · pin 2",
+      filePath: "firmware/thermostat/main/app_main.cpp",
+      defineName: "SENSOR_PIN_2",
+      currentGpio: 22,
+      defaultsByModule: { esp32: 22, esp32c2: 22, esp32c3: 22, esp32c5: 22, esp32c6: 22, esp32c61: 22, esp32s3: 22, esp32h2: 22 },
+    },
+    rotaryEncoder: makeRotaryEncoder(32, 33, 25),
+    // GPIO 0/12 are both boot-strapping pins (mode select / flash
+    // voltage) — normally avoided as defaults elsewhere in this repo, but
+    // this device type genuinely runs out of the classic ESP32's ~17
+    // usable GPIOs once sensor(21/22) + identify(2) + relay(4/16) +
+    // OpenTherm(17/18) + encoder(32/33/25) + an SPI display(13/14/15/26/27)
+    // are all accounted for. Both are safe to use as long as nothing
+    // external pulls them during boot — flagged here rather than picking
+    // a collision silently. Adjust by hand if enabling several optional
+    // features at once runs out of room.
+    rgbStatusLed: makeRgbStatusLed(0, 12, 23),
+    identify: {
+      summary: "GPIO (digital output)",
+      fieldLabel: "Identify LED GPIO pin",
+      blockTitle: "Identify LED · digital output",
+      filePath: "firmware/thermostat/main/app_main.cpp",
+      defineName: "IDENTIFY_LED_GPIO",
+      currentGpio: 2,
+      defaultsByModule: { esp32: 2, esp32c2: 2, esp32c3: 2, esp32c5: 2, esp32c6: 2, esp32c61: 2, esp32s3: 2, esp32h2: 2 },
+    },
+  },
 ];
 
 function findDeviceType(id) {
@@ -1907,6 +2041,11 @@ const DEVICE_TYPE_ICONS = {
     <circle cx="28" cy="24" r="1.8" fill="currentColor" stroke="none"/>
     <circle cx="35.5" cy="24" r="1.8" fill="currentColor" stroke="none"/>
   </svg>`,
+  thermostat: `<svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+    <circle cx="24" cy="20" r="13"/>
+    <path d="M24 20l6-6"/>
+    <circle cx="24" cy="20" r="2" fill="currentColor" stroke="none"/>
+  </svg>`,
 };
 
 // `title` becomes each badge's hover tooltip. `zigbee`'s tooltip carries
@@ -2031,6 +2170,13 @@ function rgbStatusLedIsEnabled(p) {
   return p.rgbStatusLedEnabled === true;
 }
 
+// Rotary encoder (firmware/thermostat/ only, so far) — same off-by-default
+// shape as rgbStatusLed above, deliberately parallel rather than sharing
+// its render code (see makeRotaryEncoder()'s own comment for why).
+function rotaryEncoderIsEnabled(p) {
+  return p.rotaryEncoderEnabled === true;
+}
+
 function renderConfigureDevice(p) {
   const deviceType = findDeviceType(p.deviceType);
   const driver = deviceType ? deviceType.driver : null;
@@ -2038,6 +2184,7 @@ function renderConfigureDevice(p) {
   const identify = deviceType ? deviceType.identify : null;
   const statusLed = deviceType ? deviceType.statusLed : null;
   const rgbStatusLed = deviceType ? deviceType.rgbStatusLed : null;
+  const rotaryEncoder = deviceType ? deviceType.rotaryEncoder : null;
   const componentOptions = deviceType ? deviceType.componentOptions : null;
   const extraButtons = deviceType ? deviceType.extraButtons : null;
   const extraPickers = deviceType ? deviceType.extraPickers : null;
@@ -2059,6 +2206,17 @@ function renderConfigureDevice(p) {
   }
   const rgbStatusLedValid = !rgbStatusLedOn || rgbStatusLed.pins.every((pin) =>
     Number.isInteger(p.rgbStatusLedPins[pin.defineName]) && p.rgbStatusLedPins[pin.defineName] >= 0);
+  const rotaryEncoderOn = rotaryEncoder ? rotaryEncoderIsEnabled(p) : false;
+  if (rotaryEncoder) {
+    if (typeof p.rotaryEncoderPins !== "object" || p.rotaryEncoderPins == null) p.rotaryEncoderPins = {};
+    rotaryEncoder.pins.forEach((pin) => {
+      if (p.rotaryEncoderPins[pin.defineName] == null) {
+        p.rotaryEncoderPins[pin.defineName] = pin.defaultsByModule[p.target] != null ? pin.defaultsByModule[p.target] : 0;
+      }
+    });
+  }
+  const rotaryEncoderValid = !rotaryEncoderOn || rotaryEncoder.pins.every((pin) =>
+    Number.isInteger(p.rotaryEncoderPins[pin.defineName]) && p.rotaryEncoderPins[pin.defineName] >= 0);
 
   if (componentOptions && p.component == null) p.component = componentOptions[0];
   const selectedComponent = componentOptions ? (findComponent(p.component) || findComponent(componentOptions[0])) : null;
@@ -2154,7 +2312,7 @@ function renderConfigureDevice(p) {
   if (numberField && p[numberField.key] == null) p[numberField.key] = numberField.defaultValue;
   const numberFieldValid = !numberField ||
     (Number.isInteger(p[numberField.key]) && p[numberField.key] >= numberField.min && p[numberField.key] <= numberField.max);
-  const allValid = gpioValid && secondaryGpioValid && identifyGpioValid && extraButtonsValid && statusLedGpioValid && pickerPinsValid && numberFieldValid && rgbStatusLedValid;
+  const allValid = gpioValid && secondaryGpioValid && identifyGpioValid && extraButtonsValid && statusLedGpioValid && pickerPinsValid && numberFieldValid && rgbStatusLedValid && rotaryEncoderValid;
 
   // Component-aware field labels: falls back to the device type's own
   // static text when there's no componentOptions list (every device type
@@ -2176,82 +2334,82 @@ function renderConfigureDevice(p) {
 
   return `
     <div class="configure-grid ${componentOptions || hasVariableButtonCount || (extraPickers && extraPickers.length) ? "has-left-sidebar" : ""}">
-      ${componentOptions ? `
+      ${(componentOptions || hasVariableButtonCount || (extraPickers && extraPickers.length)) ? `
         <div class="config-sidebar">
-          <h3>Sensor model</h3>
-          <p class="field-label">Which sensor do you have wired up?</p>
-          <div class="component-list" role="radiogroup" aria-label="Sensor model">
-            ${componentOptions.map(findComponent).map((s) => `
-              <label class="component-list-item ${s.id === selectedComponent.id ? "selected" : ""}">
-                <input type="radio" name="sensor-model" value="${escapeHtml(s.id)}" ${s.id === selectedComponent.id ? "checked" : ""}>
-                <span class="tick">&#10003;</span>
-                <span class="component-list-item-text">
-                  <span class="component-name">${escapeHtml(s.name)}</span>
-                  <span class="component-bus">${escapeHtml(s.bus)}${s.verified ? "" : " · unverified"}</span>
-                </span>
-              </label>
-            `).join("")}
-          </div>
-          <p class="field-note">
-            ${deviceType.componentsPurelyVisual
-              ? `Cosmetic choice only — every option here compiles to the exact same driver in app_main.cpp (a contact sensor is always just HIGH or LOW to the microcontroller, regardless of which physical part you wire up). Picking one doesn't change the generated firmware; it's here for visual consistency with the sensor pickers other device types have.${selectedComponent.verified ? ` This specific part is the one actually wired up and tested on real hardware in this repo.` : ` This specific part hasn't been physically tried here — though since the driver is identical either way, that's a much smaller gap than it is for a genuinely different sensor chip.`}`
-              : (selectedComponent.verified
-                ? `Verified on real hardware in this repo.`
-                : `Implemented from the sensor's datasheet/reference driver, but not personally tested on real hardware in this repo — see the comment above its section in ${escapeHtml(driver ? driver.filePath : "app_main.cpp")} for exactly what was checked.`)}
-            ${secondary && !selectedComponent.usesPin2 ? ` This sensor only needs one data pin (${escapeHtml(selectedComponent.pin1Label)}) — the "pin 2" field is hidden since its driver doesn't use it.` : ""}
-            ${selectedComponent.note ? ` ${escapeHtml(selectedComponent.note)}` : ""}
-          </p>
+          ${componentOptions ? `
+            <h3>Sensor model</h3>
+            <p class="field-label">Which sensor do you have wired up?</p>
+            <div class="component-list" role="radiogroup" aria-label="Sensor model">
+              ${componentOptions.map(findComponent).map((s) => `
+                <label class="component-list-item ${s.id === selectedComponent.id ? "selected" : ""}">
+                  <input type="radio" name="sensor-model" value="${escapeHtml(s.id)}" ${s.id === selectedComponent.id ? "checked" : ""}>
+                  <span class="tick">&#10003;</span>
+                  <span class="component-list-item-text">
+                    <span class="component-name">${escapeHtml(s.name)}</span>
+                    <span class="component-bus">${escapeHtml(s.bus)}${s.verified ? "" : " · unverified"}</span>
+                  </span>
+                </label>
+              `).join("")}
+            </div>
+            <p class="field-note">
+              ${deviceType.componentsPurelyVisual
+                ? `Cosmetic choice only — every option here compiles to the exact same driver in app_main.cpp (a contact sensor is always just HIGH or LOW to the microcontroller, regardless of which physical part you wire up). Picking one doesn't change the generated firmware; it's here for visual consistency with the sensor pickers other device types have.${selectedComponent.verified ? ` This specific part is the one actually wired up and tested on real hardware in this repo.` : ` This specific part hasn't been physically tried here — though since the driver is identical either way, that's a much smaller gap than it is for a genuinely different sensor chip.`}`
+                : (selectedComponent.verified
+                  ? `Verified on real hardware in this repo.`
+                  : `Implemented from the sensor's datasheet/reference driver, but not personally tested on real hardware in this repo — see the comment above its section in ${escapeHtml(driver ? driver.filePath : "app_main.cpp")} for exactly what was checked.`)}
+              ${secondary && !selectedComponent.usesPin2 ? ` This sensor only needs one data pin (${escapeHtml(selectedComponent.pin1Label)}) — the "pin 2" field is hidden since its driver doesn't use it.` : ""}
+              ${selectedComponent.note ? ` ${escapeHtml(selectedComponent.note)}` : ""}
+            </p>
+          ` : (hasVariableButtonCount ? `
+            <h3>How many buttons?</h3>
+            <p class="field-label">Each button becomes its own independently-bindable switch endpoint</p>
+            <div class="component-list" role="radiogroup" aria-label="How many buttons?">
+              ${Array.from({ length: maxButtons }, (_, i) => i + 1).map((n) => `
+                <label class="component-list-item ${n === buttonCount ? "selected" : ""}">
+                  <input type="radio" name="button-count" value="${n}" ${n === buttonCount ? "checked" : ""}>
+                  <span class="tick">&#10003;</span>
+                  <span class="component-list-item-text">
+                    <span class="component-name">${n} button${n === 1 ? "" : "s"}</span>
+                  </span>
+                </label>
+              `).join("")}
+            </div>
+            <p class="field-note">
+              ${buttonCount === 1
+                ? `A single button, same as this device type has always had — its Identify LED also doubles as a local on/off indicator (see below).`
+                : `${buttonCount} independent buttons, each its own on_off_light_switch endpoint — bind each one to a different device through your controller's Bindings UI. With more than one button, the Identify LED no longer doubles as an on/off indicator (there's no longer one single "switch state" it could represent).`}
+            </p>
+          ` : "")}
+          ${(componentOptions || hasVariableButtonCount) && extraPickers && extraPickers.length ? '<hr style="margin:20px 0;border:none;border-top:1px solid var(--border);">' : ""}
+          ${extraPickers && extraPickers.length ? `
+            ${extraPickers.map((picker) => {
+              const selected = findComponent(p[picker.key]) || findComponent(picker.options[0]);
+              return `
+                <h3>${escapeHtml(picker.label)}</h3>
+                <p class="field-label">${escapeHtml(picker.prompt)}</p>
+                <div class="component-list" role="radiogroup" aria-label="${escapeHtml(picker.label)}">
+                  ${picker.options.map(findComponent).map((s) => `
+                    <label class="component-list-item ${s.id === selected.id ? "selected" : ""}">
+                      <input type="radio" name="picker-${escapeHtml(picker.key)}" value="${escapeHtml(s.id)}" data-picker-key="${escapeHtml(picker.key)}" ${s.id === selected.id ? "checked" : ""}>
+                      <span class="tick">&#10003;</span>
+                      <span class="component-list-item-text">
+                        <span class="component-name">${escapeHtml(s.name)}</span>
+                        <span class="component-bus">${escapeHtml(s.bus)}${s.verified ? "" : " · unverified"}</span>
+                      </span>
+                    </label>
+                  `).join("")}
+                </div>
+                <p class="field-note">
+                  ${picker.cosmetic
+                    ? `Reference only — this device type can't actually drive this chip; the selection has no effect on the generated firmware.`
+                    : (selected.verified ? `Verified on real hardware in this repo.` : `Not personally tested on real hardware in this repo — build-verified only.`)}
+                  ${selected.note ? ` ${escapeHtml(selected.note)}` : ""}
+                </p>
+              `;
+            }).join('<hr style="margin:20px 0;border:none;border-top:1px solid var(--border);">')}
+          ` : ""}
         </div>
-      ` : (hasVariableButtonCount ? `
-        <div class="config-sidebar">
-          <h3>How many buttons?</h3>
-          <p class="field-label">Each button becomes its own independently-bindable switch endpoint</p>
-          <div class="component-list" role="radiogroup" aria-label="How many buttons?">
-            ${Array.from({ length: maxButtons }, (_, i) => i + 1).map((n) => `
-              <label class="component-list-item ${n === buttonCount ? "selected" : ""}">
-                <input type="radio" name="button-count" value="${n}" ${n === buttonCount ? "checked" : ""}>
-                <span class="tick">&#10003;</span>
-                <span class="component-list-item-text">
-                  <span class="component-name">${n} button${n === 1 ? "" : "s"}</span>
-                </span>
-              </label>
-            `).join("")}
-          </div>
-          <p class="field-note">
-            ${buttonCount === 1
-              ? `A single button, same as this device type has always had — its Identify LED also doubles as a local on/off indicator (see below).`
-              : `${buttonCount} independent buttons, each its own on_off_light_switch endpoint — bind each one to a different device through your controller's Bindings UI. With more than one button, the Identify LED no longer doubles as an on/off indicator (there's no longer one single "switch state" it could represent).`}
-          </p>
-        </div>
-      ` : (extraPickers && extraPickers.length ? `
-        <div class="config-sidebar">
-          ${extraPickers.map((picker) => {
-            const selected = findComponent(p[picker.key]) || findComponent(picker.options[0]);
-            return `
-              <h3>${escapeHtml(picker.label)}</h3>
-              <p class="field-label">${escapeHtml(picker.prompt)}</p>
-              <div class="component-list" role="radiogroup" aria-label="${escapeHtml(picker.label)}">
-                ${picker.options.map(findComponent).map((s) => `
-                  <label class="component-list-item ${s.id === selected.id ? "selected" : ""}">
-                    <input type="radio" name="picker-${escapeHtml(picker.key)}" value="${escapeHtml(s.id)}" data-picker-key="${escapeHtml(picker.key)}" ${s.id === selected.id ? "checked" : ""}>
-                    <span class="tick">&#10003;</span>
-                    <span class="component-list-item-text">
-                      <span class="component-name">${escapeHtml(s.name)}</span>
-                      <span class="component-bus">${escapeHtml(s.bus)}${s.verified ? "" : " · unverified"}</span>
-                    </span>
-                  </label>
-                `).join("")}
-              </div>
-              <p class="field-note">
-                ${picker.cosmetic
-                  ? `Reference only — this device type can't actually drive this chip; the selection has no effect on the generated firmware.`
-                  : (selected.verified ? `Verified on real hardware in this repo.` : `Not personally tested on real hardware in this repo — build-verified only.`)}
-                ${selected.note ? ` ${escapeHtml(selected.note)}` : ""}
-              </p>
-            `;
-          }).join('<hr style="margin:20px 0;border:none;border-top:1px solid var(--border);">')}
-        </div>
-      ` : ""))}
+      ` : ""}
 
       <div class="step-panel">
         <h2>Configure device</h2>
@@ -2388,6 +2546,39 @@ function renderConfigureDevice(p) {
           </div>
         ` : ""}
 
+        ${rotaryEncoder ? `
+          <div class="driver-block">
+            <label class="checkbox-label" for="rotary-encoder-enabled">
+              <input type="checkbox" id="rotary-encoder-enabled" ${rotaryEncoderOn ? "checked" : ""}>
+              <h3 style="display:inline; margin:0;">Add a Rotary Encoder</h3>
+            </label>
+            <p class="field-note" style="margin-top:4px;">
+              An optional local input for setpoint adjustment without a
+              controller — rotate to change whichever setpoint the current
+              mode uses (heating in Heat, cooling in Cool), press to cycle
+              Off &rarr; Heat &rarr; Cool &rarr; Off. Local changes are
+              written straight into the real Matter attributes (see the
+              header comment in ${escapeHtml(driver ? driver.filePath : "app_main.cpp")}),
+              so a bound controller sees them too. Off by default; the
+              firmware ships all three pins disabled
+              (<code>GPIO_NUM_NC</code>) until you tick this and set real
+              pins.
+            </p>
+
+            ${rotaryEncoderOn ? rotaryEncoder.pins.map((pin) => `
+              <label class="field-label" for="rotary-encoder-${escapeHtml(pin.key)}" style="margin-top:12px;">${escapeHtml(pin.label)} GPIO pin</label>
+              <input type="number" id="rotary-encoder-${escapeHtml(pin.key)}" data-rotary-encoder-pin="${escapeHtml(pin.defineName)}" min="0" max="48" value="${p.rotaryEncoderPins[pin.defineName]}" style="margin-bottom:12px;">
+              <div class="field-error">${Number.isInteger(p.rotaryEncoderPins[pin.defineName]) && p.rotaryEncoderPins[pin.defineName] >= 0 ? "" : "Enter a valid GPIO number (0 or higher)."}</div>
+            `).join("") : ""}
+            ${rotaryEncoderOn ? `
+              <p class="field-note">
+                Adjust to match your board — these defaults are common for
+                ${escapeHtml(moduleName(p.target))} devkits, not a guarantee for yours.
+              </p>
+            ` : ""}
+          </div>
+        ` : ""}
+
         <div class="driver-block">
           <label class="checkbox-label" for="identify-enabled">
             <input type="checkbox" id="identify-enabled" ${identifyOn ? "checked" : ""}>
@@ -2426,6 +2617,7 @@ function renderConfigureDevice(p) {
           <code>${escapeHtml(secondary.defineName)}</code>${secondaryFieldNeeded ? "" : " (kept at its default — unused by this sensor)"}` : ""}${numberField ? `,
           <code>${escapeHtml(numberField.defineName)}</code>` : ""}${statusLedOn ? `,
           <code>${escapeHtml(statusLed.defineName)}</code>` : ""}${rgbStatusLedOn ? rgbStatusLed.pins.map((pin) => `,
+          <code>${escapeHtml(pin.defineName)}</code>`).join("") : ""}${rotaryEncoderOn ? rotaryEncoder.pins.map((pin) => `,
           <code>${escapeHtml(pin.defineName)}</code>`).join("") : ""}${identifyOn ? `,
           <code>${escapeHtml(identify ? identify.defineName : "IDENTIFY_LED_GPIO")}</code>` : ""}${activePickerPins.map(({ pin }) => `,
           <code>${escapeHtml(pin.defineName)}</code>`).join("")}) happens
@@ -2487,6 +2679,14 @@ function renderConfigureDevice(p) {
             <div class="summary-label">RGB STATUS LED</div>
             <div class="summary-detail">${rgbStatusLedOn
               ? rgbStatusLed.pins.map((pin) => `${escapeHtml(pin.label)}: GPIO ${p.rgbStatusLedPins[pin.defineName] != null ? p.rgbStatusLedPins[pin.defineName] : "?"}`).join(", ")
+              : "Not added"}</div>
+          </div>
+        ` : ""}
+        ${rotaryEncoder ? `
+          <div class="summary-row">
+            <div class="summary-label">ROTARY ENCODER</div>
+            <div class="summary-detail">${rotaryEncoderOn
+              ? rotaryEncoder.pins.map((pin) => `${escapeHtml(pin.label)}: GPIO ${p.rotaryEncoderPins[pin.defineName] != null ? p.rotaryEncoderPins[pin.defineName] : "?"}`).join(", ")
               : "Not added"}</div>
           </div>
         ` : ""}
@@ -2660,6 +2860,10 @@ function isProductComplete(p) {
   const rgbStatusLedOk = !rgbStatusLed || !rgbStatusLedIsEnabled(p) ||
     rgbStatusLed.pins.every((pin) =>
       p.rgbStatusLedPins && Number.isInteger(p.rgbStatusLedPins[pin.defineName]) && p.rgbStatusLedPins[pin.defineName] >= 0);
+  const rotaryEncoder = deviceType ? deviceType.rotaryEncoder : null;
+  const rotaryEncoderOk = !rotaryEncoder || !rotaryEncoderIsEnabled(p) ||
+    rotaryEncoder.pins.every((pin) =>
+      p.rotaryEncoderPins && Number.isInteger(p.rotaryEncoderPins[pin.defineName]) && p.rotaryEncoderPins[pin.defineName] >= 0);
   // Pins belonging to whichever component is currently selected on each
   // extraPicker (currently just the outlet's Power Monitoring chip) —
   // same "active selection only" shape as buttonsOk above.
@@ -2685,7 +2889,7 @@ function isProductComplete(p) {
     (Number.isInteger(p[numberField.key]) && p[numberField.key] >= numberField.min && p[numberField.key] <= numberField.max);
   return !!p.deviceType && !!p.target &&
     Number.isInteger(p.gpioPin) && p.gpioPin >= 0 &&
-    secondaryOk && identifyOk && buttonsOk && statusLedOk && rgbStatusLedOk && pickerPinsOk && numberFieldOk;
+    secondaryOk && identifyOk && buttonsOk && statusLedOk && rgbStatusLedOk && rotaryEncoderOk && pickerPinsOk && numberFieldOk;
 }
 
 function buildConfigPreview(p) {
@@ -2848,6 +3052,22 @@ function renderCustomiseReview(p) {
                 <div class="summary-label">RGB STATUS LED</div>
                 <div class="summary-value">${on
                   ? dt.rgbStatusLed.pins.map((pin) => `${escapeHtml(pin.label)} GPIO ${p.rgbStatusLedPins && p.rgbStatusLedPins[pin.defineName] != null ? p.rgbStatusLedPins[pin.defineName] : "?"}`).join(", ")
+                  : "Not added"}</div>
+              </div>
+              <button class="link" data-goto-step="2">Edit</button>
+            </div>
+          `;
+        })()}
+        ${(() => {
+          const dt = findDeviceType(p.deviceType);
+          if (!dt || !dt.rotaryEncoder) return "";
+          const on = rotaryEncoderIsEnabled(p);
+          return `
+            <div class="review-row">
+              <div>
+                <div class="summary-label">ROTARY ENCODER</div>
+                <div class="summary-value">${on
+                  ? dt.rotaryEncoder.pins.map((pin) => `${escapeHtml(pin.label)} GPIO ${p.rotaryEncoderPins && p.rotaryEncoderPins[pin.defineName] != null ? p.rotaryEncoderPins[pin.defineName] : "?"}`).join(", ")
                   : "Not added"}</div>
               </div>
               <button class="link" data-goto-step="2">Edit</button>
@@ -3214,6 +3434,16 @@ function buildSedCommands(p) {
       cmds.push(`sed -i 's/^#define ${pin.defineName} .*/#define ${pin.defineName} GPIO_NUM_${gpio}/' ${filePath}`);
     });
   }
+  if (deviceType && deviceType.rotaryEncoder && rotaryEncoderIsEnabled(p)) {
+    // Same broad `.*` match as rgbStatusLed above — all three pins ship
+    // as GPIO_NUM_NC by default.
+    deviceType.rotaryEncoder.pins.forEach((pin) => {
+      const gpio = p.rotaryEncoderPins && p.rotaryEncoderPins[pin.defineName] != null
+        ? p.rotaryEncoderPins[pin.defineName]
+        : (pin.defaultsByModule[p.target] != null ? pin.defaultsByModule[p.target] : 0);
+      cmds.push(`sed -i 's/^#define ${pin.defineName} .*/#define ${pin.defineName} GPIO_NUM_${gpio}/' ${filePath}`);
+    });
+  }
   if (identify && identifyIsEnabled(p)) {
     cmds.push(`sed -i 's/^#define ${identify.defineName} GPIO_NUM_[0-9][0-9]*/#define ${identify.defineName} GPIO_NUM_${p.identifyGpioPin}/' ${filePath}`);
   }
@@ -3437,10 +3667,13 @@ function bindEvents() {
         // (off) rather than inheriting a previous type's choice.
         state.currentProduct.statusLedGpioPin = null;
         state.currentProduct.statusLedEnabled = null;
-        // rgbStatusLed (all 10 device types): same stale-value risk as
+        // rgbStatusLed (all device types): same stale-value risk as
         // statusLed above, just with a pins object instead of one GPIO.
         state.currentProduct.rgbStatusLedPins = null;
         state.currentProduct.rgbStatusLedEnabled = null;
+        // rotaryEncoder (thermostat only, so far): same stale-value risk.
+        state.currentProduct.rotaryEncoderPins = null;
+        state.currentProduct.rotaryEncoderEnabled = null;
         // numberField (currently just the addressable light's pixel
         // count): same stale-value risk as everything above — reset every
         // key any device type's numberField might use, same
@@ -3582,6 +3815,31 @@ function bindEvents() {
       }
       const raw = el.value;
       state.currentProduct.rgbStatusLedPins[defineName] = raw === "" ? null : parseInt(raw, 10);
+      saveProducts();
+      render();
+      document.getElementById(el.id).focus();
+    });
+  });
+
+  const rotaryEncoderEnabledInput = document.getElementById("rotary-encoder-enabled");
+  if (rotaryEncoderEnabledInput) {
+    rotaryEncoderEnabledInput.addEventListener("change", () => {
+      state.currentProduct.rotaryEncoderEnabled = rotaryEncoderEnabledInput.checked;
+      saveProducts();
+      render();
+    });
+  }
+
+  // Rotary encoder pins — same delegated data-attribute handler shape as
+  // data-rgb-status-pin above, keyed into rotaryEncoderPins instead.
+  document.querySelectorAll('input[data-rotary-encoder-pin]').forEach((el) => {
+    el.addEventListener("input", () => {
+      const defineName = el.getAttribute("data-rotary-encoder-pin");
+      if (typeof state.currentProduct.rotaryEncoderPins !== "object" || state.currentProduct.rotaryEncoderPins == null) {
+        state.currentProduct.rotaryEncoderPins = {};
+      }
+      const raw = el.value;
+      state.currentProduct.rotaryEncoderPins[defineName] = raw === "" ? null : parseInt(raw, 10);
       saveProducts();
       render();
       document.getElementById(el.id).focus();

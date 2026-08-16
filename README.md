@@ -337,9 +337,20 @@ flashing the strip/fixture itself rather than a separate LED. See its
 sourcing. Build-verified in Docker for all 8 chips; not hardware-tested
 (none of the 8 chips' hardware was physically available when written).
 
-To add another type, copy any of the ten folders and swap the endpoint
+`firmware/thermostat/` (Heat + Cool) is this repo's newest, eleventh
+device type — a genuine control loop (local temperature vs. a setpoint)
+with a choice of three ways to actually reach a boiler/AC: direct relay
+wiring, a bound remote relay module (Matter's own Binding cluster), or a
+full native OpenTherm master, plus an optional rotary encoder and a
+choice of three local displays (GC9A01/ST7789 TFT, SSD1306 OLED). See
+CLAUDE.md's repository-layout entry for the full technical detail and
+sourcing. Docker build-verified across every output-mode/encoder/display
+combination; not yet hardware-tested (none of this device type's
+hardware was physically available when written).
+
+To add another type, copy any of the eleven folders and swap the endpoint
 type in `app_main.cpp` — esp-matter provides ready-made types like
-`occupancy_sensor`, `thermostat`, and many more.
+`occupancy_sensor`, `smoke_co_alarm`, `door_lock`, and many more.
 
 ## Updates
 
@@ -348,7 +359,7 @@ but the multi-GB Docker image stalled out on GitHub-hosted runners, so it
 was reverted rather than left flaky). Build + flash a new version yourself
 following the Quick Start steps above whenever you change `app_main.cpp`.
 
-All ten device types also ship with Matter's **OTA Requestor** cluster
+All eleven device types also ship with Matter's **OTA Requestor** cluster
 enabled (`CONFIG_ENABLE_OTA_REQUESTOR=y`), so once a device is bound to an
 OTA Provider node on the same fabric, it can fetch and install updates over
 the air using the existing `ota_0`/`ota_1` A/B partition slots — no app
@@ -361,7 +372,7 @@ errors); the provider side and a full transfer are open, tracked in
 CLAUDE.md's next steps alongside the binding test, which hits the same
 "needs a second commissioned device + tooling" wall.
 
-All ten device types also gained two optional, off-by-default features
+All eleven device types also gained two optional, off-by-default features
 (see CLAUDE.md's "Open next steps" for the full sourcing/verification
 detail):
 
@@ -378,7 +389,7 @@ detail):
   Matter has started (confirmed against its own implementation and
   reference `app_reset` component).
 
-Both are Docker build-verified across all ten device types, not yet
+Both are Docker build-verified across all eleven device types, not yet
 hardware-tested. The product wizard (`tools/product-wizard/`) has a
 checkbox + 3 GPIO fields for the status LED and shows the factory-reset
 procedure as a standalone info box under Configuration Summary.

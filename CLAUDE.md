@@ -840,6 +840,272 @@ firmware/addressable-light/  Addressable LED strip / smart-bulb driver —
                            hardware was physically available when written).
   partitions.csv           same OTA + fctry layout as firmware/light/
   sdkconfig.defaults        same as firmware/light/
+firmware/thermostat/      Thermostat (Heat + Cool) — eleventh device type,
+                           and this repo's first with a genuine control
+                           loop (compares a measured value against a
+                           setpoint and drives an output) rather than a
+                           direct command pass-through or a plain sensor
+                           readout
+  main/app_main.cpp        `endpoint::thermostat::create()` — confirmed
+                           this is a complete, directly usable esp-matter
+                           helper (Identify + Groups + Thermostat cluster),
+                           unlike firmware/color-light/'s
+                           extended_color_light helper which had real
+                           gaps needing hand-assembly; checked by reading
+                           esp_matter_endpoint.cpp's own thermostat::add()
+                           directly. One real gap noted anyway: its
+                           config_t declares an unused scenes_management
+                           field that add() never wires up — harmless,
+                           documented, not patched around. Feature scope
+                           is Heat + Cool (ControlSequenceOfOperation =
+                           CoolingAndHeating), not AutoMode/Occupancy/
+                           Setback/schedule-configuration/presets — same
+                           "smallest reasonable next step" scoping as
+                           firmware/dimmable-light/ (Level only) and
+                           firmware/window-covering/ (Lift only).
+                           SystemMode/ControlSequenceOfOperation/
+                           OccupiedHeatingSetpoint/OccupiedCoolingSetpoint/
+                           LocalTemperature are all plain ember
+                           attributes, not the "code-driven" cluster class
+                           firmware/temperature-sensor/'s
+                           TemperatureMeasurement is — confirmed via the
+                           same check as always (no thermostat/ folder
+                           under data_model_provider/clusters/) — so this
+                           uses the same attribute::PRE_UPDATE +
+                           attribute::update() pattern as OnOff/
+                           LevelControl/ColorControl elsewhere, no
+                           SetMeasuredValue()-style setter needed. Boots
+                           to SystemMode=Off, matching every other device
+                           type's boot-to-known-state convention (a
+                           heating/cooling system silently staying active
+                           across a power cycle is a worse default than a
+                           light staying on). Local temperature reuses
+                           firmware/temperature-sensor/'s exact 7-chip
+                           SENSOR_TYPE driver library verbatim (only
+                           LocalTemperature is pushed into Matter;
+                           humidity, where the chip provides it, is read
+                           but has nowhere to go on a Thermostat cluster).
+                           Control is a plain hysteresis (bang-bang) loop
+                           — THERMOSTAT_HYSTERESIS_CENTIDEGREES (0.3 degC
+                           default) prevents relay/boiler chatter right at
+                           the setpoint, the same standard technique every
+                           real thermostat uses.
+
+                           #define THERMOSTAT_OUTPUT_TYPE selects one of
+                           three genuinely different ways heat/cool demand
+                           actually reaches the boiler/AC, all requested
+                           together (not staged) because a real European
+                           room thermostat needs to support any of them
+                           depending on the installation:
+                           RELAY (default) — two active-LOW GPIO relay
+                           outputs (matching firmware/outlet/'s own relay
+                           convention), wired in series with a boiler's/
+                           AC's own volt-free "room thermostat" contact
+                           loop — the simple 2-wire "T1-T2" input
+                           virtually every European CV/gas-combi boiler
+                           has, where the boiler itself supplies the
+                           voltage and just needs the loop closed to call
+                           for heat, the same way a classic mechanical/
+                           bimetal thermostat has always worked. No
+                           separate power needed on this side.
+                           BINDING — sends real OnOff::On/Off commands
+                           (not Toggle — a specific target state, since
+                           demand must stay correct even if a command is
+                           missed) to whatever this endpoint's Binding
+                           cluster is bound to, via the exact
+                           client::cluster_update() +
+                           client::interaction::invoke::send_request()
+                           pattern firmware/switch/'s buttons already use.
+                           Binding + a client OnOff cluster are added onto
+                           this SAME thermostat endpoint (not a second
+                           one) — the exact cluster pair esp-matter's own
+                           on_off_light_switch::add() uses for its
+                           equivalent purpose, confirmed by reading that
+                           function rather than guessed. Covers the "a
+                           small receiver module hangs next to the
+                           boiler, wired to it, and the thermostat tells
+                           that module when to call for heat" European
+                           installation style — that receiver module
+                           needs no new firmware at all, firmware/outlet/'s
+                           existing relay output already does the job.
+                           Heat-only (this mode's real motivation is
+                           specifically the heating-boiler scenario); Cool
+                           demand needs RELAY or OPENTHERM.
+                           OPENTHERM — a full OpenTherm master for
+                           modulating (not just on/off) boiler control.
+                           Protocol verified directly against the
+                           OpenTherm Association's own "OpenTherm Protocol
+                           Specification v2.2" PDF (fetched from
+                           ihormelnyk.com and read via pdftotext, this
+                           repo's established practice for primary-source
+                           specs — a web summary alone materially
+                           underspecifies the exact bit-timing/frame-
+                           format detail this needs): 34-bit frames (1
+                           start + 32 data + 1 stop), 1 parity + 3
+                           MSG-TYPE + 4 spare + 8 DATA-ID + 16 DATA-VALUE
+                           bits, Manchester/Bi-phase-L encoding at 1000
+                           bps (bit '1' = active-to-idle transition, bit
+                           '0' = idle-to-active), master transmits via
+                           LINE VOLTAGE modulation (idle <=7V/active
+                           15-18V) while the slave transmits via LINE
+                           CURRENT modulation (idle 5-9mA/active
+                           17-23mA) — confirmed as the reason bare GPIO
+                           can't drive this bus directly, unlike this
+                           repo's other bit-banged protocols (DHT/
+                           DS18B20/WS2812B): THERMOSTAT_OPENTHERM_IN_GPIO/
+                           _OUT_GPIO connect to a real OpenTherm adapter
+                           board's logic-level pins, not the 2-wire bus
+                           itself. GPIO-level driver logic (bit-banged TX
+                           via esp_rom_delay_us, an edge-interrupt-driven
+                           RX state machine) is ported from Ihor Melnyk's
+                           opentherm_library (github.com/ihormelnyk/
+                           opentherm_library, MIT-licensed) — the
+                           reference implementation this whole DIY/
+                           ESPHome/Home-Assistant OpenTherm community has
+                           standardized on, itself built against the same
+                           spec — same "best available, independently
+                           cross-checked" sourcing standard already used
+                           in this repo for APA102/SM2335EGH. Sends
+                           data-id 0 (Status: CH/Cooling-enable bits),
+                           data-id 1 (Control setpoint — a fixed CH
+                           flow-temperature value while CH is enabled,
+                           matching the spec's own documented "on-off
+                           control mode" rather than full weather-
+                           compensated modulation, which is out of
+                           scope), data-id 16 (Room Setpoint), data-id 24
+                           (Room temperature) every
+                           THERMOSTAT_OPENTHERM_POLL_INTERVAL_MS (1s
+                           default — the spec requires the master to
+                           communicate at least once a second or a
+                           compliant boiler falls back to basic on/off
+                           compatibility mode); reads back data-id 25
+                           (Boiler temperature) and data-id 17 (Relative
+                           modulation level) purely for diagnostic
+                           logging. A real, Docker-build-caught issue
+                           (not hypothetical): the SPI display driver
+                           below pushed this device type's IRAM usage 68
+                           bytes over budget — fixed via
+                           CONFIG_SPI_MASTER_ISR_IN_IRAM=n in
+                           sdkconfig.defaults (a real ESP-IDF Kconfig
+                           option trading slightly higher SPI interrupt
+                           latency during flash-cache-miss windows for
+                           the IRAM headroom back — an easy trade for a
+                           display that only redraws every 2s).
+
+                           Optional rotary encoder (off by default, three
+                           GPIO_NUM_NC pins) for local setpoint control
+                           without a controller: rotate to adjust
+                           whichever setpoint the current SystemMode uses
+                           (heating in Heat, cooling in Cool), press to
+                           cycle Off -> Heat -> Cool -> Off. Standard
+                           two-channel quadrature decoding (channel A's
+                           falling edge as trigger, channel B's level at
+                           that instant gives direction) — the common
+                           "sample the other channel on one edge"
+                           technique used by countless KY-040-class
+                           encoder drivers, not a chip-specific protocol
+                           needing external verification. Local changes
+                           write straight into the real Matter attributes
+                           (esp_matter_uint8()/esp_matter_int16() +
+                           attribute::update(), the same calls a
+                           controller's own write would trigger) so a
+                           bound controller sees them too, not just
+                           whatever a local display shows.
+
+                           Optional local display (#define DISPLAY_TYPE,
+                           off by default) — three genuinely different
+                           chips/protocols, requested together mid-
+                           session alongside the rotary encoder and the
+                           local-temperature-sensor reuse: GC9A01 (1.28"
+                           round, 240x240, SPI) — its own datasheet
+                           documents the standard MIPI-DCS commands but
+                           leaves roughly 70% of its actual power-on init
+                           sequence undocumented (a real, independently
+                           confirmed gap, same situation as
+                           firmware/addressable-light/'s APA102/
+                           SM2335EGH) — its init sequence is ported
+                           verbatim from moononournation/Arduino_GFX, a
+                           real, widely-used open-source Arduino graphics
+                           library, rather than guessed. ST7789 (the
+                           "1.25 inch" 76x284 bar module) — fully,
+                           properly documented (Sitronix's own
+                           datasheet), no undocumented registers needed;
+                           the 76x284 active-area offset within the
+                           chip's larger addressable range is this
+                           specific module's own glass panel, not the
+                           chip, so DISPLAY_ST7789_COL_OFFSET/
+                           _ROW_OFFSET are left as adjustable #defines
+                           rather than hardcoded. SSD1306 (0.96" 128x64
+                           I2C OLED) — this repo's first I2C display,
+                           its own dedicated bus/pins (not shared with
+                           the temperature sensor's, even if that sensor
+                           is also I2C) to avoid address/bus-sharing
+                           complexity; one of the most standardized init
+                           sequences in hobby electronics, checked
+                           directly against that near-universal pattern.
+                           Rendering is deliberately NOT a bitmap-font
+                           text renderer — just large 7-segment-style
+                           digits (drawn as filled rectangles, no font
+                           table needed) for the temperature reading,
+                           plus a colored border/bar (or, on the
+                           monochrome SSD1306, a filled-vs-outline bar)
+                           for SystemMode + heat/cool demand instead of a
+                           text label — closer to how a real thermostat
+                           like Nest indicates state than text would be,
+                           and a meaningful scope reduction versus a full
+                           font renderer.
+
+                           All three THERMOSTAT_OUTPUT_TYPE values, both
+                           with and without the rotary encoder, and all
+                           three DISPLAY_TYPE values (plus the DISPLAY_NONE
+                           default) are Docker build-verified; not
+                           hardware-tested (none of this device type's
+                           hardware — OpenTherm adapter board, rotary
+                           encoder, or any of the three displays — was
+                           physically available when written).
+
+                           Wizard integration surfaced one real, previously
+                           latent structural gap: renderConfigureDevice's
+                           left-sidebar picker rendering was an if/else-if
+                           chain treating componentOptions (sensor model),
+                           hasVariableButtonCount, and extraPickers as
+                           mutually exclusive — true for every device type
+                           until this one, which genuinely needs a sensor
+                           picker AND two extraPickers (Output, Display)
+                           at once. Restructured so componentOptions/
+                           hasVariableButtonCount (still mutually exclusive
+                           with each other — no device type has needed
+                           both) can coexist with extraPickers in the same
+                           left sidebar, separated by the same `<hr>` rule
+                           extraPickers' own multiple entries already use.
+                           The rotary encoder's checkbox+3-GPIO-fields
+                           block is a deliberate parallel duplicate of the
+                           rgbStatusLed mechanism (new `rotaryEncoder`
+                           field, `makeRotaryEncoder()` factory, its own
+                           render/validate/sed/review wiring) rather than
+                           a generalized "array of optional pin blocks"
+                           refactor — lower risk (zero changes to the
+                           other ten device types' existing rgbStatusLed
+                           code path) and matches this repo's own
+                           established copy-and-adapt convention.
+                           Output/Display both reuse the existing
+                           extraPickers `pins`-per-option mechanism
+                           unchanged (RELAY: 2 pins, BINDING: 0 pins,
+                           OPENTHERM: 2 pins; GC9A01/ST7789: 5 SPI pins
+                           each, SSD1306: 2 I2C pins, DISPLAY_NONE: 0
+                           pins) — zero new mechanism needed there, only
+                           new COMPONENT_LIBRARY entries. RGB status LED
+                           defaults (GPIO 0/12/23) are this repo's first
+                           to knowingly reuse boot-strapping pins as
+                           defaults — flagged explicitly in a code
+                           comment — since this device type's unusually
+                           large number of optional peripherals (sensor +
+                           relay/OpenTherm + encoder + SPI display) simply
+                           runs out of the classic ESP32's ~17 usable
+                           GPIOs otherwise.
+  partitions.csv           same OTA + fctry layout as firmware/light/
+  sdkconfig.defaults        same as firmware/light/, plus
+                           CONFIG_SPI_MASTER_ISR_IN_IRAM=n (see above)
 tools/
   dev.sh                  opens the Docker dev environment
   gen_factory.sh          local QR + factory partition generator
@@ -1483,7 +1749,45 @@ SECURITY.md               flash encryption / secure boot / signed OTA guidance
    `app_identification_cb`, not just this one, and was explicitly scoped
    out of this same sitting to keep this chip-expansion change reviewable
    on its own.
-2. Implement Matter **OTA** — partially done. All ten firmware types ship
+
+   An eleventh device type, `firmware/thermostat/` (Thermostat, Heat +
+   Cool), followed the RGB Status LED / Factory Reset cross-cutting work
+   below — this repo's first device type with a genuine control loop
+   (compares a measured value against a setpoint and drives an output)
+   rather than a direct command pass-through or plain sensor readout.
+   Requested with real ambition from the start: Heat + Cool (not
+   Heat-only, the initially-offered smaller scope), specifically usable
+   with European heating boilers via three genuinely different output
+   mechanisms requested together — direct relay wiring (a boiler's
+   standard T1-T2 volt-free contact input), a bound remote relay module
+   (Matter's own Binding cluster, reusing firmware/switch/'s existing
+   client-invoke pattern), and a full native OpenTherm master — plus,
+   mid-session, an optional rotary encoder and a choice of three local
+   displays (GC9A01 round TFT, ST7789 bar TFT, SSD1306 OLED). See the
+   device type's own repository-layout entry above for the complete
+   technical detail; the headline points: `endpoint::thermostat::create()`
+   turned out to be a complete, directly usable esp-matter helper (unlike
+   color-light's extended_color_light gap); the OpenTherm protocol was
+   verified against the OpenTherm Association's own Protocol Specification
+   v2.2 PDF (fetched and read via pdftotext) with the GPIO-level driver
+   logic ported from Ihor Melnyk's real, widely-used opentherm_library;
+   and a genuine Docker-build-caught IRAM overflow (68 bytes, from the SPI
+   display driver on top of everything else this device type already
+   does) was fixed via a real ESP-IDF Kconfig option
+   (`CONFIG_SPI_MASTER_ISR_IN_IRAM=n`) rather than cutting scope. Wizard
+   integration surfaced one real, previously-latent structural gap:
+   `renderConfigureDevice`'s left-sidebar rendering assumed a sensor-model
+   picker and `extraPickers` were mutually exclusive (true for every
+   device type until this one, which needs both at once) — fixed by
+   letting them coexist in the same sidebar. All three output modes, the
+   rotary encoder, and all three displays are Docker build-verified
+   across every combination tested; none of this device type's hardware
+   (an OpenTherm adapter board, a rotary encoder, or any of the three
+   displays) was physically available when written, so nothing here is
+   hardware-tested yet — the first genuinely large gap between
+   build-verified and hardware-verified for a device type in this repo,
+   worth closing before treating it as done the way the other ten are.
+2. Implement Matter **OTA** — partially done. All eleven firmware types ship
    `CONFIG_ENABLE_OTA_REQUESTOR=y`, which adds the OTA Requestor cluster
    to the root node endpoint entirely via Kconfig — esp-matter's own core
    startup (`esp_matter_core.cpp`) calls

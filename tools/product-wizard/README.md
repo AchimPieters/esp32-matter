@@ -29,8 +29,9 @@ open tools/product-wizard/index.html
   Sensor" (`firmware/light-sensor/`), "Dimmable Light"
   (`firmware/dimmable-light/`), "Window Covering"
   (`firmware/window-covering/`), "Color Light"
-  (`firmware/color-light/`), or "Addressable LED Strip"
-  (`firmware/addressable-light/`). All ten are real, buildable
+  (`firmware/color-light/`), "Addressable LED Strip"
+  (`firmware/addressable-light/`), or "Thermostat"
+  (`firmware/thermostat/`). All eleven are real, buildable
   firmware, not just UI placeholders. Each card has its own hand-drawn
   line-art icon (`DEVICE_TYPE_ICONS` in `index.html`), in the spirit of
   Apple's own SF Symbols/HomeKit accessory icons — not the actual Apple
@@ -648,14 +649,53 @@ machine and a power-cycle reset procedure neither existed here yet:
   `#define`s, the mechanism is always compiled in, so the box is purely
   informational.
 
-Both features are Docker build-verified across all ten device types; not
-yet hardware-tested.
+Both features are Docker build-verified across all ten device types that
+existed at the time (`firmware/thermostat/`, added afterward, got both
+from the start — see below); not yet hardware-tested.
+
+An eleventh device type, `firmware/thermostat/` (Heat + Cool), followed —
+this repo's first with a genuine control loop rather than a direct
+command pass-through or plain sensor readout, and requested with real
+ambition: three genuinely different ways to actually drive heat/cool
+demand (direct relay wiring, a bound remote relay module via Matter's own
+Binding cluster, and a full native OpenTherm master), plus an optional
+rotary encoder and a choice of three local displays. See
+`CLAUDE.md`'s repository-layout entry for the complete technical
+detail. The wizard side needed one genuinely new structural fix, not just
+new data: `renderConfigureDevice`'s left-sidebar rendering had always
+treated a device type's sensor-model picker (`componentOptions`) and its
+`extraPickers` as mutually exclusive (an if/else-if chain) — true for
+every device type until this one, which needs a sensor picker (local
+temperature) AND two `extraPickers` (Output, Display) at the same time.
+Fixed by letting them coexist and stack in the same sidebar, separated by
+the same `<hr>` rule `extraPickers`' own multiple entries already used
+when more than one was present. The new optional rotary-encoder
+checkbox + 3-GPIO-fields block is a deliberate parallel duplicate of the
+existing `rgbStatusLed` mechanism (`makeRotaryEncoder()`, its own
+`rotaryEncoder` product field, full render/validate/sed/review wiring)
+rather than a shared "array of optional pin blocks" refactor — lower
+risk (zero changes to the other ten device types' existing code path)
+and matches this repo's own established copy-and-adapt convention over
+premature shared abstraction. The Output and Display pickers themselves
+needed no new wizard mechanism at all — both reuse the existing
+`extraPickers` `pins`-per-option shape unchanged (Relay: 2 pins,
+Binding: 0 pins, OpenTherm: 2 pins; GC9A01/ST7789: 5 SPI pins each,
+SSD1306: 2 I2C pins). Verified with the same Node.js sandboxed
+regression-check pattern used throughout this file (including the
+`isProductComplete`-before-any-render check and the exact generated sed
+commands for a realistic Relay+encoder+GC9A01 configuration) — all
+checks passed on the first run after the structural sidebar fix above.
+Docker build-verified across all three output modes, with and without
+the rotary encoder, and all three displays; not yet hardware-tested — no
+OpenTherm adapter board, rotary encoder, or any of the three displays
+was physically available when this was built.
 
 ## Known limitations
 
-- Ten device types exist (`On/Off Light`, `On/Off Switch`, `Contact
+- Eleven device types exist (`On/Off Light`, `On/Off Switch`, `Contact
   Sensor`, `Outlet`, `Temperature Sensor`, `Light Sensor`, `Dimmable
-  Light`, `Window Covering`, `Color Light`, `Addressable LED Strip`) —
+  Light`, `Window Covering`, `Color Light`, `Addressable LED Strip`,
+  `Thermostat`) —
   light/switch/contact/outlet are all digital GPIO, temperature is this
   repo's first non-GPIO sensor (I2C, single-wire, or 1-Wire depending
   which of its 7 supported chips you pick), light sensor is the first
@@ -729,6 +769,14 @@ yet hardware-tested.
   test PAA is never on it. That's an ecosystem-level restriction, not a
   bug here (see the comment at the top of `tools/gen_factory.sh`). Home
   Assistant and chip-tool don't have this restriction.
+- `firmware/thermostat/` is the newest device type and, unlike the other
+  ten, none of its hardware was available when it was built: no OpenTherm
+  adapter board (so the OPENTHERM output mode is protocol-verified and
+  Docker build-verified only, never tested against a real boiler), no
+  rotary encoder, and none of the three selectable displays. It's the
+  first genuinely large gap in this repo between "build-verified" and
+  "hardware-verified" for a whole device type — worth closing before
+  relying on it the way the other ten have been.
 
 ## Design notes
 
