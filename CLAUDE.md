@@ -1106,6 +1106,119 @@ firmware/thermostat/      Thermostat (Heat + Cool) — eleventh device type,
   partitions.csv           same OTA + fctry layout as firmware/light/
   sdkconfig.defaults        same as firmware/light/, plus
                            CONFIG_SPI_MASTER_ISR_IN_IRAM=n (see above)
+firmware/camera/          Matter Camera — twelfth device type, and the
+                           first that doesn't follow this repo's own
+                           "one ESP32 chip, one self-contained
+                           firmware image, no external SDKs" pattern at
+                           all — a verbatim copy of esp-matter's own
+                           reference `examples/camera` (Public Domain/
+                           CC0 per its own file headers), reproduced
+                           here rather than rewritten because
+                           reimplementing ~5,300 lines of production
+                           WebRTC/Matter integration code from scratch
+                           would be both infeasible in any reasonable
+                           time and strictly worse than reusing
+                           Espressif's own tested implementation — the
+                           same "port a real, working reference rather
+                           than guess" principle already used for
+                           SM2335EGH/APA102 in
+                           firmware/addressable-light/ and OpenTherm in
+                           firmware/thermostat/, just at a much larger
+                           scale. See firmware/camera/README.md's own
+                           preamble (added by this repo, everything
+                           after it is Espressif's own unmodified
+                           README) for the full detail; summarized here:
+  main/app_main.cpp        WebRTCTransportProvider (real SDP offer/
+                           answer + ICE candidate exchange — the actual
+                           Matter cluster commands: SolicitOffer/
+                           ProvideOffer/ProvideAnswer/
+                           ProvideICECandidates/EndSession) +
+                           CameraAvStreamManagement (audio/video/
+                           snapshot features, up to 1080p/120fps,
+                           kMaxNetworkBandwidthbps 128Mbps) — genuine
+                           production camera specs, not a toy example,
+                           confirmed by reading camera-device.h's own
+                           constants directly. Needs real Matter
+                           signaling AND real video capture/H.264
+                           encoding running at once — more than any
+                           single chip this repo otherwise targets can
+                           do, so Espressif's own answer (and this
+                           file's) is a **two-chip split architecture**:
+                           an ESP32-P4 (camera + hardware video encode)
+                           and an ESP32-C6 (Wi-Fi/BLE + Matter), both on
+                           one **ESP32-P4 Function EV Board**, talking
+                           over SDIO. `firmware/camera/` is only the
+                           **ESP32-C6 signaling half** — builds for
+                           `esp32c6` (or `esp32c5`), not this repo's
+                           default `esp32` target. The ESP32-P4 media
+                           half is not part of this repo at all — it's
+                           the KVS SDK's own `streaming_only` example,
+                           built straight from that externally-cloned
+                           SDK per Espressif's own instructions.
+                           Needs a real external SDK dependency, unlike
+                           every other device type here: the [Amazon
+                           Kinesis Video Streams WebRTC
+                           SDK](https://github.com/awslabs/amazon-kinesis-video-streams-webrtc-sdk-c)
+                           (`beta-reference-esp-port` branch, with its
+                           own submodules — libwebsockets, libsrtp2,
+                           usrsctp, the KVS PIC/producer-c libraries),
+                           cloned separately and pointed to via
+                           `KVS_SDK_PATH` — this repo doesn't vendor or
+                           bundle it, per the same "no hidden code"
+                           principle everything else here follows: you
+                           clone the dependency yourself, the same way
+                           you already clone this repo and pull the
+                           Docker image. Genuinely build-verified, not
+                           assumed: built successfully for `esp32c6` in
+                           the pinned `espressif/esp-matter:
+                           release-v1.6_idf_v5.5.4` Docker image with
+                           `KVS_SDK_PATH` pointing at a real, freshly
+                           cloned + submodule-initialized (`git
+                           submodule update --init --depth 1`, per
+                           Espressif's own instructions) copy of that
+                           SDK. Not hardware-tested — an ESP32-P4
+                           Function EV Board was not physically
+                           available when this was added; the first
+                           device type in this repo where even getting
+                           hardware to test on is several tiers more
+                           specialized/expensive than everything else
+                           here. Not offered in `tools/product-wizard/`
+                           — its whole data model assumes one device
+                           type = one chip = one firmware image on one
+                           board, which a two-chip/two-firmware/
+                           external-SDK device fundamentally doesn't
+                           fit; build and flash this one by hand,
+                           following Espressif's own instructions in
+                           firmware/camera/README.md.
+  main/camera-device.cpp,  the actual `CameraDeviceInterface`/
+  main/camera-device.h      `CameraHALInterface` implementation +
+                           delegate wiring for both clusters —
+                           Espressif's own code, unmodified.
+  main/clusters/            `CameraAvStreamManagement` and
+                           `WebRTCTransportProvider` cluster delegate
+                           implementations — Espressif's own code,
+                           unmodified.
+  main/webrtc/              the actual WebRTC signaling/transport glue
+                           against the KVS SDK's own APIs — Espressif's
+                           own code, unmodified.
+  README.md                 Espressif's own README (build/flash
+                           instructions for both halves), with a new
+                           preamble section (added by this repo) up top
+                           explaining all of the above before their own
+                           content starts.
+  CMakeLists.txt,           Espressif's own build configuration,
+  main/CMakeLists.txt,      unmodified — deliberately NOT adapted to
+  partitions.csv,           this repo's own simplified CMakeLists
+  sdkconfig.defaults*        pattern (the one every other device type
+                           here uses, which explicitly avoids
+                           `$ESP_MATTER_PATH/examples/common` — see
+                           CLAUDE.md's own "Build (inside the
+                           container)" section above) since this
+                           example's working, tested build already
+                           depends on that shared infrastructure
+                           (device_hal/device paths, examples/common)
+                           in ways this repo's simpler pattern was never
+                           designed to replace.
 tools/
   dev.sh                  opens the Docker dev environment
   gen_factory.sh          local QR + factory partition generator
@@ -1787,7 +1900,51 @@ SECURITY.md               flash encryption / secure boot / signed OTA guidance
    hardware-tested yet — the first genuinely large gap between
    build-verified and hardware-verified for a device type in this repo,
    worth closing before treating it as done the way the other ten are.
-2. Implement Matter **OTA** — partially done. All eleven firmware types ship
+
+   A twelfth device type, `firmware/camera/` (Matter Camera), followed
+   immediately — chosen deliberately as a real stress test of this
+   repo's own conventions rather than something scoped down to fit them.
+   Real Matter Camera (`WebRTCTransportProvider` +
+   `CameraAvStreamManagement`, live WebRTC video) needs simultaneous
+   Matter signaling and real hardware video encoding — more than any
+   single chip in this repo's existing module list can do, so this is a
+   verbatim copy of esp-matter's own reference `examples/camera`
+   (Public Domain/CC0), not a rewrite: reimplementing ~5,300 lines of
+   production WebRTC/Matter integration from scratch would be both
+   infeasible and strictly worse than reusing Espressif's own tested
+   code, the same reasoning already applied at smaller scale to
+   SM2335EGH/APA102/OpenTherm. Before committing to this, the user was
+   asked directly (three real options: build the full ESP32-P4+C6
+   dual-chip version matching Espressif's own architecture; build a
+   much simpler non-Matter-compliant "best-effort" JPEG-over-HTTP camera
+   on an ordinary single ESP32 instead; or skip camera entirely for a
+   device type that actually fits this repo's existing single-chip
+   model) — the user chose the full, real, Matter-compliant version,
+   knowingly accepting everything that implies. This is the first
+   device type in this repo that doesn't fit its own established "one
+   ESP32 chip, one self-contained firmware image, no external SDKs"
+   pattern at all: it's a two-chip split architecture (ESP32-P4 for
+   camera + hardware video encode, ESP32-C6 for Wi-Fi/BLE + Matter, one
+   physical **ESP32-P4 Function EV Board**, talking over SDIO), of which
+   `firmware/camera/` is only the ESP32-C6 signaling half — the ESP32-P4
+   media half is the Amazon Kinesis Video Streams WebRTC SDK's own
+   `streaming_only` example, not part of this repo — and it needs that
+   external SDK (cloned separately, `beta-reference-esp-port` branch,
+   with its own five submodules) rather than only the pinned Docker
+   image everything else here needs. Actually, genuinely
+   Docker-build-verified rather than assumed to work: the real SDK was
+   cloned (shallow, `--depth 1`, matching Espressif's own instructions),
+   its submodules initialized, and `idf.py build` for `esp32c6` run
+   against it inside the pinned `espressif/esp-matter:
+   release-v1.6_idf_v5.5.4` image — succeeded. Not hardware-tested (no
+   ESP32-P4 Function EV Board was physically available), and
+   deliberately not offered in `tools/product-wizard/` at all — its
+   one-chip-one-firmware-one-board data model has no way to represent a
+   two-chip/two-firmware/external-SDK device honestly. See
+   firmware/camera/README.md's own preamble (this repo's own addition,
+   ahead of Espressif's unmodified original README) and CLAUDE.md's own
+   repository-layout entry above for the complete detail.
+2. Implement Matter **OTA** — partially done. All twelve firmware types ship
    `CONFIG_ENABLE_OTA_REQUESTOR=y`, which adds the OTA Requestor cluster
    to the root node endpoint entirely via Kconfig — esp-matter's own core
    startup (`esp_matter_core.cpp`) calls

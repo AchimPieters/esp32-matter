@@ -348,9 +348,28 @@ sourcing. Docker build-verified across every output-mode/encoder/display
 combination; not yet hardware-tested (none of this device type's
 hardware was physically available when written).
 
-To add another type, copy any of the eleven folders and swap the endpoint
-type in `app_main.cpp` — esp-matter provides ready-made types like
-`occupancy_sensor`, `smoke_co_alarm`, `door_lock`, and many more.
+`firmware/camera/` (Matter Camera) is this repo's twelfth device type,
+and unlike every other one, not something to copy-and-adapt: it's a
+verbatim copy of esp-matter's own reference camera example (Public
+Domain/CC0), needed because real Matter Camera (`WebRTCTransportProvider`
++ `CameraAvStreamManagement`, live WebRTC video) requires simultaneous
+Matter signaling and real hardware video encoding — more than any single
+chip elsewhere in this repo can do. It's a two-chip split architecture
+(ESP32-P4 for camera/video encode + ESP32-C6 for Matter, one physical
+**ESP32-P4 Function EV Board**) where `firmware/camera/` is only the
+ESP32-C6 signaling half, and needs a real external SDK dependency (the
+Amazon Kinesis Video Streams WebRTC SDK, cloned separately) that this
+repo doesn't bundle. See `firmware/camera/README.md`'s own preamble and
+CLAUDE.md's repository-layout entry for the full detail. Genuinely
+Docker-build-verified with the real external SDK cloned and built
+against it; not hardware-tested (no ESP32-P4 Function EV Board was
+available), and not offered in the product wizard at all — its
+one-chip-one-firmware data model can't represent this honestly.
+
+To add another (simpler) type, copy any of the other eleven folders and
+swap the endpoint type in `app_main.cpp` — esp-matter provides ready-made
+types like `occupancy_sensor`, `smoke_co_alarm`, `door_lock`, and many
+more.
 
 ## Updates
 
@@ -359,7 +378,7 @@ but the multi-GB Docker image stalled out on GitHub-hosted runners, so it
 was reverted rather than left flaky). Build + flash a new version yourself
 following the Quick Start steps above whenever you change `app_main.cpp`.
 
-All eleven device types also ship with Matter's **OTA Requestor** cluster
+All twelve device types also ship with Matter's **OTA Requestor** cluster
 enabled (`CONFIG_ENABLE_OTA_REQUESTOR=y`), so once a device is bound to an
 OTA Provider node on the same fabric, it can fetch and install updates over
 the air using the existing `ota_0`/`ota_1` A/B partition slots — no app

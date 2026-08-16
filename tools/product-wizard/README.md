@@ -692,6 +692,14 @@ was physically available when this was built.
 
 ## Known limitations
 
+- `firmware/camera/` (Matter Camera, this repo's twelfth device type)
+  is deliberately **not** offered here — it's a two-chip (ESP32-P4 +
+  ESP32-C6), two-firmware, external-SDK device (a verbatim copy of
+  esp-matter's own reference camera example), and this wizard's entire
+  data model assumes one device type = one chip = one firmware image on
+  one board. Forcing it into that model would misrepresent how it
+  actually needs to be built and flashed. Build and flash it by hand
+  following `firmware/camera/README.md`'s own instructions.
 - Eleven device types exist (`On/Off Light`, `On/Off Switch`, `Contact
   Sensor`, `Outlet`, `Temperature Sensor`, `Light Sensor`, `Dimmable
   Light`, `Window Covering`, `Color Light`, `Addressable LED Strip`,
