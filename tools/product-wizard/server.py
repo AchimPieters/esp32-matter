@@ -40,8 +40,8 @@ hardened server — proportionate for that, not enterprise-grade):
     browser's own (already-careful) string-building in index.html —
     firmware directory, target chip, and bin name all come from
     FIRMWARE_DIRS/MODULES below, not from client-supplied strings; sed
-    defineName/value pairs are regex-validated against the exact shapes
-    buildSedCommands() in index.html produces; the serial port is checked
+    name/value pairs are regex-validated against the exact shapes
+    buildSedCommandPairs() in index.html produces; the serial port is checked
     against the actual list of ports this machine currently reports
     (list_serial_ports()), not an arbitrary path. A request that doesn't
     match is rejected outright — never silently sanitized and run anyway.
@@ -192,6 +192,67 @@ def run_job(job, cmd, cwd, on_done=None):
     threading.Thread(target=worker, daemon=True).start()
 
 
+# Serial ports currently held open by a running monitor job, keyed by job
+# id — lets /api/monitor/stop close the real handle rather than only
+# setting a flag the read loop might not notice for a while.
+SERIAL_HANDLES = {}
+SERIAL_BAUD_RATES = {9600, 74880, 115200, 230400}  # same choices as the
+# existing Web-Serial-based monitor's own <select> in index.html, kept in
+# sync by hand for the same reason FIRMWARE_DIRS/MODULES above are.
+
+
+def run_serial_monitor_job(job, port, baud):
+    """Live serial reader — this is the Safari fallback for the wizard's
+    existing Test Product step: browsers that don't implement the Web
+    Serial API (Safari, and WebKit has stated it does not intend to —
+    their own public standards-positions list marks it "negative") can't
+    read a serial port from JavaScript at all, with or without an
+    extension (a Safari Web Extension is still confined to the same
+    extension API surface, which has no serial access; only a full,
+    separately-signed Safari *App* Extension with a native-messaging-style
+    helper process could do it — strictly more moving parts than just
+    letting this already-running local server do the read itself, which
+    works in literally any browser, not only Safari). Reuses the exact
+    same generic /api/jobs/<id>/stream SSE endpoint every other job type
+    already streams through — the only difference from run_job() above is
+    that this reads from a live serial port instead of a subprocess, and
+    keeps going indefinitely until /api/monitor/stop is called rather than
+    finishing on its own."""
+
+    def worker():
+        try:
+            import serial  # local import: only this one code path needs pyserial
+        except ImportError:
+            job.append("[server] pyserial is not installed — run: pip install pyserial")
+            job.status = "error"
+            return
+        try:
+            ser = serial.Serial(port, baudrate=baud, timeout=1)
+        except Exception as exc:  # noqa: BLE001
+            job.append(f"[server] Could not open {port}: {exc}")
+            job.status = "error"
+            return
+        SERIAL_HANDLES[job.id] = ser
+        try:
+            while job.status == "running":
+                try:
+                    raw = ser.readline()  # blocks at most `timeout` seconds
+                except Exception:
+                    break  # port closed (Stop was clicked) or device unplugged
+                if raw:
+                    job.append(raw.decode("utf-8", errors="replace").rstrip("\r\n"))
+        finally:
+            SERIAL_HANDLES.pop(job.id, None)
+            try:
+                ser.close()
+            except Exception:  # noqa: BLE001
+                pass
+            if job.status == "running":
+                job.status = "done"
+
+    threading.Thread(target=worker, daemon=True).start()
+
+
 def docker_run_argv(inner_bash):
     return [
         "docker", "run", "--rm", "-v", f"{REPO_ROOT}:/project", "-w", "/project",
@@ -216,7 +277,7 @@ def validate_target(body):
 def validate_sed_commands(body):
     out = []
     for item in body.get("sedCommands", []):
-        name = item.get("defineName", "")
+        name = item.get("name", "")
         value = item.get("value", "")
         if not DEFINE_NAME_RE.match(name):
             raise ValueError(f"Rejected defineName: {name!r}")
@@ -351,6 +412,10 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 self._start_flash(body)
             elif path == "/api/package":
                 self._start_package(body)
+            elif path == "/api/monitor/start":
+                self._start_monitor(body)
+            elif path == "/api/monitor/stop":
+                self._stop_monitor(body)
             else:
                 self._send_json({"error": "not found"}, 404)
         except ValueError as exc:
@@ -480,6 +545,37 @@ class Handler(http.server.BaseHTTPRequestHandler):
         job = new_job("flash")
         run_job(job, cmd, REPO_ROOT)
         self._send_json({"jobId": job.id})
+
+    # --- /api/monitor/*: live serial log — the Safari fallback for the
+    # wizard's existing Web-Serial-based Test Product monitor (see
+    # run_serial_monitor_job()'s own comment for why this exists at all,
+    # not just in Chrome/Edge). ---
+    def _start_monitor(self, body):
+        port = body.get("port")
+        available_ports = list_serial_ports() or []
+        if port not in available_ports:
+            raise ValueError(f"Port {port!r} is not in the currently detected port list {available_ports}")
+        baud = body.get("baud")
+        if baud not in SERIAL_BAUD_RATES:
+            raise ValueError(f"Unsupported baud rate: {baud!r}")
+
+        job = new_job("monitor")
+        run_serial_monitor_job(job, port, baud)
+        self._send_json({"jobId": job.id})
+
+    def _stop_monitor(self, body):
+        job_id = body.get("jobId")
+        job = JOBS.get(job_id)
+        if not job:
+            raise ValueError("Unknown monitor jobId")
+        job.status = "done"
+        ser = SERIAL_HANDLES.get(job_id)
+        if ser is not None:
+            try:
+                ser.close()  # unblocks the read loop immediately instead of waiting out its 1s timeout
+            except Exception:  # noqa: BLE001
+                pass
+        self._send_json({"ok": True})
 
     # --- /api/package: zip the already-built .bin files + a flash script ---
     def _start_package(self, body):

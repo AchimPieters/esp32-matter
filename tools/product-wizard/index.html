@@ -2991,12 +2991,15 @@ function renderTestProduct(p) {
         <code>docs/getting-started.md</code>).
       </p>
 
-      ${serialState.supported ? renderSerialMonitor() : `
+      ${serialState.supported ? renderSerialMonitor() : (interactiveModeAvailable() ? renderCompanionSerialMonitor() : `
         <div class="warn-box">
           &#9888; Serial Monitor needs the Web Serial API — supported in
-          Chrome or Edge, not this browser.
+          Chrome or Edge, not this browser. Run
+          <code>tools/product-wizard/server.py</code> and open the wizard
+          through it instead (see its own README) for a serial monitor
+          that works here too, including in Safari.
         </div>
-      `}
+      `)}
 
       ${renderWizardFooter(p, true)}
     </div>
@@ -3094,6 +3097,182 @@ function updateSerialUI() {
   btn.textContent = serialState.connected ? "Disconnect" : "Connect";
   status.textContent = serialState.connected ? "Connected" : "Not connected";
   status.classList.toggle("connected", serialState.connected);
+}
+
+/* --- Companion-server-backed serial monitor — the Safari fallback -----
+ * Safari doesn't implement the Web Serial API at all, and WebKit's own
+ * public standards-positions list marks it "negative" (not planned) — so
+ * serialState.supported above is simply false there, with no browser-side
+ * workaround; a Safari (Web) Extension doesn't help either, since
+ * extensions share the same API surface as the page itself and still have
+ * no serial access. When tools/product-wizard/server.py is running
+ * (interactiveModeAvailable()), it can read the port itself via pyserial
+ * and stream it down over the exact same job/SSE mechanism Build & Flash
+ * already uses — this works in literally any browser, not just as a
+ * Safari-specific fix, which is why it's a companion-server feature
+ * rather than a Safari App Extension (see server.py's own
+ * run_serial_monitor_job() comment for the full reasoning). Deliberately
+ * a parallel implementation of serialState/renderSerialMonitor() above,
+ * not a shared one — same "copy-and-adapt over premature shared
+ * abstraction" convention used throughout this repo, and the two are
+ * genuinely different underneath (Web Serial's own port/reader objects
+ * vs. an EventSource against a companion-server job). */
+const companionSerialState = {
+  connected: false,
+  jobId: null,
+  ports: [],
+  source: null,
+};
+
+function renderCompanionSerialMonitor() {
+  return `
+    <div class="serial-panel">
+      <div class="serial-controls">
+        <select id="companion-serial-port">
+          ${companionSerialState.ports.length ? companionSerialState.ports.map((port) => `
+            <option value="${escapeHtml(port)}">${escapeHtml(port)}</option>
+          `).join("") : `<option value="">No ports detected — plug in your board</option>`}
+        </select>
+        <select id="companion-serial-baud" title="Baud rate">
+          <option value="115200">115200 (idf.py monitor default)</option>
+          <option value="74880">74880 (ROM bootloader)</option>
+          <option value="230400">230400</option>
+          <option value="9600">9600</option>
+        </select>
+        <button class="secondary" id="companion-serial-refresh-btn" type="button">Refresh ports</button>
+        <button class="secondary" id="companion-serial-connect-btn">${companionSerialState.connected ? "Disconnect" : "Connect"}</button>
+        <button class="link" id="companion-serial-clear-btn">Clear log</button>
+        <span class="status-dot ${companionSerialState.connected ? "connected" : ""}" id="companion-serial-status">${companionSerialState.connected ? "Connected" : "Not connected"}</span>
+      </div>
+      <pre class="serial-log" id="companion-serial-log"></pre>
+      <p class="field-note" style="margin-top:8px;">
+        Via <code>tools/product-wizard/server.py</code> (works in Safari,
+        or any other browser without the Web Serial API) — reading the
+        port server-side instead of directly from this page.
+      </p>
+    </div>
+  `;
+}
+
+// Repopulates just the port <select>'s options directly, rather than
+// re-rendering the whole panel — refreshing ports while already connected
+// shouldn't tear down the live log or the open EventSource.
+async function companionSerialRefreshPorts() {
+  try {
+    const res = await fetch("/api/ports", { headers: wizardApiHeaders() });
+    const data = await res.json();
+    companionSerialState.ports = data.ports || [];
+  } catch (err) {
+    companionSerialState.ports = [];
+  }
+  const select = document.getElementById("companion-serial-port");
+  if (!select) return;
+  const previous = select.value;
+  select.innerHTML = companionSerialState.ports.length
+    ? companionSerialState.ports.map((port) => `<option value="${escapeHtml(port)}">${escapeHtml(port)}</option>`).join("")
+    : `<option value="">No ports detected — plug in your board</option>`;
+  if (companionSerialState.ports.includes(previous)) select.value = previous;
+}
+
+function companionSerialAppendLog(text) {
+  const log = document.getElementById("companion-serial-log");
+  if (!log) return;
+  log.textContent += text + "\n";
+  log.scrollTop = log.scrollHeight;
+}
+
+async function companionSerialConnect() {
+  const portSelect = document.getElementById("companion-serial-port");
+  const baudSelect = document.getElementById("companion-serial-baud");
+  const port = portSelect ? portSelect.value : null;
+  const baud = baudSelect ? parseInt(baudSelect.value, 10) : 115200;
+  if (!port) {
+    companionSerialAppendLog("[error] No serial port selected.");
+    return;
+  }
+  try {
+    const res = await fetch("/api/monitor/start", {
+      method: "POST",
+      headers: wizardApiHeaders({ "Content-Type": "application/json" }),
+      body: JSON.stringify({ port, baud }),
+    });
+    if (!res.ok) throw new Error((await res.json()).error || "Could not start monitor");
+    const { jobId } = await res.json();
+    companionSerialState.jobId = jobId;
+    companionSerialState.connected = true;
+    updateCompanionSerialUI();
+
+    const source = new EventSource(`/api/jobs/${jobId}/stream?token=${encodeURIComponent(window.__WIZARD_TOKEN__)}`);
+    companionSerialState.source = source;
+    source.onmessage = (event) => {
+      const data = JSON.parse(event.data);
+      if (data.line !== undefined) companionSerialAppendLog(data.line);
+    };
+    source.addEventListener("done", () => {
+      source.close();
+      companionSerialState.connected = false;
+      companionSerialState.source = null;
+      updateCompanionSerialUI();
+    });
+    source.onerror = () => {
+      source.close();
+      companionSerialState.connected = false;
+      companionSerialState.source = null;
+      updateCompanionSerialUI();
+    };
+  } catch (err) {
+    companionSerialAppendLog(`[error] ${err.message}`);
+  }
+}
+
+async function companionSerialDisconnect() {
+  if (companionSerialState.source) {
+    companionSerialState.source.close();
+    companionSerialState.source = null;
+  }
+  if (companionSerialState.jobId) {
+    try {
+      await fetch("/api/monitor/stop", {
+        method: "POST",
+        headers: wizardApiHeaders({ "Content-Type": "application/json" }),
+        body: JSON.stringify({ jobId: companionSerialState.jobId }),
+      });
+    } catch (err) {
+      // Best-effort — the server-side read loop also self-stops within its
+      // own 1s poll timeout even if this request fails.
+    }
+  }
+  companionSerialState.connected = false;
+  companionSerialState.jobId = null;
+  updateCompanionSerialUI();
+}
+
+function updateCompanionSerialUI() {
+  const btn = document.getElementById("companion-serial-connect-btn");
+  const status = document.getElementById("companion-serial-status");
+  if (!btn || !status) return;
+  btn.textContent = companionSerialState.connected ? "Disconnect" : "Connect";
+  status.textContent = companionSerialState.connected ? "Connected" : "Not connected";
+  status.classList.toggle("connected", companionSerialState.connected);
+}
+
+function bindCompanionSerialEvents() {
+  const connectBtn = document.getElementById("companion-serial-connect-btn");
+  if (connectBtn) {
+    connectBtn.addEventListener("click", () => {
+      if (companionSerialState.connected) companionSerialDisconnect();
+      else companionSerialConnect();
+    });
+  }
+  const clearBtn = document.getElementById("companion-serial-clear-btn");
+  if (clearBtn) {
+    clearBtn.addEventListener("click", () => {
+      const log = document.getElementById("companion-serial-log");
+      if (log) log.textContent = "";
+    });
+  }
+  const refreshBtn = document.getElementById("companion-serial-refresh-btn");
+  if (refreshBtn) refreshBtn.addEventListener("click", () => companionSerialRefreshPorts());
 }
 
 /* Selection completeness, shared by Customise & Review and Generate
@@ -3397,7 +3576,17 @@ function renderCustomiseReview(p) {
  * bake the real absolute path into the generated command. Returns null if
  * the page isn't being served as file:// from that expected location (e.g.
  * you renamed the folder, or it's running off a web server). */
+// Set once, asynchronously, from /api/health when interactive mode is
+// available (see the fetch call near the bottom of this script) — checked
+// here first since the http:// page served by server.py obviously isn't
+// file://, but the server itself always knows exactly where the repo is
+// (it computed the path to open server.py from), so there's no reason to
+// fall back to the "couldn't detect, edit it by hand" warning in that
+// case the way the plain static file:// page has to.
+let interactiveServerRepoRoot = null;
+
 function detectRepoRoot() {
+  if (interactiveServerRepoRoot) return interactiveServerRepoRoot;
   if (window.location.protocol !== "file:") return null;
   const marker = "/tools/product-wizard/";
   const path = decodeURIComponent(window.location.pathname);
@@ -3504,8 +3693,10 @@ function renderGenerateFirmware(p) {
 
       ${repoRoot ? `
         <p class="field-note">
-          Detected checkout at <code>${escapeHtml(repoRoot)}</code> from this
-          page's own file:// location — both commands below are ready to
+          Detected checkout at <code>${escapeHtml(repoRoot)}</code>
+          ${interactiveServerRepoRoot ? `from <code>tools/product-wizard/server.py</code>, which already
+          knows exactly where it's running from` : `from this
+          page's own file:// location`} — both commands below are ready to
           paste as-is, no editing needed (except <code>&lt;PORT&gt;</code>).
         </p>
       ` : `
@@ -4664,6 +4855,11 @@ function bindEvents() {
   }
 
   bindInteractivePanelEvents();
+
+  if (document.getElementById("companion-serial-port")) {
+    bindCompanionSerialEvents();
+    companionSerialRefreshPorts();
+  }
 }
 
 function escapeHtml(str) {
@@ -4678,6 +4874,23 @@ function formatDate(iso) {
 }
 
 render();
+
+// Only fires when this page was served by tools/product-wizard/server.py
+// (see interactiveModeAvailable()'s own comment) — asks it for the repo
+// root it already knows, then re-renders so detectRepoRoot() above picks
+// it up instead of showing the "couldn't detect your checkout" warning
+// that only makes sense for the plain file:// workflow.
+if (interactiveModeAvailable()) {
+  fetch("/api/health", { headers: wizardApiHeaders() })
+    .then((res) => res.json())
+    .then((data) => {
+      if (data.repoRoot) {
+        interactiveServerRepoRoot = data.repoRoot;
+        render();
+      }
+    })
+    .catch(() => {}); // companion server not actually reachable — copy-paste commands just keep their file:// fallback behavior
+}
 </script>
 
 </body>

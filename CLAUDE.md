@@ -1428,14 +1428,25 @@ tools/
                            Flash"/"Generate update bin" buttons actually
                            run those same two commands live instead of
                            only producing copy-paste text; every value
-                           that reaches a shell command is validated
-                           server-side against a fixed allow-list, never
-                           trusted from the browser directly. Genuinely
-                           tested end to end against real hardware (not
-                           just Docker-build-verified): a real build,
-                           real esptool.py flash to a connected board, and
-                           a real downloadable update-bin package were all
-                           exercised for real while building this. See
+                           that reaches a shell command (or a raw serial
+                           port open) is validated server-side against a
+                           fixed allow-list, never trusted from the
+                           browser directly. Also adds a serial-monitor
+                           fallback (/api/monitor/start//stop) for
+                           browsers without the Web Serial API — Safari
+                           in particular, which WebKit has publicly said
+                           it does not intend to implement — reusing the
+                           same pyserial dependency the port-list endpoint
+                           already has, wired into the wizard's existing
+                           Test Product step as a third branch alongside
+                           the original browser-native monitor. Genuinely
+                           tested end to end against real hardware, via an
+                           actual headless-Chrome (Puppeteer) session
+                           clicking through the real UI, not just curl —
+                           which caught two real bugs (a client/server
+                           field-name mismatch, and repo-root detection
+                           only working for file:// pages) that
+                           request-shape testing alone had missed. See
                            the wizard's own README for the full detail
                            and security model.
 docs/getting-started.md   step-by-step first-device guide
@@ -2283,15 +2294,63 @@ SECURITY.md               flash encryption / secure boot / signed OTA guidance
    directly, not assumed: injection attempts (a `defineName` containing
    `; rm -rf /`, a value containing `$(whoami)`) were confirmed rejected,
    as was a request forging a foreign `Origin` header. Then genuinely
-   tested end to end against real hardware, not just exercised via curl:
-   a real `idf.py build` + `tools/gen_factory.sh` run streamed live
-   output correctly; a real serial port was detected and `esptool.py`
-   flashed a real connected board over it, confirmed by the board hard-
-   resetting and rebooting on the new firmware; and Generate update bin's
-   downloaded zip was confirmed to contain exactly the expected 4 `.bin`
-   files plus a working `flash.sh`. See `tools/product-wizard/server.py`'s
-   own header comment and `tools/product-wizard/README.md`'s "Optional:
-   interactive Build & Flash" section for the complete detail.
+   tested end to end against real hardware — not just via curl, but by
+   scripting an actual headless Chrome (Puppeteer) to click through the
+   real wizard UI against the same board this repo's other hardware tests
+   use: clicked the real Build & Flash button, watched real `idf.py
+   build`/`gen_factory.sh` output stream into the live console, confirmed
+   the QR `<img>` actually loaded image bytes (not just that the element
+   existed), picked the real board's port from the real detected-ports
+   `<select>`, clicked Flash, and watched `esptool.py` really flash it and
+   hard-reset the board into the new firmware. This real, click-driven
+   testing — not just curl — caught two genuine bugs a request-shape-only
+   test would have missed entirely: `buildSedCommandPairs()` sent
+   `{name, value}` pairs but `server.py`'s validator read
+   `item["defineName"]`, silently rejecting every real sed pair the
+   actual UI ever sent (fixed by matching the field name); and
+   `detectRepoRoot()` only recognized a `file://` URL, so the page
+   server.py itself serves (over `http://`) showed the "couldn't detect
+   your checkout" warning and `<path-to-esp32-matter>` placeholders even
+   though the server obviously already knows its own repo root (fixed by
+   exposing it through `/api/health` and preferring that value). Generate
+   update bin's downloaded zip was separately confirmed to contain
+   exactly the expected 4 `.bin` files plus a working `flash.sh`.
+
+   Immediately after, the user asked whether a Safari (browser)
+   extension could add the missing Web Serial API to Safari, since
+   WebKit has publicly stated it does not intend to implement that API
+   at all (their own standards-positions list marks it "negative"). A
+   real Safari *App* Extension with a native-messaging-style helper
+   process could in principle do this, but that's a whole separate
+   Xcode/Swift project with entitlements, code signing, and likely a
+   paid Apple Developer account for anything beyond local debug builds —
+   and a Safari *Web* Extension specifically would NOT help at all, since
+   extensions share the same API surface as the page itself and still
+   have no serial access. Resolved via AskUserQuestion in favor of the
+   much smaller alternative: since `server.py` already exists, already
+   runs locally, and already uses `pyserial` for port listing, one more
+   endpoint (`/api/monitor/start`/`/stop`, streamed through the exact
+   same generic `/api/jobs/<id>/stream` SSE mechanism Build & Flash
+   already uses) lets it read the serial port itself and stream it down
+   — working in literally any browser, not a Safari-specific fix. Wired
+   into the wizard's existing Test Product step as a third branch
+   (Web Serial supported → the original browser-native monitor; not
+   supported but the companion server is running → this new fallback;
+   neither → the original "not supported" message), a deliberate
+   parallel duplicate of the existing `serialState`/`renderSerialMonitor()`
+   code rather than a shared implementation, the same
+   "copy-and-adapt over premature shared abstraction" convention used
+   throughout this repo. Verified for real against the connected board:
+   `/api/monitor/start` opened the real port, a real hardware reset
+   (DTR/RTS pulse, the same technique this repo's other hardware tests
+   use) produced a real, complete ESP-IDF boot log — bootloader banner,
+   partition table, WiFi join, Matter session establishment — streamed
+   correctly over SSE, and `/api/monitor/stop` closed the port cleanly
+   (confirmed by immediately reopening it from a separate process with
+   no conflict). Port/baud-rate validation on these two new endpoints
+   follows the exact same server-side-allow-list discipline as
+   Build/Flash/Package above — confirmed by the same kind of rejection
+   tests (an invalid port string, an unsupported baud rate).
 2. Implement Matter **OTA** — partially done. All fourteen firmware types
    ship `CONFIG_ENABLE_OTA_REQUESTOR=y`, which adds the OTA Requestor
    cluster to the root node endpoint entirely via Kconfig — esp-matter's
