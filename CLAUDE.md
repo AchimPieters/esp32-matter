@@ -1513,6 +1513,88 @@ SECURITY.md               flash encryption / secure boot / signed OTA guidance
    multiple clean presses tested reliably on real hardware, confirming
    GPIO 0's dual role as boot-mode-select (not the debounce/ISR logic) was
    the actual culprit.
+4. Two cross-cutting features added to **all ten** device types at once
+   (not staged one at a time), both requested together after a set of
+   screenshots from a real manufacturing/config tool showing a much
+   richer "Indicators" state machine and a "Factory Reset" tab than
+   anything this repo had:
+
+   **Optional RGB status LED.** Off by default (all three GPIOs at
+   `GPIO_NUM_NC`, checked at runtime the same way `firmware/outlet/`'s
+   pre-existing single-color status LED already is — that sentinel is a
+   `gpio_num_t` enumerator, not a preprocessor macro, so `#if` can't test
+   it). When wired up, it shows real commissioning/Identify state via
+   color + a small blink/breathe pattern engine (LEDC PWM, the same
+   peripheral `firmware/dimmable-light/`/`firmware/color-light/` already
+   use — on its own timer/channels, `LEDC_TIMER_1` + channels 5-7,
+   verified against every device type's own existing LEDC usage first so
+   nothing collides). Every state and its color/timing is sourced from
+   two real, verified places, not invented from the screenshot and not
+   copied without checking it against the actual spec/SDK source first:
+   the DeviceLayer's own lifecycle events, confirmed directly in
+   connectedhomeip's `CHIPDeviceEvent.h`
+   (`kCHIPoBLEAdvertisingChange`/`kSecureSessionEstablished`/
+   `kCommissioningComplete`/`kFailSafeTimerExpired`), and the Identify
+   cluster's own `EffectIdentifierEnum`, confirmed directly in the
+   generated `Identify/Enums.h` (`kBlink`/`kBreathe`/`kOkay`/
+   `kChannelChange`/`kFinishEffect`/`kStopEffect` — the same six values
+   `app_identification_cb`'s EFFECT case already received as `effect_id`
+   in every device type here, previously left undifferentiated). See
+   `firmware/light/main/app_main.cpp`'s header comment for the full
+   state/color/timing table and its exact sourcing — every other device
+   type's own header comment points back to it rather than repeating it.
+   `firmware/outlet/` needed one real naming fix while wiring this up: it
+   already had its own unrelated single-color `status_led_*`-named
+   feature, so its new RGB version uses a distinct `rgb_status_led_*`
+   prefix throughout to avoid a silent symbol collision — caught by
+   grepping the file before adding anything, not after.
+
+   **Quick-power-cycle factory reset.** Power the device off and on 3
+   times in a row (roughly a couple of seconds each way) and it
+   factory-resets and re-enters commissioning setup mode — no button or
+   extra pin needed, matching the screenshot's own "Power off... wait 2s
+   ... power on... wait 2s... repeat 3 times" instructions, and the same
+   mechanism real plug-in/hardwired smart-home devices commonly use since
+   they often have no accessible reset button once installed (Tasmota's
+   own "Quick Power Cycle" detection works the same way). A plain counter
+   in its own `"boot_info"` NVS namespace (deliberately separate from
+   esp_matter's/Matter's own storage) increments on every boot and starts
+   a one-shot 10-second timer; if the device stays powered that long
+   without another reboot, the counter clears back to 0 (a "confirmed"
+   normal boot — so an ordinary power outage or a single unplug/replug
+   never accidentally triggers it). 3 reboots landing before that timer
+   fires calls `esp_matter::factory_reset()` (declared in
+   `esp_matter_core.h`: "Perform factory reset and erase the data stored
+   in the non volatile storage. This also restarts the device."). Its
+   call site matters: `factory_reset()`'s own implementation (read
+   directly in `esp_matter_core.cpp`) calls
+   `chip::Server::GetInstance().ScheduleFactoryReset()`, which needs the
+   Matter server already running — confirmed by cross-checking
+   esp-matter's own reference `app_reset` component
+   (`examples/common/app_reset/app_reset.cpp`), which only ever calls it
+   from a runtime button callback, never during boot. So the boot-count
+   check runs early (right after `nvs_flash_init()`) and only *decides*
+   whether a reset is due; the actual `factory_reset()` call happens
+   later in `app_main()`, after `esp_matter::start()` has completed.
+
+   Both features are Docker build-verified across all ten device types
+   (light, switch, contact-sensor, outlet, temperature-sensor,
+   light-sensor, dimmable-light, window-covering, color-light,
+   addressable-light) — not yet hardware-tested. The wizard
+   (`tools/product-wizard/`) gained a new `rgbStatusLed` mechanism on
+   `DEVICE_TYPES` (a `makeRgbStatusLed(redGpio, greenGpio, blueGpio)`
+   factory, modeled on the outlet's existing single-pin `statusLed` but
+   generalized to a 3-pin array — reusing the same per-component `pins`
+   shape `extraPickers` already established for BL0942/ADE7953/
+   APA102/SM2335 — fully wired into Configure Device's render/validate/
+   sed logic, the Configuration summary sidebar, and Customise & Review)
+   plus a new static "Factory reset" info box rendered directly under the
+   Configuration summary sidebar on every device type (wrapped together
+   in a `.config-sidebar-stack` flex column so both stay in the same grid
+   column regardless of whether that step also has a left-hand picker
+   sidebar). Factory reset itself needed no wizard mechanism beyond that
+   box — it has no configurable GPIOs or `#define`s, so there's nothing
+   to sed.
 
 ## Note on hardware/USB
 

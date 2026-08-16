@@ -609,6 +609,48 @@ a genuinely fresh device; worth remembering for anyone re-purposing one
 physical board across multiple wizard products like this repo's own
 testing does.
 
+Two more cross-cutting features followed, added to **all ten** device
+types at once rather than staged — prompted by screenshots of a real
+manufacturing/config tool's own "Indicators" and "Factory Reset" tabs,
+which showed a much richer commissioning/Identify indicator state
+machine and a power-cycle reset procedure neither existed here yet:
+
+- **RGB status LED** — a new optional, independently-toggleable checkbox
+  + 3 GPIO fields (red/green/blue) in Configure Device, off by default,
+  rendered via a new `rgbStatusLed` mechanism on `DEVICE_TYPES`
+  (`makeRgbStatusLed(redGpio, greenGpio, blueGpio)`, modeled on the
+  outlet's existing single-pin `statusLed` above but generalized to an
+  array of 3 pins — reusing the exact same per-component `pins` shape
+  `extraPickers` already established for BL0942/ADE7953/APA102/SM2335,
+  not a new mechanism). Wired into the same places every other optional
+  GPIO block is: Configure Device's render/validate/default-fill/sed
+  logic, the note box listing which `#define`s get applied, the
+  Configuration summary sidebar (a new "RGB STATUS LED" row), Customise &
+  Review, and the device-type-switch reset logic. On the firmware side
+  this drives a real color + blink/breathe pattern engine reflecting
+  commissioning state and Identify effects — grounded in connectedhomeip's
+  own `CHIPDeviceEvent.h` lifecycle events and the Identify cluster's own
+  `EffectIdentifierEnum`, not invented from the screenshot; see
+  `firmware/light/main/app_main.cpp`'s header comment for the full
+  state/color/timing table.
+- **Factory reset info box** — a new static card rendered directly under
+  the Configuration summary sidebar on every device type, describing the
+  quick-power-cycle procedure every device type's firmware now actually
+  implements (power off/on 3 times, ~2 seconds each way, then it
+  factory-resets via `esp_matter::factory_reset()` and re-enters setup
+  mode). Both boxes needed a small structural change to
+  `renderConfigureDevice`'s markup: the summary sidebar and the new box
+  are wrapped in a `.config-sidebar-stack` flex column so they stack as
+  one grid item and stay in the same column regardless of whether that
+  step's `.configure-grid` is in its 2-column or 3-column (left sidebar
+  present) layout. Unlike the status LED, factory reset needed zero
+  render/validate/sed wiring — it has no configurable GPIOs or
+  `#define`s, the mechanism is always compiled in, so the box is purely
+  informational.
+
+Both features are Docker build-verified across all ten device types; not
+yet hardware-tested.
+
 ## Known limitations
 
 - Ten device types exist (`On/Off Light`, `On/Off Switch`, `Contact

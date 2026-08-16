@@ -258,6 +258,7 @@
 #include <driver/gpio.h>
 #include <driver/uart.h>
 #include <driver/i2c_master.h>
+#include <driver/ledc.h>
 #include <esp_timer.h>
 #include <math.h>
 
@@ -331,6 +332,35 @@ static const char *TAG = "matter_outlet";
  * for how this differs from IDENTIFY_LED_GPIO. GPIO_NUM_NC ("not
  * connected") disables it; not every board has this LED wired up. */
 #define OUTLET_STATUS_LED_GPIO GPIO_NUM_NC
+
+/* Optional RGB status LED — a genuinely different, coexisting feature from
+ * OUTLET_STATUS_LED_GPIO above (single-color, mirrors on/off state): this
+ * one shows Matter's own defined commissioning and Identify states with
+ * color + a blink/breathe pattern engine. Off by default (GPIO_NUM_NC on
+ * all three). GPIO 32/33/14 avoid every one of this file's own other
+ * defaults, including its 6 power-monitor chips' pins (which use
+ * 16/17/21/22/25/26/27 variously — see the header comment above). See
+ * firmware/light/main/app_main.cpp's header comment for the full state
+ * list and its exact sourcing, not repeated here. */
+#define STATUS_LED_RED_GPIO GPIO_NUM_NC
+#define STATUS_LED_GREEN_GPIO GPIO_NUM_NC
+#define STATUS_LED_BLUE_GPIO GPIO_NUM_NC
+#define STATUS_LED_LEDC_TIMER LEDC_TIMER_1
+#define STATUS_LED_LEDC_RED_CHANNEL LEDC_CHANNEL_5
+#define STATUS_LED_LEDC_GREEN_CHANNEL LEDC_CHANNEL_6
+#define STATUS_LED_LEDC_BLUE_CHANNEL LEDC_CHANNEL_7
+#define STATUS_LED_LEDC_MODE LEDC_LOW_SPEED_MODE
+#define STATUS_LED_LEDC_DUTY_RES LEDC_TIMER_8_BIT
+#define STATUS_LED_LEDC_FREQUENCY_HZ 5000
+#define STATUS_LED_TICK_MS 20
+#define STATUS_LED_PI 3.14159265f
+
+/* Quick-power-cycle factory reset — see firmware/light/main/app_main.cpp's
+ * header comment for the full mechanism and its sourcing. */
+#define FACTORY_RESET_NVS_NAMESPACE "boot_info"
+#define FACTORY_RESET_NVS_KEY "boot_count"
+#define FACTORY_RESET_BOOT_COUNT_THRESHOLD 3
+#define FACTORY_RESET_CONFIRM_DELAY_MS 10000
 
 /* --- Power monitoring — see the header comment above for the full
  * protocol/formula explanation and sourcing for each chip. Six real
@@ -488,6 +518,84 @@ static void set_output(bool on)
     }
 }
 
+/* --- RGB status LED pattern engine ---------------------------------------
+ * A second, independent LED feature from OUTLET_STATUS_LED_GPIO above —
+ * see the header comment on STATUS_LED_RED/GREEN/BLUE_GPIO for what it
+ * shows and why. Prefixed `rgb_status_led_*` here specifically (unlike
+ * every other device type's identical `status_led_*` naming) to avoid
+ * colliding with this file's own pre-existing `status_led_enabled`/
+ * `setup_status_led()` for OUTLET_STATUS_LED_GPIO above. */
+typedef enum {
+    RGB_STATUS_LED_PATTERN_OFF,
+    RGB_STATUS_LED_PATTERN_SOLID,
+    RGB_STATUS_LED_PATTERN_BLINK,
+    RGB_STATUS_LED_PATTERN_BREATHE,
+} rgb_status_led_pattern_t;
+
+static bool rgb_status_led_enabled = false;
+static esp_timer_handle_t rgb_status_led_timer = NULL;
+static uint8_t rgb_status_led_r = 0, rgb_status_led_g = 0, rgb_status_led_b = 0;
+static rgb_status_led_pattern_t rgb_status_led_pattern = RGB_STATUS_LED_PATTERN_OFF;
+static uint32_t rgb_status_led_period_ms = 1000;
+static uint32_t rgb_status_led_elapsed_ms = 0;
+static uint32_t rgb_status_led_duration_ms = 0;
+
+static void rgb_status_led_set(uint8_t r, uint8_t g, uint8_t b, rgb_status_led_pattern_t pattern,
+                                uint32_t period_ms, uint32_t duration_ms)
+{
+    if (!rgb_status_led_enabled) {
+        return;
+    }
+    rgb_status_led_r = r;
+    rgb_status_led_g = g;
+    rgb_status_led_b = b;
+    rgb_status_led_pattern = pattern;
+    rgb_status_led_period_ms = period_ms > 0 ? period_ms : 1000;
+    rgb_status_led_duration_ms = duration_ms;
+    rgb_status_led_elapsed_ms = 0;
+}
+
+static void rgb_status_led_off(void)
+{
+    rgb_status_led_set(0, 0, 0, RGB_STATUS_LED_PATTERN_OFF, 1000, 0);
+}
+
+static void rgb_status_led_tick_cb(void *arg)
+{
+    if (!rgb_status_led_enabled) {
+        return;
+    }
+    rgb_status_led_elapsed_ms += STATUS_LED_TICK_MS;
+    if (rgb_status_led_duration_ms > 0 && rgb_status_led_elapsed_ms >= rgb_status_led_duration_ms) {
+        rgb_status_led_off();
+    }
+
+    float phase = fmodf((float)rgb_status_led_elapsed_ms, (float)rgb_status_led_period_ms) / (float)rgb_status_led_period_ms;
+    float brightness;
+    switch (rgb_status_led_pattern) {
+    case RGB_STATUS_LED_PATTERN_SOLID:
+        brightness = 1.0f;
+        break;
+    case RGB_STATUS_LED_PATTERN_BLINK:
+        brightness = (phase < 0.5f) ? 1.0f : 0.0f;
+        break;
+    case RGB_STATUS_LED_PATTERN_BREATHE:
+        brightness = (sinf(phase * 2.0f * STATUS_LED_PI - STATUS_LED_PI / 2.0f) + 1.0f) / 2.0f;
+        break;
+    case RGB_STATUS_LED_PATTERN_OFF:
+    default:
+        brightness = 0.0f;
+        break;
+    }
+
+    ledc_set_duty(STATUS_LED_LEDC_MODE, STATUS_LED_LEDC_RED_CHANNEL, (uint32_t)(rgb_status_led_r * brightness));
+    ledc_update_duty(STATUS_LED_LEDC_MODE, STATUS_LED_LEDC_RED_CHANNEL);
+    ledc_set_duty(STATUS_LED_LEDC_MODE, STATUS_LED_LEDC_GREEN_CHANNEL, (uint32_t)(rgb_status_led_g * brightness));
+    ledc_update_duty(STATUS_LED_LEDC_MODE, STATUS_LED_LEDC_GREEN_CHANNEL);
+    ledc_set_duty(STATUS_LED_LEDC_MODE, STATUS_LED_LEDC_BLUE_CHANNEL, (uint32_t)(rgb_status_led_b * brightness));
+    ledc_update_duty(STATUS_LED_LEDC_MODE, STATUS_LED_LEDC_BLUE_CHANNEL);
+}
+
 /* Configures OUTLET_STATUS_LED_GPIO as an output if it's actually been set
  * to a real pin (GPIO_NUM_NC, the shipped default, means "not wired up" —
  * skip entirely). Call once from app_main(), before the first set_output(). */
@@ -573,8 +681,20 @@ static void button_task(void *arg)
 static void app_event_cb(const ChipDeviceEvent *event, intptr_t arg)
 {
     switch (event->Type) {
+    case chip::DeviceLayer::DeviceEventType::kCHIPoBLEAdvertisingChange:
+        if (event->CHIPoBLEAdvertisingChange.Result == chip::DeviceLayer::kActivity_Started) {
+            rgb_status_led_set(0, 255, 0, RGB_STATUS_LED_PATTERN_BREATHE, 2000, 0); /* Setup mode */
+        }
+        break;
+    case chip::DeviceLayer::DeviceEventType::kSecureSessionEstablished:
+        rgb_status_led_set(255, 255, 0, RGB_STATUS_LED_PATTERN_BREATHE, 1000, 0); /* Setup started */
+        break;
     case chip::DeviceLayer::DeviceEventType::kCommissioningComplete:
         ESP_LOGI(TAG, "Commissioning complete — device is now paired");
+        rgb_status_led_off(); /* Setup complete */
+        break;
+    case chip::DeviceLayer::DeviceEventType::kFailSafeTimerExpired:
+        rgb_status_led_set(255, 0, 0, RGB_STATUS_LED_PATTERN_SOLID, 1000, 0); /* Setup failed */
         break;
     default:
         break;
@@ -610,18 +730,28 @@ static esp_err_t app_identification_cb(identification::callback_type_t type, uin
     case identification::START:
         ESP_LOGI(TAG, "Identify started on endpoint %u", endpoint_id);
         esp_timer_start_periodic(identify_led_timer, IDENTIFY_BLINK_INTERVAL_MS * 1000);
+        rgb_status_led_set(255, 0, 0, RGB_STATUS_LED_PATTERN_BLINK, 1000, 0);
         break;
     case identification::STOP:
         ESP_LOGI(TAG, "Identify stopped on endpoint %u", endpoint_id);
         esp_timer_stop(identify_led_timer);
         set_output(outlet_state);
+        rgb_status_led_off();
         break;
     case identification::EFFECT:
-        /* Effect variants (breathe, flash-twice, ...) aren't implemented —
-         * treat any of them the same as a plain blink rather than guessing
-         * at per-variant timing. */
-        ESP_LOGI(TAG, "Identify effect %u (variant %u) on endpoint %u — blinking as usual",
+        ESP_LOGI(TAG, "Identify effect %u (variant %u) on endpoint %u",
                  effect_id, effect_variant, endpoint_id);
+        if (effect_id == chip::to_underlying(Identify::EffectIdentifierEnum::kBlink)) {
+            rgb_status_led_set(255, 255, 255, RGB_STATUS_LED_PATTERN_BLINK, 1000, 1000);
+        } else if (effect_id == chip::to_underlying(Identify::EffectIdentifierEnum::kBreathe)) {
+            rgb_status_led_set(255, 255, 255, RGB_STATUS_LED_PATTERN_BREATHE, 1000, 15000);
+        } else if (effect_id == chip::to_underlying(Identify::EffectIdentifierEnum::kOkay)) {
+            rgb_status_led_set(0, 255, 0, RGB_STATUS_LED_PATTERN_BLINK, 2000, 0);
+        } else if (effect_id == chip::to_underlying(Identify::EffectIdentifierEnum::kChannelChange)) {
+            rgb_status_led_set(255, 255, 0, RGB_STATUS_LED_PATTERN_BLINK, 16000, 0);
+        } else {
+            rgb_status_led_off();
+        }
         break;
     }
     return ESP_OK;
@@ -1349,6 +1479,65 @@ static bool power_monitoring_setup(node_t *node)
 
 #endif /* OUTLET_POWER_MONITOR != OUTLET_POWER_MONITOR_NONE */
 
+
+static esp_timer_handle_t factory_reset_confirm_timer = NULL;
+
+/* Fires once the device has stayed powered up for
+ * FACTORY_RESET_CONFIRM_DELAY_MS without another reboot — treats this as
+ * a normal boot and clears the quick-power-cycle counter. */
+static void factory_reset_confirm_timer_cb(void *arg)
+{
+    nvs_handle_t nvs;
+    if (nvs_open(FACTORY_RESET_NVS_NAMESPACE, NVS_READWRITE, &nvs) == ESP_OK) {
+        nvs_set_u8(nvs, FACTORY_RESET_NVS_KEY, 0);
+        nvs_commit(nvs);
+        nvs_close(nvs);
+    }
+}
+
+/* Increments the quick-power-cycle boot counter and returns true once it
+ * has reached FACTORY_RESET_BOOT_COUNT_THRESHOLD. The caller (app_main())
+ * only acts on that later, after Matter has started — see
+ * firmware/light/main/app_main.cpp's header comment on why. Must run
+ * after nvs_flash_init(). */
+static bool check_factory_reset_boot_count(void)
+{
+    nvs_handle_t nvs;
+    esp_err_t err = nvs_open(FACTORY_RESET_NVS_NAMESPACE, NVS_READWRITE, &nvs);
+    if (err != ESP_OK) {
+        ESP_LOGW(TAG, "Could not open NVS for boot-count tracking: %s", esp_err_to_name(err));
+        return false;
+    }
+
+    uint8_t boot_count = 0;
+    nvs_get_u8(nvs, FACTORY_RESET_NVS_KEY, &boot_count); /* stays 0 if not set yet */
+    boot_count++;
+    nvs_set_u8(nvs, FACTORY_RESET_NVS_KEY, boot_count);
+    nvs_commit(nvs);
+    nvs_close(nvs);
+
+    ESP_LOGI(TAG, "Quick-power-cycle boot count: %u/%u", boot_count, FACTORY_RESET_BOOT_COUNT_THRESHOLD);
+
+    if (boot_count >= FACTORY_RESET_BOOT_COUNT_THRESHOLD) {
+        /* Clear the counter now so a factory-reset reboot can't
+         * immediately re-trigger itself. */
+        if (nvs_open(FACTORY_RESET_NVS_NAMESPACE, NVS_READWRITE, &nvs) == ESP_OK) {
+            nvs_set_u8(nvs, FACTORY_RESET_NVS_KEY, 0);
+            nvs_commit(nvs);
+            nvs_close(nvs);
+        }
+        return true;
+    }
+
+    const esp_timer_create_args_t factory_reset_confirm_timer_args = {
+        .callback = &factory_reset_confirm_timer_cb,
+        .name = "factory_reset_confirm",
+    };
+    esp_timer_create(&factory_reset_confirm_timer_args, &factory_reset_confirm_timer);
+    esp_timer_start_once(factory_reset_confirm_timer, (uint64_t)FACTORY_RESET_CONFIRM_DELAY_MS * 1000);
+    return false;
+}
+
 extern "C" void app_main(void)
 {
     /* 1. Init NVS — stores the Matter fabric keys and factory data. */
@@ -1357,6 +1546,11 @@ extern "C" void app_main(void)
         ESP_ERROR_CHECK(nvs_flash_erase());
         ESP_ERROR_CHECK(nvs_flash_init());
     }
+
+    /* 1b. Quick-power-cycle factory reset check — see
+     * check_factory_reset_boot_count()'s comment above. The actual reset
+     * (if due) only happens later, once Matter has started. */
+    bool should_factory_reset = check_factory_reset_boot_count();
 
     /* 2. Configure the output (LED/relay), plus the optional status LED
      * (no-op if OUTLET_STATUS_LED_GPIO is still GPIO_NUM_NC — see
@@ -1411,6 +1605,53 @@ extern "C" void app_main(void)
     };
     esp_timer_create(&identify_timer_args, &identify_led_timer);
 
+    /* 2d. Configure the optional RGB status LED + its pattern-engine timer
+     * — only if at least one of its 3 GPIOs is actually wired up. See the
+     * header comment on rgb_status_led_enabled for why this is a
+     * differently-named feature from OUTLET_STATUS_LED_GPIO above. */
+    rgb_status_led_enabled = (STATUS_LED_RED_GPIO != GPIO_NUM_NC) ||
+                              (STATUS_LED_GREEN_GPIO != GPIO_NUM_NC) ||
+                              (STATUS_LED_BLUE_GPIO != GPIO_NUM_NC);
+    if (rgb_status_led_enabled) {
+        ledc_timer_config_t status_led_ledc_timer = {};
+        status_led_ledc_timer.speed_mode = STATUS_LED_LEDC_MODE;
+        status_led_ledc_timer.duty_resolution = STATUS_LED_LEDC_DUTY_RES;
+        status_led_ledc_timer.timer_num = STATUS_LED_LEDC_TIMER;
+        status_led_ledc_timer.freq_hz = STATUS_LED_LEDC_FREQUENCY_HZ;
+        status_led_ledc_timer.clk_cfg = LEDC_AUTO_CLK;
+        ledc_timer_config(&status_led_ledc_timer);
+
+        struct {
+            ledc_channel_t channel;
+            gpio_num_t gpio;
+        } status_led_channels[] = {
+            { STATUS_LED_LEDC_RED_CHANNEL, STATUS_LED_RED_GPIO },
+            { STATUS_LED_LEDC_GREEN_CHANNEL, STATUS_LED_GREEN_GPIO },
+            { STATUS_LED_LEDC_BLUE_CHANNEL, STATUS_LED_BLUE_GPIO },
+        };
+        for (size_t i = 0; i < sizeof(status_led_channels) / sizeof(status_led_channels[0]); i++) {
+            if (status_led_channels[i].gpio == GPIO_NUM_NC) {
+                continue;
+            }
+            ledc_channel_config_t status_led_channel = {};
+            status_led_channel.gpio_num = status_led_channels[i].gpio;
+            status_led_channel.speed_mode = STATUS_LED_LEDC_MODE;
+            status_led_channel.channel = status_led_channels[i].channel;
+            status_led_channel.intr_type = LEDC_INTR_DISABLE;
+            status_led_channel.timer_sel = STATUS_LED_LEDC_TIMER;
+            status_led_channel.duty = 0;
+            status_led_channel.hpoint = 0;
+            ledc_channel_config(&status_led_channel);
+        }
+
+        const esp_timer_create_args_t rgb_status_led_timer_args = {
+            .callback = &rgb_status_led_tick_cb,
+            .name = "rgb_status_led",
+        };
+        esp_timer_create(&rgb_status_led_timer_args, &rgb_status_led_timer);
+        esp_timer_start_periodic(rgb_status_led_timer, STATUS_LED_TICK_MS * 1000);
+    }
+
     /* 3. Build the Matter data model: one node, one On/Off Plug-in Unit
      * endpoint, plus a second Electrical Sensor endpoint if power
      * monitoring is enabled. */
@@ -1441,6 +1682,16 @@ extern "C" void app_main(void)
     err = esp_matter::start(app_event_cb);
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "Failed to start Matter: %d", err);
+        return;
+    }
+
+    /* If step 1b detected 3 quick power cycles in a row, factory-reset
+     * now that Matter has actually started — see
+     * check_factory_reset_boot_count()'s comment on why this can't
+     * happen any earlier. */
+    if (should_factory_reset) {
+        ESP_LOGW(TAG, "Quick power cycle detected — factory resetting");
+        esp_matter::factory_reset(); /* erases NVS + restarts the device */
         return;
     }
 
