@@ -366,10 +366,27 @@ against it; not hardware-tested (no ESP32-P4 Function EV Board was
 available), and not offered in the product wizard at all — its
 one-chip-one-firmware data model can't represent this honestly.
 
-To add another (simpler) type, copy any of the other eleven folders and
+`firmware/door-lock/` (Matter Door Lock) is this repo's thirteenth device
+type, back to the normal one-chip/one-firmware pattern after camera's
+exception. It's this repo's first device type where the main command
+(LockDoor/UnlockDoor) is handled through a plain C weak-symbol override —
+`emberAfPluginDoorLockOnDoorLockCommand()`/`OnDoorUnlockCommand()` —
+rather than either the `attribute::PRE_UPDATE` pattern or a C++ Delegate
+class used elsewhere, the documented extension point connectedhomeip
+itself calls when no Delegate is configured. `DOOR_LOCK_OUTPUT_TYPE`
+offers SERVO (default — a hobby servo retrofitting an existing
+thumb-turn deadbolt) or RELAY (an electric strike/solenoid); an optional
+position sensor lets LockState reflect a real reading instead of the
+spec-allowed optimistic default. See CLAUDE.md's repository-layout entry
+for the full technical detail, including two real build failures (one
+compile, one link) an actual Docker build caught along the way. Docker
+build-verified across servo/relay and with/without the position sensor;
+not yet hardware-tested (no servo/relay/reed-switch hardware for this
+device type was physically available when written).
+
+To add another (simpler) type, copy any of the other twelve folders and
 swap the endpoint type in `app_main.cpp` — esp-matter provides ready-made
-types like `occupancy_sensor`, `smoke_co_alarm`, `door_lock`, and many
-more.
+types like `occupancy_sensor`, `smoke_co_alarm`, and many more.
 
 ## Updates
 
@@ -378,7 +395,7 @@ but the multi-GB Docker image stalled out on GitHub-hosted runners, so it
 was reverted rather than left flaky). Build + flash a new version yourself
 following the Quick Start steps above whenever you change `app_main.cpp`.
 
-All twelve device types also ship with Matter's **OTA Requestor** cluster
+All thirteen device types also ship with Matter's **OTA Requestor** cluster
 enabled (`CONFIG_ENABLE_OTA_REQUESTOR=y`), so once a device is bound to an
 OTA Provider node on the same fabric, it can fetch and install updates over
 the air using the existing `ota_0`/`ota_1` A/B partition slots — no app
@@ -391,9 +408,10 @@ errors); the provider side and a full transfer are open, tracked in
 CLAUDE.md's next steps alongside the binding test, which hits the same
 "needs a second commissioned device + tooling" wall.
 
-All eleven device types also gained two optional, off-by-default features
-(see CLAUDE.md's "Open next steps" for the full sourcing/verification
-detail):
+All twelve device types other than `firmware/camera/` (Espressif's own
+unmodified reference code) also have two optional, off-by-default
+features (see CLAUDE.md's "Open next steps" for the full sourcing/
+verification detail):
 
 - **RGB status LED** — wire up 3 GPIOs (`STATUS_LED_RED/GREEN/BLUE_GPIO`,
   all `GPIO_NUM_NC`/disabled by default) and the device shows real
@@ -408,7 +426,7 @@ detail):
   Matter has started (confirmed against its own implementation and
   reference `app_reset` component).
 
-Both are Docker build-verified across all eleven device types, not yet
+Both are Docker build-verified across all twelve of those device types, not yet
 hardware-tested. The product wizard (`tools/product-wizard/`) has a
 checkbox + 3 GPIO fields for the status LED and shows the factory-reset
 procedure as a standalone info box under Configuration Summary.

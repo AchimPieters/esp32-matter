@@ -1219,6 +1219,114 @@ firmware/camera/          Matter Camera — twelfth device type, and the
                            (device_hal/device paths, examples/common)
                            in ways this repo's simpler pattern was never
                            designed to replace.
+firmware/door-lock/       Door Lock — thirteenth device type, back to this
+                           repo's normal one-chip/one-firmware pattern
+                           after firmware/camera/'s exception. First
+                           device type where the main command (LockDoor/
+                           UnlockDoor) is handled through a plain C
+                           weak-symbol override rather than either the
+                           attribute::PRE_UPDATE pattern (OnOff/
+                           LevelControl/ColorControl/Thermostat elsewhere)
+                           or a C++ Delegate class (WindowCovering,
+                           WebRTCTransportProvider in firmware/camera/).
+  main/app_main.cpp        endpoint::door_lock::create() (Identify +
+                           DoorLock cluster) confirmed complete/directly
+                           usable by reading esp_matter_endpoint.cpp's
+                           own door_lock::add(). DoorLock confirmed NOT a
+                           "code-driven" cluster class (no door_lock/
+                           folder under data_model_provider/clusters/,
+                           unlike e.g. humidistat/) — LockState/LockType/
+                           ActuatorEnabled/OperatingMode are all plain
+                           ember attributes. esp-matter's own
+                           door_lock::config_t has an OPTIONAL `delegate`
+                           pointer, left null here (PIN/credential/
+                           schedule management is out of scope, same
+                           "smallest reasonable next step" precedent as
+                           firmware/dimmable-light/'s Level-only scope or
+                           firmware/window-covering/'s Lift-only scope).
+                           With no delegate, connectedhomeip's own
+                           DoorLockServer still handles LockDoor/
+                           UnlockDoor commands (PIN validation is skipped
+                           entirely since RequirePINforRemoteOperation
+                           isn't set) and calls one of two plain C
+                           functions — `emberAfPluginDoorLockOnDoorLockCommand()`/
+                           `emberAfPluginDoorLockOnDoorUnlockCommand()` —
+                           declared `__attribute__((weak))` with a
+                           default `return false`, confirmed by reading
+                           door-lock-server-callback.cpp directly;
+                           door-lock-server.h's own comment above their
+                           declaration literally says "should be
+                           implemented by the server app". This file
+                           provides the real (strong) definitions — the
+                           documented extension point, not a workaround.
+                           HandleRemoteLockOperation()'s own comment notes
+                           "the app should trigger the lock state
+                           change" — the framework does NOT update
+                           LockState automatically after a successful
+                           callback, so this file calls attribute::update()
+                           itself. A second, separate linker requirement
+                           was caught by an actual Docker build, not by
+                           inspection: `emberAfDoorLockClusterInitCallback`
+                           — unlike the two command callbacks above, this
+                           one has a plain, non-weak prototype in
+                           zzz_generated/app-common/app-common/
+                           zap-generated/callback.h, so omitting it is a
+                           hard `undefined reference` link error, not a
+                           silent default. esp-matter's own
+                           door_lock::function_list wires it in as the
+                           cluster's init hook; the fix (confirmed against
+                           the SDK's own examples/door_lock/main/lock/
+                           door_lock_callbacks.cpp reference) is a
+                           one-line body calling
+                           `DoorLockServer::Instance().InitServer(endpoint)`
+                           — documented as "a deprecated alias for
+                           InitEndpoint with no delegate", exactly
+                           matching this file's own null-delegate choice,
+                           and required regardless since it registers
+                           this endpoint's per-endpoint server state
+                           (lockout timestamp, wrong-code attempt
+                           counter) that the cluster's internal
+                           command-handling logic expects to already
+                           exist. `DOOR_LOCK_OUTPUT_TYPE` selects SERVO
+                           (default — a hobby servo, e.g. SG90-class,
+                           turning an existing thumb-turn deadbolt from
+                           the inside, the same retrofit approach
+                           countless DIY/ESPHome smart-lock projects use;
+                           driven via ESP-IDF's driver/ledc.h, the same
+                           LEDC PWM peripheral firmware/dimmable-light/
+                           and firmware/color-light/ already use, at the
+                           standard 50Hz/1-2ms hobby-servo signal) or
+                           RELAY (an electric strike/solenoid, active-LOW,
+                           matching firmware/outlet/'s own relay
+                           convention). Optional `DOOR_LOCK_POSITION_GPIO`
+                           (reed switch, off by default, `GPIO_NUM_NC`)
+                           reads real bolt/latch position the same simple
+                           digital HIGH/LOW technique
+                           firmware/contact-sensor/ already uses; without
+                           it, LockState is set OPTIMISTICALLY right
+                           after actuating — a real, common pattern for
+                           this class of cheap retrofit hardware (no
+                           feedback = no way to know for certain), and
+                           explicitly allowed by the spec's own framing.
+                           `chip::app::Clusters::DoorLock::DlLockType` is
+                           a real gotcha worth remembering for future
+                           DoorLock-adjacent code: door-lock-server.h's
+                           own top-level `using` declarations pull
+                           `DlLockState`/`DlStatus`/several other DoorLock
+                           enums unqualified into scope, but NOT
+                           `DlLockType` — confirmed by an actual Docker
+                           build failure (`'DlLockType' has not been
+                           declared`) before fully qualifying it. Standard
+                           RGB status LED + quick-power-cycle factory
+                           reset, same as every other device type here.
+                           Build-verified in Docker across all 3
+                           meaningful configs (servo/no-sensor, servo/
+                           with-sensor, relay/no-sensor); not
+                           hardware-tested (no servo/relay/reed-switch
+                           hardware for this device type physically
+                           available when written).
+  partitions.csv           same OTA + fctry layout as firmware/light/
+  sdkconfig.defaults        same as firmware/light/
 tools/
   dev.sh                  opens the Docker dev environment
   gen_factory.sh          local QR + factory partition generator
@@ -1944,14 +2052,60 @@ SECURITY.md               flash encryption / secure boot / signed OTA guidance
    firmware/camera/README.md's own preamble (this repo's own addition,
    ahead of Espressif's unmodified original README) and CLAUDE.md's own
    repository-layout entry above for the complete detail.
-2. Implement Matter **OTA** — partially done. All twelve firmware types ship
-   `CONFIG_ENABLE_OTA_REQUESTOR=y`, which adds the OTA Requestor cluster
-   to the root node endpoint entirely via Kconfig — esp-matter's own core
-   startup (`esp_matter_core.cpp`) calls
+
+   A thirteenth device type, `firmware/door-lock/` (Matter Door Lock),
+   followed camera — back to this repo's normal one-chip/one-firmware
+   pattern after camera's deliberate exception. The user chose "Door
+   Lock" from a short AskUserQuestion list (Door Lock / Smoke-CO Alarm /
+   Occupancy Sensor / other). This is the first device type in this repo
+   where the main command (LockDoor/UnlockDoor) is handled through a
+   plain C weak-symbol override rather than either the
+   `attribute::PRE_UPDATE` pattern (OnOff/LevelControl/ColorControl/
+   Thermostat elsewhere) or a C++ Delegate class (WindowCovering,
+   WebRTCTransportProvider in firmware/camera/) — traced directly from
+   connectedhomeip's own `HandleRemoteLockOperation()` source and
+   `door-lock-server.h`'s own doc comment ("should be implemented by the
+   server app") before writing any command-handling code, confirming
+   this is the SDK's documented extension point for an app with no
+   Delegate configured, not a workaround. Two real, separate build
+   failures were caught by actual Docker builds, not by inspection: (1) a
+   compile error — `chip::app::Clusters::DoorLock::DlLockType` needs full
+   qualification, since door-lock-server.h's own top-level `using`
+   declarations pull in `DlLockState`/`DlStatus`/several other DoorLock
+   enums unqualified but NOT `DlLockType`; (2) a linker error —
+   `emberAfDoorLockClusterInitCallback` has a plain, non-weak prototype
+   (unlike the two command callbacks, which the SDK stubs out with a
+   default `return false` when unimplemented), so leaving it undefined is
+   a hard `undefined reference`, not a silent default; fixed by adding a
+   one-line definition calling
+   `DoorLockServer::Instance().InitServer(endpoint)`, confirmed against
+   the SDK's own `examples/door_lock/main/lock/door_lock_callbacks.cpp`
+   reference. `DOOR_LOCK_OUTPUT_TYPE` offers SERVO (default — a hobby
+   servo retrofitting an existing thumb-turn deadbolt, the same approach
+   countless DIY/ESPHome smart-lock projects use) or RELAY (an electric
+   strike/solenoid, matching firmware/outlet/'s own active-LOW
+   convention); an optional position sensor (reed switch,
+   `firmware/contact-sensor/`'s own simple digital-input technique) lets
+   LockState reflect a real reading instead of the spec-allowed
+   optimistic default. Standard RGB status LED + factory reset. The
+   wizard integration reused every existing mechanism (`extraPickers` for
+   Output type, the `driver`/`identify`/`rgbStatusLed` shapes already
+   established) and added exactly one new parallel field,
+   `positionSensor` — a deliberate duplicate of `statusLed`'s single-GPIO
+   checkbox-gated shape rather than a reuse of that literal field, since
+   `statusLed`'s hardcoded "Add a Status LED" UI text would misdescribe a
+   sensor input as an LED output. Build-verified in Docker across all 3
+   meaningful configs (servo/no-sensor, servo/with-sensor,
+   relay/no-sensor); not hardware-tested (no servo/relay/reed-switch
+   hardware for this device type physically available when written).
+2. Implement Matter **OTA** — partially done. All thirteen firmware types
+   ship `CONFIG_ENABLE_OTA_REQUESTOR=y`, which adds the OTA Requestor
+   cluster to the root node endpoint entirely via Kconfig — esp-matter's
+   own core startup (`esp_matter_core.cpp`) calls
    `esp_matter_ota_requestor_init()`/`_start()` automatically once that
    flag is on, so no app code was needed. Confirmed on real hardware for
    `firmware/contact-sensor/` and `firmware/switch/` (clean boot, cluster
-   registered, zero errors); the other five build identically since the
+   registered, zero errors); the other eleven build identically since the
    code path is generic to every device type, not device-specific.
 
    Still open: a real OTA **transfer** needs an OTA Provider node

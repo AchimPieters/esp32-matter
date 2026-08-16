@@ -982,6 +982,17 @@ const COMPONENT_LIBRARY = {
     { key: "sda", label: "SDA", defineName: "DISPLAY_SDA_GPIO", defaultsByModule: { esp32: 5, esp32c2: 5, esp32c3: 5, esp32c5: 5, esp32c6: 5, esp32c61: 5, esp32s3: 5, esp32h2: 5 } },
     { key: "scl", label: "SCL", defineName: "DISPLAY_SCL_GPIO", defaultsByModule: { esp32: 19, esp32c2: 19, esp32c3: 19, esp32c5: 19, esp32c6: 19, esp32c61: 19, esp32s3: 19, esp32h2: 19 } },
   ] },
+  // Door lock's Output picker — same extraPickers `pins`-per-option
+  // mechanism again. Note the SERVO option's own `pins` is empty: its
+  // one GPIO (DOOR_LOCK_SERVO_GPIO) is covered by the device type's
+  // regular `driver` field instead (see the DEVICE_TYPES entry's own
+  // comment on why) — that field stays visible even when RELAY is
+  // selected, a small, documented, harmless UX quirk (its sed'd value
+  // just goes unused by the RELAY code path), not a functional bug.
+  DOOR_LOCK_OUTPUT_SERVO: { name: "Servo (thumb-turn retrofit)", category: "door-lock-output", bus: "PWM", verified: false, defineValue: "DOOR_LOCK_OUTPUT_SERVO", note: "A hobby servo (e.g. SG90-class) turning an existing deadbolt thumb-turn from the inside — the same retrofit approach countless DIY/ESPHome smart-lock projects use. Uses the \"Output\" GPIO field above.", pins: [] },
+  DOOR_LOCK_OUTPUT_RELAY: { name: "Relay (electric strike)", category: "door-lock-output", bus: "GPIO (relay)", verified: false, defineValue: "DOOR_LOCK_OUTPUT_RELAY", note: "Drives an electric strike or solenoid, active-LOW — the same class of hardware a real commercial electric-strike lock uses.", pins: [
+    { key: "relay", label: "Relay", defineName: "DOOR_LOCK_RELAY_GPIO", defaultsByModule: { esp32: 4, esp32c2: 4, esp32c3: 4, esp32c5: 4, esp32c6: 4, esp32c61: 4, esp32s3: 4, esp32h2: 4 } },
+  ] },
 };
 
 /* Optional RGB status LED — same 3 #define names
@@ -1754,6 +1765,70 @@ const DEVICE_TYPES = [
       defaultsByModule: { esp32: 2, esp32c2: 2, esp32c3: 2, esp32c5: 2, esp32c6: 2, esp32c61: 2, esp32s3: 2, esp32h2: 2 },
     },
   },
+  {
+    id: "door-lock",
+    name: "Door Lock",
+    desc: "Matter Door Lock: LockDoor/UnlockDoor commands actuate a hobby servo (retrofitting an existing thumb-turn deadbolt) or an electric strike/solenoid relay, then update LockState — from an optional position sensor's real reading, or optimistically if none is wired up (explicitly allowed by the spec for this class of hardware). No PIN/credential/schedule features — this device doesn't enable RequirePINforRemoteOperation, so any real controller's Lock/Unlock tile works with no code. Reference device in firmware/door-lock/.",
+    shortDesc: "Servo or relay, optional position sensor.",
+    // Matches project(matter_door_lock) in firmware/door-lock/CMakeLists.txt.
+    binName: "matter_door_lock.bin",
+    // Output type only — unlike outlet/thermostat's Output pickers, there's
+    // no third "cosmetic" or "Binding" option here: a door lock either
+    // turns a servo or drives a strike relay, nothing else makes sense for
+    // this device type.
+    extraPickers: [
+      {
+        key: "doorLockOutput",
+        label: "Output",
+        prompt: "How the lock actually moves the bolt",
+        options: ["DOOR_LOCK_OUTPUT_SERVO", "DOOR_LOCK_OUTPUT_RELAY"],
+        defineName: "DOOR_LOCK_OUTPUT_TYPE",
+      },
+    ],
+    // `driver` renders unconditionally (no null-check gate in
+    // renderConfigureDevice), so this is deliberately the Servo pin
+    // (DOOR_LOCK_SERVO_GPIO, matching the firmware's own shipped default)
+    // rather than a generic "output pin" — Relay uses a genuinely
+    // different #define (DOOR_LOCK_RELAY_GPIO), surfaced instead as its
+    // own field via the Output extraPicker's own `pins` array above. This
+    // does mean the Servo field stays visible (but unused) when Relay is
+    // selected — a small, honest, harmless UX quirk, not a bug.
+    driver: {
+      summary: "Servo GPIO (PWM)",
+      fieldLabel: "Servo GPIO pin",
+      blockTitle: "Servo · PWM output",
+      filePath: "firmware/door-lock/main/app_main.cpp",
+      defineName: "DOOR_LOCK_SERVO_GPIO",
+      currentGpio: 4,
+      defaultsByModule: { esp32: 4, esp32c2: 4, esp32c3: 4, esp32c5: 4, esp32c6: 4, esp32c61: 4, esp32s3: 4, esp32h2: 4 },
+    },
+    // Optional reed switch confirming the bolt's real position — see
+    // positionSensorIsEnabled()'s own comment for why this is a deliberate
+    // parallel duplicate of statusLed's shape, not a reuse of that literal
+    // field (this is a sensor INPUT, not an LED output, so its own
+    // checkbox/description text needs to say so). Off by default
+    // (DOOR_LOCK_POSITION_GPIO ships as GPIO_NUM_NC) — without it,
+    // LockState is set optimistically right after actuating.
+    positionSensor: {
+      summary: "GPIO (digital input)",
+      fieldLabel: "Position sensor GPIO pin",
+      blockTitle: "Position sensor · digital input",
+      filePath: "firmware/door-lock/main/app_main.cpp",
+      defineName: "DOOR_LOCK_POSITION_GPIO",
+      currentGpio: 16,
+      defaultsByModule: { esp32: 16, esp32c2: 16, esp32c3: 16, esp32c5: 16, esp32c6: 16, esp32c61: 16, esp32s3: 16, esp32h2: 16 },
+    },
+    rgbStatusLed: makeRgbStatusLed(25, 26, 27),
+    identify: {
+      summary: "GPIO (digital output)",
+      fieldLabel: "Identify LED GPIO pin",
+      blockTitle: "Identify LED · digital output",
+      filePath: "firmware/door-lock/main/app_main.cpp",
+      defineName: "IDENTIFY_LED_GPIO",
+      currentGpio: 2,
+      defaultsByModule: { esp32: 2, esp32c2: 2, esp32c3: 2, esp32c5: 2, esp32c6: 2, esp32c61: 2, esp32s3: 2, esp32h2: 2 },
+    },
+  },
 ];
 
 function findDeviceType(id) {
@@ -2162,6 +2237,17 @@ function statusLedIsEnabled(p) {
   return p.statusLedEnabled === true;
 }
 
+// Door lock's optional position sensor (firmware/door-lock/ only) — same
+// single-GPIO, off-by-default, checkbox-gated shape as statusLed above,
+// deliberately duplicated (not reused as the literal statusLed field)
+// since its own checkbox/description text is genuinely different
+// wording (a sensor INPUT confirming real bolt position, not an output
+// LED) — reusing statusLed verbatim would render "Add a Status LED" for
+// a feature that isn't an LED at all.
+function positionSensorIsEnabled(p) {
+  return p.positionSensorEnabled === true;
+}
+
 // RGB status LED (all 10 device types) — same off-by-default shape as
 // outlet's own single-color statusLed above, just a genuinely different,
 // coexisting feature (full color + Matter commissioning/Identify state
@@ -2183,6 +2269,7 @@ function renderConfigureDevice(p) {
   const secondary = deviceType ? deviceType.secondary : null;
   const identify = deviceType ? deviceType.identify : null;
   const statusLed = deviceType ? deviceType.statusLed : null;
+  const positionSensor = deviceType ? deviceType.positionSensor : null;
   const rgbStatusLed = deviceType ? deviceType.rgbStatusLed : null;
   const rotaryEncoder = deviceType ? deviceType.rotaryEncoder : null;
   const componentOptions = deviceType ? deviceType.componentOptions : null;
@@ -2195,6 +2282,8 @@ function renderConfigureDevice(p) {
   const identifyOn = identifyIsEnabled(p);
   const defaultStatusLedGpio = statusLed ? (statusLed.defaultsByModule[p.target] != null ? statusLed.defaultsByModule[p.target] : 5) : 5;
   const statusLedOn = statusLed ? statusLedIsEnabled(p) : false;
+  const defaultPositionSensorGpio = positionSensor ? (positionSensor.defaultsByModule[p.target] != null ? positionSensor.defaultsByModule[p.target] : 16) : 16;
+  const positionSensorOn = positionSensor ? positionSensorIsEnabled(p) : false;
   const rgbStatusLedOn = rgbStatusLed ? rgbStatusLedIsEnabled(p) : false;
   if (rgbStatusLed) {
     if (typeof p.rgbStatusLedPins !== "object" || p.rgbStatusLedPins == null) p.rgbStatusLedPins = {};
@@ -2306,13 +2395,15 @@ function renderConfigureDevice(p) {
   const sameGpio = identifyOn && gpioValid && identifyGpioValid && p.gpioPin === p.identifyGpioPin;
   if (statusLed && p.statusLedGpioPin == null) p.statusLedGpioPin = defaultStatusLedGpio;
   const statusLedGpioValid = !statusLedOn || (Number.isInteger(p.statusLedGpioPin) && p.statusLedGpioPin >= 0);
+  if (positionSensor && p.positionSensorGpioPin == null) p.positionSensorGpioPin = defaultPositionSensorGpio;
+  const positionSensorGpioValid = !positionSensorOn || (Number.isInteger(p.positionSensorGpioPin) && p.positionSensorGpioPin >= 0);
   // numberField (currently just the addressable light's pixel count): a
   // plain integer #define, not a GPIO — validated against its own
   // min/max rather than the GPIO fields' "0 or higher" rule.
   if (numberField && p[numberField.key] == null) p[numberField.key] = numberField.defaultValue;
   const numberFieldValid = !numberField ||
     (Number.isInteger(p[numberField.key]) && p[numberField.key] >= numberField.min && p[numberField.key] <= numberField.max);
-  const allValid = gpioValid && secondaryGpioValid && identifyGpioValid && extraButtonsValid && statusLedGpioValid && pickerPinsValid && numberFieldValid && rgbStatusLedValid && rotaryEncoderValid;
+  const allValid = gpioValid && secondaryGpioValid && identifyGpioValid && extraButtonsValid && statusLedGpioValid && positionSensorGpioValid && pickerPinsValid && numberFieldValid && rgbStatusLedValid && rotaryEncoderValid;
 
   // Component-aware field labels: falls back to the device type's own
   // static text when there's no componentOptions list (every device type
@@ -2512,6 +2603,35 @@ function renderConfigureDevice(p) {
           </div>
         ` : ""}
 
+        ${positionSensor ? `
+          <div class="driver-block">
+            <label class="checkbox-label" for="position-sensor-enabled">
+              <input type="checkbox" id="position-sensor-enabled" ${positionSensorOn ? "checked" : ""}>
+              <h3 style="display:inline; margin:0;">Add a Position Sensor</h3>
+            </label>
+            <p class="field-note" style="margin-top:4px;">
+              An optional reed switch confirming the bolt actually reached
+              the commanded position, instead of the firmware just
+              assuming the servo/relay got there. Off by default — without
+              it, LockState is set optimistically right after actuating,
+              which the Matter spec explicitly allows for this class of
+              hardware. The firmware ships this pin disabled
+              (<code>GPIO_NUM_NC</code>) until you tick this and set a
+              real pin.
+            </p>
+
+            ${positionSensorOn ? `
+              <label class="field-label" for="position-sensor-gpio-pin" style="margin-top:12px;">${escapeHtml(positionSensor.fieldLabel)}</label>
+              <input type="number" id="position-sensor-gpio-pin" min="0" max="48" value="${p.positionSensorGpioPin}">
+              <div class="field-error">${positionSensorGpioValid ? "" : "Enter a valid GPIO number (0 or higher)."}</div>
+              <p class="field-note">
+                Adjust to match your board — GPIO ${defaultPositionSensorGpio}
+                is a common default for ${escapeHtml(moduleName(p.target))} devkits, not a guarantee for yours.
+              </p>
+            ` : ""}
+          </div>
+        ` : ""}
+
         ${rgbStatusLed ? `
           <div class="driver-block">
             <label class="checkbox-label" for="rgb-status-led-enabled">
@@ -2616,7 +2736,8 @@ function renderConfigureDevice(p) {
           <code>${escapeHtml(deviceType.buttonCountDefineName)}</code>` : ""}${secondary ? `,
           <code>${escapeHtml(secondary.defineName)}</code>${secondaryFieldNeeded ? "" : " (kept at its default — unused by this sensor)"}` : ""}${numberField ? `,
           <code>${escapeHtml(numberField.defineName)}</code>` : ""}${statusLedOn ? `,
-          <code>${escapeHtml(statusLed.defineName)}</code>` : ""}${rgbStatusLedOn ? rgbStatusLed.pins.map((pin) => `,
+          <code>${escapeHtml(statusLed.defineName)}</code>` : ""}${positionSensorOn ? `,
+          <code>${escapeHtml(positionSensor.defineName)}</code>` : ""}${rgbStatusLedOn ? rgbStatusLed.pins.map((pin) => `,
           <code>${escapeHtml(pin.defineName)}</code>`).join("") : ""}${rotaryEncoderOn ? rotaryEncoder.pins.map((pin) => `,
           <code>${escapeHtml(pin.defineName)}</code>`).join("") : ""}${identifyOn ? `,
           <code>${escapeHtml(identify ? identify.defineName : "IDENTIFY_LED_GPIO")}</code>` : ""}${activePickerPins.map(({ pin }) => `,
@@ -2672,6 +2793,12 @@ function renderConfigureDevice(p) {
           <div class="summary-row">
             <div class="summary-label">STATUS LED</div>
             <div class="summary-detail">${statusLedOn ? `IO pin: GPIO ${statusLedGpioValid ? p.statusLedGpioPin : "?"}` : "Not added"}</div>
+          </div>
+        ` : ""}
+        ${positionSensor ? `
+          <div class="summary-row">
+            <div class="summary-label">POSITION SENSOR</div>
+            <div class="summary-detail">${positionSensorOn ? `IO pin: GPIO ${positionSensorGpioValid ? p.positionSensorGpioPin : "?"}` : "Not added"}</div>
           </div>
         ` : ""}
         ${rgbStatusLed ? `
@@ -2856,6 +2983,8 @@ function isProductComplete(p) {
     Array.isArray(p.buttonGpios) && Number.isInteger(p.buttonGpios[i]) && p.buttonGpios[i] >= 0);
   const statusLedOk = !(deviceType && deviceType.statusLed) || !statusLedIsEnabled(p) ||
     (Number.isInteger(p.statusLedGpioPin) && p.statusLedGpioPin >= 0);
+  const positionSensorOk = !(deviceType && deviceType.positionSensor) || !positionSensorIsEnabled(p) ||
+    (Number.isInteger(p.positionSensorGpioPin) && p.positionSensorGpioPin >= 0);
   const rgbStatusLed = deviceType ? deviceType.rgbStatusLed : null;
   const rgbStatusLedOk = !rgbStatusLed || !rgbStatusLedIsEnabled(p) ||
     rgbStatusLed.pins.every((pin) =>
@@ -2889,7 +3018,7 @@ function isProductComplete(p) {
     (Number.isInteger(p[numberField.key]) && p[numberField.key] >= numberField.min && p[numberField.key] <= numberField.max);
   return !!p.deviceType && !!p.target &&
     Number.isInteger(p.gpioPin) && p.gpioPin >= 0 &&
-    secondaryOk && identifyOk && buttonsOk && statusLedOk && rgbStatusLedOk && rotaryEncoderOk && pickerPinsOk && numberFieldOk;
+    secondaryOk && identifyOk && buttonsOk && statusLedOk && positionSensorOk && rgbStatusLedOk && rotaryEncoderOk && pickerPinsOk && numberFieldOk;
 }
 
 function buildConfigPreview(p) {
@@ -3042,6 +3171,15 @@ function renderCustomiseReview(p) {
             <button class="link" data-goto-step="2">Edit</button>
           </div>
         ` : ""}
+        ${findDeviceType(p.deviceType) && findDeviceType(p.deviceType).positionSensor ? `
+          <div class="review-row">
+            <div>
+              <div class="summary-label">POSITION SENSOR</div>
+              <div class="summary-value">${positionSensorIsEnabled(p) ? `GPIO ${p.positionSensorGpioPin != null ? p.positionSensorGpioPin : "?"}` : "Not added"}</div>
+            </div>
+            <button class="link" data-goto-step="2">Edit</button>
+          </div>
+        ` : ""}
         ${(() => {
           const dt = findDeviceType(p.deviceType);
           if (!dt || !dt.rgbStatusLed) return "";
@@ -3165,7 +3303,7 @@ function renderGenerateFirmware(p) {
       <p class="step-hint">
         For "${escapeHtml(p.name)}" —
         <strong>${escapeHtml(deviceTypeName(p.deviceType))}</strong>${selectedSensor ? ` (<strong>${escapeHtml(selectedSensor.name)}</strong>)` : ""} on
-        <strong>${escapeHtml(moduleName(p.target))}</strong>, GPIO ${p.gpioPin}${extraButtonGpios.length ? ` (+ ${extraButtonNoun}${extraButtonGpios.length === 1 ? "" : "s"} on GPIO ${extraButtonGpios.join(", ")})` : ""}${deviceType && deviceType.secondary ? ` (${escapeHtml((deviceType.secondary.label || "secondary").toLowerCase())} on GPIO ${p.secondaryGpioPin})` : ""}${deviceType && deviceType.statusLed && statusLedIsEnabled(p) ? ` (status LED on GPIO ${p.statusLedGpioPin})` : ""}${identifyIsEnabled(p) ? ` (identify LED on GPIO ${p.identifyGpioPin})` : ""}.
+        <strong>${escapeHtml(moduleName(p.target))}</strong>, GPIO ${p.gpioPin}${extraButtonGpios.length ? ` (+ ${extraButtonNoun}${extraButtonGpios.length === 1 ? "" : "s"} on GPIO ${extraButtonGpios.join(", ")})` : ""}${deviceType && deviceType.secondary ? ` (${escapeHtml((deviceType.secondary.label || "secondary").toLowerCase())} on GPIO ${p.secondaryGpioPin})` : ""}${deviceType && deviceType.statusLed && statusLedIsEnabled(p) ? ` (status LED on GPIO ${p.statusLedGpioPin})` : ""}${deviceType && deviceType.positionSensor && positionSensorIsEnabled(p) ? ` (position sensor on GPIO ${p.positionSensorGpioPin})` : ""}${identifyIsEnabled(p) ? ` (identify LED on GPIO ${p.identifyGpioPin})` : ""}.
         This is the exact two-step flow validated end to end on real
         hardware for this device type: build, then flash. Nothing runs
         automatically — you paste and run each command yourself.
@@ -3347,6 +3485,7 @@ function buildSedCommands(p) {
   const extraButtons = deviceType ? deviceType.extraButtons : null;
   const extraPickers = deviceType ? deviceType.extraPickers : null;
   const statusLed = deviceType ? deviceType.statusLed : null;
+  const positionSensor = deviceType ? deviceType.positionSensor : null;
   const filePath = driver ? driver.filePath.split("/").slice(2).join("/") : "main/app_main.cpp"; // relative to firmwareDir
   const cmds = [];
   if (componentOptions && deviceType.componentDefineName) {
@@ -3423,6 +3562,11 @@ function buildSedCommands(p) {
     // sentinel, disabling it), not a numeric default, so the narrow
     // digits-only pattern wouldn't match the line as shipped.
     cmds.push(`sed -i 's/^#define ${statusLed.defineName} .*/#define ${statusLed.defineName} GPIO_NUM_${p.statusLedGpioPin}/' ${filePath}`);
+  }
+  if (positionSensor && positionSensorIsEnabled(p)) {
+    // Same broad `.*` match as statusLed above — this one also ships as
+    // GPIO_NUM_NC by default, not a numeric value.
+    cmds.push(`sed -i 's/^#define ${positionSensor.defineName} .*/#define ${positionSensor.defineName} GPIO_NUM_${p.positionSensorGpioPin}/' ${filePath}`);
   }
   if (deviceType && deviceType.rgbStatusLed && rgbStatusLedIsEnabled(p)) {
     // Same broad `.*` match as statusLed above — all three pins ship as
@@ -3667,6 +3811,10 @@ function bindEvents() {
         // (off) rather than inheriting a previous type's choice.
         state.currentProduct.statusLedGpioPin = null;
         state.currentProduct.statusLedEnabled = null;
+        // positionSensor (door-lock only): same stale-GPIO risk as
+        // statusLed above.
+        state.currentProduct.positionSensorGpioPin = null;
+        state.currentProduct.positionSensorEnabled = null;
         // rgbStatusLed (all device types): same stale-value risk as
         // statusLed above, just with a pins object instead of one GPIO.
         state.currentProduct.rgbStatusLedPins = null;
@@ -3790,6 +3938,26 @@ function bindEvents() {
   if (statusLedEnabledInput) {
     statusLedEnabledInput.addEventListener("change", () => {
       state.currentProduct.statusLedEnabled = statusLedEnabledInput.checked;
+      saveProducts();
+      render();
+    });
+  }
+
+  const positionSensorGpioPinInput = document.getElementById("position-sensor-gpio-pin");
+  if (positionSensorGpioPinInput) {
+    positionSensorGpioPinInput.addEventListener("input", () => {
+      const raw = positionSensorGpioPinInput.value;
+      state.currentProduct.positionSensorGpioPin = raw === "" ? null : parseInt(raw, 10);
+      saveProducts();
+      render();
+      document.getElementById("position-sensor-gpio-pin").focus();
+    });
+  }
+
+  const positionSensorEnabledInput = document.getElementById("position-sensor-enabled");
+  if (positionSensorEnabledInput) {
+    positionSensorEnabledInput.addEventListener("change", () => {
+      state.currentProduct.positionSensorEnabled = positionSensorEnabledInput.checked;
       saveProducts();
       render();
     });

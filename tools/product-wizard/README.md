@@ -30,9 +30,12 @@ open tools/product-wizard/index.html
   (`firmware/dimmable-light/`), "Window Covering"
   (`firmware/window-covering/`), "Color Light"
   (`firmware/color-light/`), "Addressable LED Strip"
-  (`firmware/addressable-light/`), or "Thermostat"
-  (`firmware/thermostat/`). All eleven are real, buildable
-  firmware, not just UI placeholders. Each card has its own hand-drawn
+  (`firmware/addressable-light/`), "Thermostat"
+  (`firmware/thermostat/`), or "Door Lock" (`firmware/door-lock/`). All
+  twelve are real, buildable firmware, not just UI placeholders
+  (`firmware/camera/`, this repo's thirteenth device type, is
+  deliberately NOT offered here — see its own section further down for
+  why). Each card has its own hand-drawn
   line-art icon (`DEVICE_TYPE_ICONS` in `index.html`), in the spirit of
   Apple's own SF Symbols/HomeKit accessory icons — not the actual Apple
   assets (those are proprietary), but drawn to read the same way: light
@@ -690,6 +693,32 @@ the rotary encoder, and all three displays; not yet hardware-tested — no
 OpenTherm adapter board, rotary encoder, or any of the three displays
 was physically available when this was built.
 
+A twelfth device type, `firmware/door-lock/` (Matter Door Lock), followed
+`firmware/camera/` (which is not offered here at all — see "Known
+limitations" below) — back to a normal one-chip/one-firmware device the
+wizard's existing data model already fits cleanly. The wizard side needed
+no new structural mechanism, only new data plus exactly one new parallel
+field: `extraPickers` (already established by outlet/thermostat) covers
+the Output type picker (Servo/Relay) unchanged, and a new `positionSensor`
+field is a deliberate parallel duplicate of the existing `statusLed`
+single-GPIO checkbox-gated shape — not a reuse of that literal field,
+since `statusLed`'s hardcoded "Add a Status LED" UI text would misdescribe
+a sensor input as an LED output. One pre-existing structural quirk was
+accepted rather than special-cased: the main `driver` GPIO block always
+renders unconditionally for every device type (no null-check gate), so it
+was deliberately assigned to the Servo pin (matching the firmware's own
+shipped default) while Relay's own pin rides on the Output extraPicker's
+own `pins` array instead — meaning the Servo field stays visible-but-
+unused if Relay is selected, a small, honest, harmless quirk rather than
+a wizard bug. Verified with the same Node.js sandboxed regression-check
+pattern used throughout this file (device-type lookup, `isProductComplete`
+before and after enabling the position sensor with/without a valid GPIO,
+and the exact generated sed command for `DOOR_LOCK_POSITION_GPIO`) — all
+checks passed. Docker build-verified across the 3 meaningful firmware
+configs (servo/no-sensor, servo/with-sensor, relay/no-sensor); not yet
+hardware-tested — no servo/relay/reed-switch hardware for this device
+type was physically available when this was built.
+
 ## Known limitations
 
 - `firmware/camera/` (Matter Camera, this repo's twelfth device type)
@@ -700,10 +729,10 @@ was physically available when this was built.
   one board. Forcing it into that model would misrepresent how it
   actually needs to be built and flashed. Build and flash it by hand
   following `firmware/camera/README.md`'s own instructions.
-- Eleven device types exist (`On/Off Light`, `On/Off Switch`, `Contact
+- Twelve device types exist (`On/Off Light`, `On/Off Switch`, `Contact
   Sensor`, `Outlet`, `Temperature Sensor`, `Light Sensor`, `Dimmable
   Light`, `Window Covering`, `Color Light`, `Addressable LED Strip`,
-  `Thermostat`) —
+  `Thermostat`, `Door Lock`) —
   light/switch/contact/outlet are all digital GPIO, temperature is this
   repo's first non-GPIO sensor (I2C, single-wire, or 1-Wire depending
   which of its 7 supported chips you pick), light sensor is the first
@@ -777,14 +806,19 @@ was physically available when this was built.
   test PAA is never on it. That's an ecosystem-level restriction, not a
   bug here (see the comment at the top of `tools/gen_factory.sh`). Home
   Assistant and chip-tool don't have this restriction.
-- `firmware/thermostat/` is the newest device type and, unlike the other
-  ten, none of its hardware was available when it was built: no OpenTherm
-  adapter board (so the OPENTHERM output mode is protocol-verified and
-  Docker build-verified only, never tested against a real boiler), no
-  rotary encoder, and none of the three selectable displays. It's the
-  first genuinely large gap in this repo between "build-verified" and
-  "hardware-verified" for a whole device type — worth closing before
-  relying on it the way the other ten have been.
+- `firmware/thermostat/` had none of its hardware available when it was
+  built: no OpenTherm adapter board (so the OPENTHERM output mode is
+  protocol-verified and Docker build-verified only, never tested against
+  a real boiler), no rotary encoder, and none of the three selectable
+  displays. It's the first genuinely large gap in this repo between
+  "build-verified" and "hardware-verified" for a whole device type —
+  worth closing before relying on it the way most of the others have
+  been.
+- `firmware/door-lock/` is the newest device type offered here and has
+  the same kind of gap: no servo, relay, or reed-switch hardware was
+  available when it was built, so it's Docker build-verified across all
+  3 meaningful configs (servo/no-sensor, servo/with-sensor,
+  relay/no-sensor) but never tested against a real lock.
 
 ## Design notes
 
