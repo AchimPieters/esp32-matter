@@ -799,8 +799,25 @@ const COMPONENT_LIBRARY = {
   // (pin1Label/usesPin2 identical for both) — there's still a real protocol
   // difference (24-bit GRB vs 32-bit RGBW, different bit timing) driving a
   // real #define switch, which is what this mechanism is for either way.
-  ADDR_WS2812B: { name: "WS2812B", category: "addressable", bus: "single-wire (RMT)", pin1Label: "Data (DIN)", pin2Label: null, usesPin2: false, verified: false, defineValue: "ADDRESSABLE_LIGHT_CHIP_WS2812B", note: "24-bit RGB (3 bytes/pixel, GRB order). Timing/order confirmed against Worldsemi's own WS2812B datasheet — see firmware/addressable-light/main/app_main.cpp's header comment for the exact values and sourcing." },
-  ADDR_SK6812: { name: "SK6812 (RGBW)", category: "addressable", bus: "single-wire (RMT)", pin1Label: "Data (DIN)", pin2Label: null, usesPin2: false, verified: false, defineValue: "ADDRESSABLE_LIGHT_CHIP_SK6812", note: "32-bit RGBW (4 bytes/pixel, RGBW order per Worldsemi's own SK6812RGBW datasheet — flagged in app_main.cpp's header comment as a real point of disagreement with some community libraries, which default to GRBW instead). Timing differs from WS2812B — see that same header comment." },
+  // Grown from 2 to 8 chips across three protocol families on request:
+  // six single-wire RMT chips (usesPin2: false, one data pin), APA102
+  // (real 2-wire SPI, usesPin2: true — Data/Clock) and SM2335EGH
+  // (bit-banged 2-wire, usesPin2: true — Data/Clock, and the one chip here
+  // with NO pixel-chain concept at all, see hidesNumberField below and its
+  // own note in app_main.cpp's header comment). "3ch/4ch/5ch" is conveyed
+  // per-chip via each entry's own `bus` label rather than a separate
+  // picker dimension, since every one of these chips has exactly one
+  // fixed, real channel count — there's no actual hardware that is, say,
+  // "WS2812B but 4-channel", so a cross-product chip x channel-count
+  // picker would just offer nonexistent combinations.
+  ADDR_WS2812B: { name: "WS2812B", category: "addressable", bus: "single-wire (RMT), 3ch", pin1Label: "Data (DIN)", pin2Label: null, usesPin2: false, verified: false, defineValue: "ADDRESSABLE_LIGHT_CHIP_WS2812B", note: "24-bit RGB (3 bytes/pixel, GRB order). Timing/order confirmed against Worldsemi's own WS2812B datasheet — see firmware/addressable-light/main/app_main.cpp's header comment for the exact values and sourcing." },
+  ADDR_WS2813: { name: "WS2813", category: "addressable", bus: "single-wire (RMT), 3ch", pin1Label: "Data (DIN)", pin2Label: null, usesPin2: false, verified: false, defineValue: "ADDRESSABLE_LIGHT_CHIP_WS2813", note: "24-bit RGB (3 bytes/pixel, GRB order) — Worldsemi's own \"dual signal\" backup-data-line design for extra reliability; the ESP32 still only drives one DIN pin, exactly like WS2812B. Its datasheet's own timing windows are wider than (and don't simply contain) WS2812B's, so this chip uses its own tailored timing constants rather than reusing WS2812B's — see app_main.cpp's header comment." },
+  ADDR_WS2815: { name: "WS2815 (12V)", category: "addressable", bus: "single-wire (RMT), 3ch", pin1Label: "Data (DIN)", pin2Label: null, usesPin2: false, verified: false, defineValue: "ADDRESSABLE_LIGHT_CHIP_WS2815", note: "24-bit RGB (3 bytes/pixel, GRB order) — the 12V variant of the same Worldsemi dual-signal design as WS2813; same tailored timing constants as WS2813, see app_main.cpp's header comment." },
+  ADDR_SK6812: { name: "SK6812", category: "addressable", bus: "single-wire (RMT), 3ch", pin1Label: "Data (DIN)", pin2Label: null, usesPin2: false, verified: false, defineValue: "ADDRESSABLE_LIGHT_CHIP_SK6812", note: "24-bit RGB (3 bytes/pixel, GRB order) — the plain, non-RGBW SK6812 variant. Timing confirmed identical to SK6812RGBW's own datasheet, not assumed — see app_main.cpp's header comment." },
+  ADDR_SK6812_RGBW: { name: "SK6812 RGBW", category: "addressable", bus: "single-wire (RMT), 4ch", pin1Label: "Data (DIN)", pin2Label: null, usesPin2: false, verified: false, defineValue: "ADDRESSABLE_LIGHT_CHIP_SK6812_RGBW", note: "32-bit RGBW (4 bytes/pixel, RGBW order per Worldsemi's own SK6812RGBW datasheet — flagged in app_main.cpp's header comment as a real point of disagreement with some community libraries, which default to GRBW instead)." },
+  ADDR_WS2805: { name: "WS2805 (RGBCCT)", category: "addressable", bus: "single-wire (RMT), 5ch", pin1Label: "Data (DIN)", pin2Label: null, usesPin2: false, verified: false, defineValue: "ADDRESSABLE_LIGHT_CHIP_WS2805", note: "40-bit RGB + warm/cool white (5 bytes/pixel, RGBW1W2 order per Worldsemi's own official datasheet, fetched directly from world-semi.com). Genuinely RGBCCT — unlike SK6812 RGBW's single white channel, this adds Matter's ColorTemperature feature and switches between Hue/Saturation and color-temperature control, same interlock design as firmware/color-light/'s RGBWW mode. See app_main.cpp's header comment for the full explanation, including the W1=warm/W2=cool convention assumed (not itself confirmed in the datasheet)." },
+  ADDR_APA102: { name: "APA102 (DotStar)", category: "addressable", bus: "SPI (clock+data), 3ch", pin1Label: "Data (DI)", pin2Label: "Clock (CI)", usesPin2: true, verified: false, defineValue: "ADDRESSABLE_LIGHT_CHIP_APA102", note: "Not a single-wire NRZ protocol like the others — a real 2-wire clock+data interface (essentially SPI without chip-select), driven via ESP-IDF's real SPI peripheral. APA102's own datasheet is notoriously thin on protocol detail; app_main.cpp follows the widely-cited, independently-verified cpldcpu.com reverse-engineering writeup instead (cross-referenced against Adafruit's/SparkFun's own guides) — see its header comment." },
+  ADDR_SM2335: { name: "SM2335EGH", category: "addressable", bus: "bit-banged 2-wire, 5ch", pin1Label: "Data (SDA)", pin2Label: "Clock (CLK)", usesPin2: true, verified: false, hidesNumberField: true, defineValue: "ADDRESSABLE_LIGHT_CHIP_SM2335", note: "Architecturally different from every other chip in this list: a single-fixture, 5-channel (RGB + warm/cool white) smart-bulb driver IC, not a pixel-chain chip — so the Number of pixels field above doesn't apply and is hidden while this is selected. No real protocol datasheet exists (confirmed by fetching the manufacturer's own one-page feature summary, which has zero protocol detail); app_main.cpp follows ESPHome's own open-source, real-hardware-tested implementation instead — see its header comment for the full explanation." },
   // Contact sensor components — deliberately cosmetic, no defineValue: a
   // reed switch, a Hall-effect IC, and a plain mechanical microswitch are
   // all, from app_main.cpp's point of view, just "read one GPIO, HIGH or
@@ -1385,6 +1402,27 @@ const DEVICE_TYPES = [
         options: ["COLOR_MODE_RGB", "COLOR_MODE_RGBW", "COLOR_MODE_RGBWW"],
         defineName: "COLOR_LIGHT_COLOR_MODE",
       },
+      // Purely informational, on request: Color Light drives plain PWM
+      // (LEDC) directly, and physically cannot speak any of these chips'
+      // real protocols (single-wire NRZ timing or SPI) — there is no
+      // #define for this, so `cosmetic: true` tells renderConfigureDevice/
+      // buildSedCommands/renderCustomiseReview to render this exactly
+      // like a normal picker but skip generating any sed command for it
+      // and label it as reference-only, the same "shows in the UI, zero
+      // effect on the generated firmware" contract
+      // `componentsPurelyVisual` already documents for contact-sensor's
+      // reed switch/Hall sensor/microswitch list — reused here rather
+      // than introducing a second, differently-shaped mechanism for the
+      // same idea. Reuses the exact same COMPONENT_LIBRARY entries
+      // firmware/addressable-light/ uses for real, rather than
+      // duplicating each chip's name/bus/note a second time.
+      {
+        key: "addressableChipRef",
+        label: "If you're actually using an addressable chip",
+        prompt: "For reference only — Color Light can't drive any of these (see the note below); pick \"Addressable LED Strip\" as the device type instead if this is your real hardware.",
+        options: ["ADDR_WS2812B", "ADDR_WS2813", "ADDR_WS2815", "ADDR_SK6812", "ADDR_SK6812_RGBW", "ADDR_WS2805", "ADDR_APA102", "ADDR_SM2335"],
+        cosmetic: true,
+      },
     ],
     driverLabel: "Red Channel",
     driver: {
@@ -1429,23 +1467,27 @@ const DEVICE_TYPES = [
   {
     id: "addressable-light",
     name: "Addressable LED Strip",
-    desc: "Matter color light (same Hue/Saturation/brightness capability as Color Light) driving an addressable WS2812B or SK6812 LED strip over one data pin via the ESP32's RMT peripheral, instead of plain PWM channels. Every pixel is always set to the same color — Matter has no per-pixel/effects concept (its DynamicLighting cluster exists but is still provisional, not usable against a real controller), so this is not \"RGBIC\" per-zone control, just a different physical layer for the same single-color Matter light. Reference device in firmware/addressable-light/.",
-    shortDesc: "Addressable WS2812B/SK6812 strip, one color for all pixels.",
+    desc: "Matter color light (same Hue/Saturation/brightness capability as Color Light, plus color-temperature control for the two RGBCCT chips) driving an addressable strip or driver chip over one data pin (or data+clock, for APA102/SM2335EGH) instead of plain PWM channels. Every pixel/fixture is always set to the same color — Matter has no per-pixel/effects concept (its DynamicLighting cluster exists but is still provisional, not usable against a real controller), so this is not \"RGBIC\" per-zone control, just a different physical layer for the same single-color Matter light. Reference device in firmware/addressable-light/.",
+    shortDesc: "Addressable strip or smart-bulb driver, one color for all pixels.",
     // Matches project(matter_addressable_light) in
-    // firmware/addressable-light/CMakeLists.txt. WS2812B vs SK6812 is a
-    // componentOptions chip choice (like the temperature/light sensors'),
-    // not an extraPickers one — see the comment on ADDR_WS2812B/ADDR_SK6812
-    // in COMPONENT_LIBRARY for why that mechanism fits despite both chips
-    // sharing the same single-pin shape. Pixel count
-    // (ADDRESSABLE_LIGHT_PIXEL_COUNT in app_main.cpp) uses the new
-    // `numberField` mechanism — a plain integer #define, not a GPIO or
-    // enum choice, so it needed a genuinely new field type (see the
-    // `numberField` handling in renderConfigureDevice/isProductComplete/
-    // buildSedCommands for the generic, device-type-agnostic
-    // implementation — the first thing in this wizard that isn't a GPIO
-    // pin or a named enum choice).
+    // firmware/addressable-light/CMakeLists.txt. Chip choice is a
+    // componentOptions pick (like the temperature/light sensors'), not an
+    // extraPickers one — see the comment on ADDR_WS2812B etc. in
+    // COMPONENT_LIBRARY for why that mechanism fits despite most options
+    // sharing the same single-pin shape. `secondary` (below) is only shown
+    // for the two chips whose COMPONENT_LIBRARY entry sets
+    // usesPin2: true (APA102, SM2335EGH) — same usesPin2 mechanism the
+    // temperature sensor's I2C chips already use for SDA/SCL, reused here
+    // for Data/Clock instead. Pixel count (ADDRESSABLE_LIGHT_PIXEL_COUNT
+    // in app_main.cpp) uses the `numberField` mechanism — a plain integer
+    // #define, not a GPIO or enum choice (see the `numberField` handling
+    // in renderConfigureDevice/isProductComplete/buildSedCommands for the
+    // generic, device-type-agnostic implementation) — except for
+    // SM2335EGH, whose COMPONENT_LIBRARY entry sets hidesNumberField: true
+    // since that chip drives a single fixture, not a pixel chain, so
+    // "number of pixels" has no meaning for it at all.
     binName: "matter_addressable_light.bin",
-    componentOptions: ["ADDR_WS2812B", "ADDR_SK6812"],
+    componentOptions: ["ADDR_WS2812B", "ADDR_WS2813", "ADDR_WS2815", "ADDR_SK6812", "ADDR_SK6812_RGBW", "ADDR_WS2805", "ADDR_APA102", "ADDR_SM2335"],
     componentDefineName: "ADDRESSABLE_LIGHT_CHIP",
     numberField: {
       key: "pixelCount",
@@ -1460,22 +1502,37 @@ const DEVICE_TYPES = [
       helpText: "Must match how many pixels are actually wired up on your strip. Fewer configured than wired just leaves the extras dark; more configured than wired is harmless too (the last real pixel passes the extra bits through). 1000 is an arbitrary upper bound, not a real hardware limit — see ADDRESSABLE_LIGHT_PIXEL_COUNT's comment in app_main.cpp if you need more.",
     },
     driver: {
-      summary: "Data (DIN) · single-wire (RMT)",
-      fieldLabel: "Data (DIN) GPIO pin",
-      blockTitle: "Data (DIN) · addressable strip output (RMT)",
+      summary: "Data · addressable output",
+      fieldLabel: "Data GPIO pin",
+      blockTitle: "Data · addressable output",
       filePath: "firmware/addressable-light/main/app_main.cpp",
       defineName: "ADDRESSABLE_LIGHT_GPIO",
       currentGpio: 2,
       defaultsByModule: { esp32: 2, esp32c2: 2, esp32c3: 2, esp32c5: 2, esp32c6: 2, esp32c61: 2, esp32s3: 2, esp32h2: 2 },
     },
+    // Clock pin — only rendered/required when the selected chip's
+    // usesPin2 is true (APA102, SM2335EGH); every other chip only needs
+    // the one Data pin above. Same secondaryFieldNeeded mechanism the
+    // temperature sensor's I2C chips already exercise for SDA/SCL.
+    secondary: {
+      label: "Clock",
+      summary: "Clock · addressable output",
+      fieldLabel: "Clock GPIO pin",
+      blockTitle: "Clock · addressable output",
+      filePath: "firmware/addressable-light/main/app_main.cpp",
+      defineName: "ADDRESSABLE_LIGHT_CLOCK_GPIO",
+      currentGpio: 4,
+      defaultsByModule: { esp32: 4, esp32c2: 4, esp32c3: 4, esp32c5: 4, esp32c6: 4, esp32c61: 4, esp32s3: 4, esp32h2: 4 },
+    },
     identify: {
-      summary: "GPIO (digital output)",
+      summary: "GPIO (digital output, or the strip/fixture itself)",
       fieldLabel: "Identify LED GPIO pin",
       blockTitle: "Identify LED · digital output",
       filePath: "firmware/addressable-light/main/app_main.cpp",
       defineName: "IDENTIFY_LED_GPIO",
-      currentGpio: 15,
-      defaultsByModule: { esp32: 15, esp32c2: 15, esp32c3: 15, esp32c5: 15, esp32c6: 15, esp32c61: 15, esp32s3: 15, esp32h2: 15 },
+      currentGpio: 2,
+      defaultsByModule: { esp32: 2, esp32c2: 2, esp32c3: 2, esp32c5: 2, esp32c6: 2, esp32c61: 2, esp32s3: 2, esp32h2: 2 },
+      note: "Defaults to the SAME GPIO as the Data pin above — no separate LED needed, since the firmware flashes the strip/fixture itself for Identify instead (see app_main.cpp's header comment for why this is safe here but wouldn't be for a plain PWM device). Set this to a different, real LED's GPIO for the classic separate-indicator behavior instead.",
     },
   },
 ];
@@ -1890,7 +1947,7 @@ function renderConfigureDevice(p) {
   const componentOptions = deviceType ? deviceType.componentOptions : null;
   const extraButtons = deviceType ? deviceType.extraButtons : null;
   const extraPickers = deviceType ? deviceType.extraPickers : null;
-  const numberField = deviceType ? deviceType.numberField : null;
+  let numberField = deviceType ? deviceType.numberField : null;
   const defaultGpio = driver ? (driver.defaultsByModule[p.target] != null ? driver.defaultsByModule[p.target] : 2) : 2;
   const defaultSecondaryGpio = secondary ? (secondary.defaultsByModule[p.target] != null ? secondary.defaultsByModule[p.target] : 4) : 4;
   const defaultIdentifyGpio = identify ? (identify.defaultsByModule[p.target] != null ? identify.defaultsByModule[p.target] : 4) : 4;
@@ -1900,6 +1957,13 @@ function renderConfigureDevice(p) {
 
   if (componentOptions && p.component == null) p.component = componentOptions[0];
   const selectedComponent = componentOptions ? (findComponent(p.component) || findComponent(componentOptions[0])) : null;
+  // Some componentOptions chips (currently just addressable-light's
+  // SM2335EGH) have no pixel-chain concept at all — hidesNumberField on
+  // the selected component's own COMPONENT_LIBRARY entry suppresses the
+  // numberField the device type would otherwise show, same as any other
+  // "this device type has one, but this chip doesn't use it" case
+  // elsewhere in this file (e.g. usesPin2: false hiding the pin2 field).
+  if (selectedComponent && selectedComponent.hidesNumberField) numberField = null;
 
   // extraPickers (currently just the outlet's Output-type + Power-Monitoring
   // chip choices): a list of independent enum-like pickers, each keyed by
@@ -2074,7 +2138,9 @@ function renderConfigureDevice(p) {
                 `).join("")}
               </div>
               <p class="field-note">
-                ${selected.verified ? `Verified on real hardware in this repo.` : `Not personally tested on real hardware in this repo — build-verified only.`}
+                ${picker.cosmetic
+                  ? `Reference only — this device type can't actually drive this chip; the selection has no effect on the generated firmware.`
+                  : (selected.verified ? `Verified on real hardware in this repo.` : `Not personally tested on real hardware in this repo — build-verified only.`)}
                 ${selected.note ? ` ${escapeHtml(selected.note)}` : ""}
               </p>
             `;
@@ -2194,6 +2260,7 @@ function renderConfigureDevice(p) {
             On by default; untick to
             leave it out of this product (the firmware's shipped default
             stays as-is, this just means the wizard won't customise it).
+            ${identify && identify.note ? ` ${escapeHtml(identify.note)}` : ""}
           </p>
 
           ${identifyOn ? `
@@ -2442,7 +2509,13 @@ function isProductComplete(p) {
   // computed independently here too, same "don't trust p[...] being
   // pre-filled" reasoning as buttonCount/hasVariableButtonCount above,
   // since this can be called before renderConfigureDevice ever has.
-  const numberField = deviceType ? deviceType.numberField : null;
+  const componentOptions = deviceType ? deviceType.componentOptions : null;
+  const selectedComponent = componentOptions ? (findComponent(p.component) || findComponent(componentOptions[0])) : null;
+  // hidesNumberField (currently just addressable-light's SM2335EGH — see
+  // the same check in renderConfigureDevice) — a hidden field is never
+  // required, same as any other conditionally-shown field here.
+  const numberField = (deviceType && deviceType.numberField && !(selectedComponent && selectedComponent.hidesNumberField))
+    ? deviceType.numberField : null;
   const numberFieldOk = !numberField ||
     (Number.isInteger(p[numberField.key]) && p[numberField.key] >= numberField.min && p[numberField.key] <= numberField.max);
   return !!p.deviceType && !!p.target &&
@@ -2504,7 +2577,7 @@ function renderCustomiseReview(p) {
           if (!dt || !dt.extraPickers) return "";
           return dt.extraPickers.map((picker) => {
             const s = findComponent(p[picker.key]) || findComponent(picker.options[0]);
-            const caveat = s.verified ? "" : " — not hardware-verified in this repo";
+            const caveat = picker.cosmetic ? " — reference only, no effect on the generated firmware" : (s.verified ? "" : " — not hardware-verified in this repo");
             return `
               <div class="review-row">
                 <div>
@@ -2556,18 +2629,30 @@ function renderCustomiseReview(p) {
             </div>
           `).join("");
         })()}
-        ${findDeviceType(p.deviceType) && findDeviceType(p.deviceType).secondary ? `
-          <div class="review-row">
-            <div>
-              <div class="summary-label">${escapeHtml((findDeviceType(p.deviceType).secondary.label || "SECONDARY").toUpperCase())}</div>
-              <div class="summary-value">${escapeHtml(findDeviceType(p.deviceType).secondary.summary)} &middot; IO pin GPIO ${p.secondaryGpioPin != null ? p.secondaryGpioPin : "?"}</div>
+        ${(() => {
+          const dt = findDeviceType(p.deviceType);
+          if (!dt || !dt.secondary) return "";
+          // usesPin2-aware, same as renderConfigureDevice's
+          // secondaryFieldNeeded — a chip that doesn't use the second pin
+          // (e.g. most of addressable-light's chips vs. APA102/SM2335EGH)
+          // shouldn't show a row implying it's a real, active setting.
+          const sc = dt.componentOptions ? (findComponent(p.component) || findComponent(dt.componentOptions[0])) : null;
+          if (sc && !sc.usesPin2) return "";
+          return `
+            <div class="review-row">
+              <div>
+                <div class="summary-label">${escapeHtml((dt.secondary.label || "SECONDARY").toUpperCase())}</div>
+                <div class="summary-value">${escapeHtml(dt.secondary.summary)} &middot; IO pin GPIO ${p.secondaryGpioPin != null ? p.secondaryGpioPin : "?"}</div>
+              </div>
+              <button class="link" data-goto-step="2">Edit</button>
             </div>
-            <button class="link" data-goto-step="2">Edit</button>
-          </div>
-        ` : ""}
+          `;
+        })()}
         ${(() => {
           const dt = findDeviceType(p.deviceType);
           if (!dt || !dt.numberField) return "";
+          const sc = dt.componentOptions ? (findComponent(p.component) || findComponent(dt.componentOptions[0])) : null;
+          if (sc && sc.hidesNumberField) return "";
           const nf = dt.numberField;
           return `
             <div class="review-row">
@@ -2721,6 +2806,7 @@ function renderGenerateFirmware(p) {
       ` : ""}
 
       ${deviceType && deviceType.extraPickers ? deviceType.extraPickers.map((picker) => {
+        if (picker.cosmetic) return ""; // reference only — nothing was applied, so there's nothing to warn about
         const selected = findComponent(p[picker.key]) || findComponent(picker.options[0]);
         if (selected.verified) return "";
         return `
@@ -2881,8 +2967,13 @@ function buildSedCommands(p) {
   if (extraPickers) {
     // Same non-GPIO #define-selects-a-branch pattern as componentDefineName
     // above (each picker chooses which #if OUTLET_xxx branch compiles in,
-    // not a pin number), one sed line per picker.
+    // not a pin number), one sed line per picker. `cosmetic` pickers
+    // (currently color-light's addressable-chip reference list) have no
+    // real #define behind them at all — the device type physically can't
+    // act on the choice — so they're skipped entirely here, same as they
+    // are in the note-box/warn-box text above.
     extraPickers.forEach((picker) => {
+      if (picker.cosmetic) return;
       const selected = findComponent(p[picker.key]) || findComponent(picker.options[0]);
       cmds.push(`sed -i 's/^#define ${picker.defineName} .*/#define ${picker.defineName} ${selected.defineValue}/' ${filePath}`);
       // The selected component's own pins (e.g. BL0942's UART RX/TX, or

@@ -600,23 +600,47 @@ firmware/color-light/     RGB/RGBW/RGBWW color light — ninth device type,
                            verified in Docker for all three modes (RGB,
                            RGBW, RGBWW); not hardware-tested (no RGB(W)(W)
                            LED/driver board for this device type
-                           physically available when written).
+                           physically available when written). The wizard's
+                           Configure Device sidebar also gained a second,
+                           purely cosmetic picker — "If you're actually
+                           using an addressable chip," listing the same 8
+                           chips firmware/addressable-light/ actually
+                           supports (WS2812B/WS2813/WS2815/SK6812/SK6812
+                           RGBW/WS2805/APA102/SM2335EGH) — since Color
+                           Light's plain LEDC PWM output physically cannot
+                           speak any of those chips' real protocols
+                           (single-wire NRZ timing or SPI), this is
+                           reference-only: no #define exists for it, so
+                           the new `cosmetic` flag on an `extraPickers`
+                           entry (a small, reusable generalization, not a
+                           one-off) tells renderConfigureDevice/
+                           buildSedCommands/renderCustomiseReview to
+                           render it normally but skip generating any sed
+                           command or "verified"/"build-tested" framing
+                           for it — same "shows in the UI, zero effect on
+                           the generated firmware" contract
+                           `componentsPurelyVisual` already established for
+                           contact-sensor's reed switch/Hall sensor list,
+                           reused here rather than inventing a second,
+                           differently-shaped mechanism for the same idea.
   partitions.csv           same OTA + fctry layout as firmware/light/
   sdkconfig.defaults        same as firmware/light/
-firmware/addressable-light/  Addressable WS2812B/SK6812 LED strip — tenth
-                           device type, and this repo's first over an
-                           addressable single-wire LED protocol (RMT
-                           peripheral) rather than plain PWM
+firmware/addressable-light/  Addressable LED strip / smart-bulb driver —
+                           tenth device type, and this repo's first over
+                           addressable/digital LED protocols (single-wire
+                           NRZ via RMT, real SPI for APA102, or bit-banged
+                           2-wire for SM2335EGH) rather than plain PWM
   main/app_main.cpp       Same hand-assembled ExtendedColorLight endpoint
                            as firmware/color-light/ (Identify + Groups +
-                           OnOff + LevelControl + ColorControl[HueSaturation
-                           only] + ScenesManagement) — copied from that
-                           file, changed only where the addressable output
-                           needs something different from LEDC PWM. Crucial
+                           OnOff + LevelControl + ColorControl[HueSaturation,
+                           +ColorTemperature for the two RGBCCT chips] +
+                           ScenesManagement) — copied from that file,
+                           changed only where the addressable output needs
+                           something different from LEDC PWM. Crucial
                            scoping decision, verified rather than assumed:
                            "addressable" does NOT mean per-pixel/RGBIC-style
-                           control here — every pixel is always set to the
-                           same color, because Matter itself has no
+                           control here — every pixel/fixture is always set
+                           to the same color, because Matter itself has no
                            ratified way to ask for anything else. Checked
                            directly in connectedhomeip's own
                            controller-clusters.matter: there IS a
@@ -629,65 +653,191 @@ firmware/addressable-light/  Addressable WS2812B/SK6812 LED strip — tenth
                            1.6), so no real controller (Apple/Google Home,
                            Home Assistant) can command it today, and
                            esp-matter has no cluster support for it either.
-                           #define ADDRESSABLE_LIGHT_CHIP selects WS2812B
-                           (default, 24-bit/3 bytes per pixel) or SK6812
-                           (32-bit RGBW/4 bytes per pixel) — timing AND
-                           byte order for both independently verified
-                           against Worldsemi's own datasheets (not a
-                           secondary source, per this repo's established
-                           practice; fetched as PDFs and read via
-                           `pdftotext`, not assumed from search-engine
-                           summaries, which turned up two conflicting
-                           "official" WS2812B timing tables): WS2812B is
-                           T0H=0.4us/T0L=0.85us/T1H=0.8us/T1L=0.45us,
-                           reset>=50us, GRB byte order; SK6812RGBW
-                           (Document No. SPC/SK6812RGBW Rev.01) is
-                           T0H=0.3us/T0L=0.9us/T1H=0.6us/T1L=0.6us,
-                           reset=80us, RGBW byte order — flagged in a code
-                           comment as a real point of disagreement with
-                           several community Arduino/ESPHome libraries,
-                           which default to GRBW instead; if a real
-                           SK6812 strip's colors come out swapped, that
-                           library-vs-datasheet mismatch (not a bug in
-                           this file) is the first thing to check.
-                           ADDRESSABLE_LIGHT_RESET_US is set to 300us for
-                           WS2812B — well above the 50us datasheet
-                           minimum, since a second, separately-circulated
-                           Worldsemi datasheet revision documents newer
-                           "-V5" silicon needing up to ~300us, and the
-                           reset only costs time once per full-strip
-                           update, so being generous is free. RGB->RGBW
-                           for SK6812 reuses firmware/color-light/'s exact
-                           "extract common white" technique, not
-                           re-derived. Driven via ESP-IDF's
-                           `driver/rmt_tx.h` (the RMT hardware peripheral,
-                           built exactly for precise pulse-timed waveforms
-                           like this) — the first driver in this repo to
-                           use RMT rather than bit-banged GPIO timing
-                           (unlike firmware/temperature-sensor/'s
-                           DHT11/DHT22/DS18B20, which predate this). Exact
-                           API pattern (`rmt_new_tx_channel()`,
-                           `rmt_new_simple_encoder()` with a byte-by-byte
-                           callback, `rmt_transmit()`,
-                           `rmt_tx_wait_all_done()`) checked directly
-                           against Espressif's own official reference
-                           example
-                           (`examples/peripherals/rmt/led_strip_simple_encoder`
-                           in this repo's pinned ESP-IDF v5.5.4, which
+
+                           Grew from 2 chips to 8 across three protocol
+                           families on request (WS2812B, SK6812, SK6812
+                           RGBW, WS2813, WS2815, APA102, then — after a
+                           follow-up screenshot of a real manufacturing
+                           tool's "Device Drivers" screen — WS2805 and
+                           SM2335EGH). #define ADDRESSABLE_LIGHT_CHIP
+                           selects between them:
+
+                           Six single-wire NRZ chips (WS2812B, WS2813,
+                           WS2815, SK6812, SK6812_RGBW, WS2805) — every
+                           one independently verified against Worldsemi's
+                           own datasheet (not a secondary source; fetched
+                           as PDFs and read via `pdftotext`, since a plain
+                           web search turned up two conflicting "official"
+                           WS2812B timing tables and vaguer, wider-ranged
+                           numbers for WS2813/WS2815 in the process).
+                           WS2812B: T0H=0.4us/T0L=0.85us/T1H=0.8us/
+                           T1L=0.45us, reset>=50us, GRB order. WS2813/
+                           WS2815: their own datasheets cite noticeably
+                           wider tolerance windows that do NOT simply
+                           contain WS2812B's own values (e.g. WS2812B's
+                           400ns T0H sits just outside WS2813/WS2815's
+                           cited 220-380ns window) — caught by actually
+                           checking the numeric ranges rather than
+                           assuming timing-compatibility from community
+                           reputation, so this pair gets its own tailored
+                           constants (T0H=0.3us/T0L=0.8us/T1H=0.8us/
+                           T1L=0.3us) chosen to sit inside both chips'
+                           real windows. SK6812/SK6812_RGBW: confirmed
+                           identical timing across both chips' own
+                           datasheets (T0H=0.3us/T0L=0.9us/T1H=0.6us/
+                           T1L=0.6us, reset=80us) — plain SK6812 is GRB,
+                           RGBW is RGBW order, flagged in a code comment
+                           as a real point of disagreement with several
+                           community Arduino/ESPHome libraries that
+                           default to GRBW instead. WS2805 (fetched
+                           directly from world-semi.com, not a distributor
+                           mirror): T0H=220-380ns/T1H=580ns-1us/
+                           T0L=580ns-1us/T1L=580ns-1us, reset>280us — note
+                           T1L is long here, not short like the WS2812B-
+                           family above, so it gets its own values too
+                           (T0H=0.3us/T0L=0.8us/T1H=0.8us/T1L=0.8us);
+                           RGBW1W2 byte order, W1=warm/W2=cool assumed by
+                           convention (not itself labelled in the
+                           datasheet). ADDRESSABLE_LIGHT_RESET_US (300us)
+                           is shared by all six — safely above every one
+                           of their individual minimums (50-280us), since
+                           the reset only costs time once per full-strip
+                           update. Driven via ESP-IDF's `driver/rmt_tx.h`
+                           — the first driver in this repo to use RMT
+                           rather than bit-banged GPIO timing (unlike
+                           firmware/temperature-sensor/'s DHT11/DHT22/
+                           DS18B20, which predate this) — exact API
+                           pattern checked against Espressif's own
+                           official `examples/peripherals/rmt/
+                           led_strip_simple_encoder` reference (which
                            lists classic ESP32 among its supported
-                           targets) — only the per-chip timing constants
-                           and pixel byte order differ from that example,
-                           sourced from the datasheets above rather than
-                           copied from the example's own round numbers.
+                           targets), only the timing constants/byte order
+                           differing, sourced from the datasheets above.
+
+                           APA102 (DotStar) — not single-wire NRZ at all:
+                           a real 2-wire clock+data interface (SPI without
+                           chip-select), driven via ESP-IDF's real
+                           `driver/spi_master.h` instead of RMT, the first
+                           real-SPI driver in this repo. APA102's own
+                           datasheet is notoriously thin on protocol
+                           detail, so this follows the widely-cited,
+                           independently-verified cpldcpu.com
+                           reverse-engineering writeup instead (cross-
+                           checked against Adafruit's/SparkFun's own
+                           guides, which agree) — same "best available
+                           source, explicitly flagged" precedent as
+                           CSE7759 in firmware/outlet/. Frame: 32-bit
+                           zero start frame, one 32-bit brightness-
+                           prefixed-BGR frame per pixel (brightness
+                           always sent at max/31 per that source's own
+                           explicit recommendation — brightness lives in
+                           R/G/B via HSV's "V" instead, same as every
+                           other chip here), then a pixel-count-aware end
+                           frame (>= ceil(pixel_count/2) one-bits) instead
+                           of the datasheet's fixed 32-bit one, which the
+                           same source documents as only reliable up to 64
+                           LEDs.
+
+                           SM2335EGH — architecturally different from
+                           every other chip here: a single-fixture,
+                           5-channel (RGB+CW+WW) smart-bulb driver IC, not
+                           a pixel-chain chip at all, so
+                           ADDRESSABLE_LIGHT_PIXEL_COUNT doesn't apply to
+                           it (the wizard hides that field when it's
+                           selected — see below). No real protocol
+                           datasheet exists for it — confirmed directly by
+                           fetching the manufacturer's (chinaasic.com) own
+                           "datasheet," which turned out to be a one-page
+                           feature summary with zero protocol detail, and
+                           by multiple independent open-source driver
+                           authors (ESPHome, the sm2335egh-rs Rust crate)
+                           documenting the same experience asking the
+                           manufacturer directly. This file therefore
+                           follows ESPHome's own real, open-source,
+                           hardware-tested implementation verbatim
+                           (`esphome/components/sm10bit_base/
+                           sm10bit_base.cpp`, fetched directly): a
+                           bit-banged 2-wire (DATA+CLK) protocol, ~2us per
+                           bit, 12-byte buffer (model ID 0xC0 + start
+                           address + gain byte + 5×10-bit RGB+W1+W2
+                           channel values), including an "ACK" clock pulse
+                           per byte whose value is never actually checked
+                           — matching ESPHome's own implementation exactly
+                           rather than guessing at a "cleaner" protocol.
+
+                           WS2805 and SM2335EGH are both genuinely RGBCCT
+                           (independent warm/cool white, not just "one
+                           more white channel" the way SK6812_RGBW is) —
+                           both reuse firmware/color-light/'s
+                           COLOR_LIGHT_MODE_RGBWW design wholesale: Matter's
+                           ColorTemperature feature added alongside
+                           HueSaturation, plus a local color-space
+                           interlock (light_color_source) so a controller's
+                           most recent command (Hue/Saturation vs. Color
+                           Temperature) decides whether the RGB or the
+                           W1/W2 bytes get driven, never both — same
+                           interlock concept, same mireds-to-duty formula
+                           (from ESPHome's light_call.cpp), just re-applied
+                           against pixel/frame bytes instead of LEDC
+                           channels.
+
+                           Identify LED defaults to the SAME GPIO as the
+                           data pin (was GPIO 15 as a separate LED;
+                           changed to GPIO 2 = the data pin, on request) —
+                           flashes the whole strip/fixture for Identify
+                           instead of a separate LED. This could NOT be
+                           done the naive way (a second `gpio_config()`
+                           call on the same pin, like firmware/color-light/
+                           does between its Identify LED and a color
+                           channel) since the data pin here is owned by a
+                           whole peripheral (RMT channel, SPI bus, or the
+                           bit-banged protocol) — a second plain-GPIO
+                           config call on that pin would fight the
+                           peripheral for ownership and corrupt the
+                           output. Fixed with a runtime check
+                           (`identify_via_strip`, computed once at
+                           startup) rather than `#if`, since GPIO_NUM_*
+                           values are plain C enum constants, not
+                           preprocessor macros — an `#if` comparison
+                           between them would silently evaluate as if both
+                           were 0, a real class of bug worth remembering
+                           for any future GPIO-equality check in this repo.
+
+                           Wizard integration: the 8-chip picker itself
+                           needed zero new mechanism (same componentOptions
+                           pattern as before); APA102/SM2335EGH's second
+                           (clock) pin reuses the temperature sensor's
+                           existing usesPin2/`secondary` mechanism, not a
+                           new one. SM2335EGH's missing pixel-count field
+                           needed one small, genuinely reusable addition:
+                           `hidesNumberField` on a COMPONENT_LIBRARY entry,
+                           checked everywhere `numberField` is
+                           read (renderConfigureDevice, isProductComplete,
+                           buildSedCommands, renderCustomiseReview) so a
+                           chip can opt out of a device-type-level field
+                           it doesn't use — the same "don't show a field
+                           the driver doesn't use" principle as usesPin2,
+                           generalized to numberField too. Also caught and
+                           fixed two real, pre-existing gaps while wiring
+                           this up: `renderCustomiseReview`'s own secondary-
+                           pin review row never checked usesPin2 at all
+                           (would have shown a misleading "Clock: GPIO 4"
+                           row even for chips that don't use one), and the
+                           picker's "verified" framing in the left sidebar
+                           would have called a purely cosmetic chip choice
+                           (see color-light's own entry) "not personally
+                           tested... build-verified only" — technically
+                           true but misleading, since nothing was ever
+                           built with that choice at all. Both fixed with
+                           the same usesPin2/`cosmetic`-aware checks.
                            #define ADDRESSABLE_LIGHT_PIXEL_COUNT (default
-                           8, a small common test-strip length) is a plain
-                           integer, adjustable via the wizard's own
-                           `numberField` mechanism — see the wizard-
-                           integration paragraph below for why this needed
-                           genuinely new wizard machinery, unlike the
-                           chip choice. Build-verified in Docker for both
-                           chips; not hardware-tested (no WS2812B/SK6812 strip
-                           physically available when written).
+                           8) is wizard-configurable via a new, generic
+                           `numberField` mechanism (not GPIO, not an enum
+                           choice — the first plain-integer field type this
+                           wizard has), reusable by any future device type
+                           needing one. Build-verified in Docker for all 8
+                           chips; not hardware-tested (none of the 8 chips'
+                           hardware was physically available when written).
   partitions.csv           same OTA + fctry layout as firmware/light/
   sdkconfig.defaults        same as firmware/light/
 tools/
@@ -1268,6 +1418,71 @@ SECURITY.md               flash encryption / secure boot / signed OTA guidance
    inside the sandbox only) — worth remembering as a harness pitfall,
    not a wizard bug, next time a Node sandbox check inspects rendered
    HTML content rather than just data structures.
+
+   `firmware/addressable-light/` then grew from 2 chips to 8, on request
+   (WS2812B, SK6812, SK6812 RGBW, WS2813, WS2815, APA102, then — mid-turn,
+   after the user shared screenshots of a real manufacturing/config tool's
+   "Device Drivers"/"Indicators" screens — WS2805 and SM2335EGH too). Two
+   real scope questions came up before any of this was built, both
+   resolved via AskUserQuestion rather than assumed: whether the same chip
+   list should also appear on `firmware/color-light/` (Color Light
+   physically cannot drive any addressable protocol — plain PWM only — so
+   the user chose to add them there purely as a cosmetic reference list,
+   not real functionality), and whether "5ch" should be covered by a real
+   chip (none of the first 6 requested chips is actually 5-channel — the
+   user chose to have a genuine one researched, which led to WS2805).
+   WS2813/WS2815's own datasheets turned out to cite timing windows that
+   do NOT simply contain WS2812B's values (WS2812B's own 400ns T0H sits
+   just outside WS2813/WS2815's cited 220-380ns range) — caught by
+   actually checking the numeric ranges before assuming
+   WS2812B-compatibility, a real near-mistake worth remembering: chip
+   "family" reputation isn't the same as verified numeric compatibility.
+   APA102 needed this repo's first real SPI driver (`driver/spi_master.h`)
+   and its first genuinely different reverse-engineered-source approach
+   for a chip with no usable official datasheet at all (APA102's own is
+   too thin on protocol detail to use) — followed cpldcpu.com's
+   independently-verified writeup instead, cross-checked against
+   Adafruit's/SparkFun's own guides. SM2335EGH turned out to be
+   architecturally different from every pixel-chain chip here — a
+   single-fixture RGBCCT smart-bulb driver, not an addressable strip at
+   all — confirmed by fetching its manufacturer's own "datasheet" (a
+   one-page feature summary with zero protocol detail) and finding that
+   ESPHome's own driver authors had the identical experience asking for a
+   real one; this file's SM2335EGH protocol implementation is therefore a
+   verbatim port of ESPHome's own open-source, hardware-tested
+   `sm10bit_base.cpp`, the best available source given no real datasheet
+   exists. Because SM2335EGH has no pixel-chain concept, the wizard's
+   pixel-count field needed a genuine "some chips don't use a field this
+   device type otherwise has" mechanism (`hidesNumberField`) — while
+   building that, two independent, real, pre-existing gaps were caught
+   and fixed: `renderCustomiseReview`'s secondary-pin review row never
+   checked `usesPin2` at all (would have shown a misleading Clock-pin row
+   for chips that don't use one), and the sidebar's "verified" framing
+   would have called a purely cosmetic chip choice "not personally
+   tested... build-verified only" — technically true but actively
+   misleading, since nothing is ever built from that choice. On top of
+   all this, per the user's explicit instruction, Identify now defaults
+   to the SAME GPIO as the data pin (flashing the whole strip/fixture
+   instead of a separate LED) — implemented carefully, not naively:
+   configuring a second plain GPIO on a pin already owned by an RMT
+   channel, SPI bus, or bit-banged protocol would corrupt that
+   peripheral's output, so this is a runtime check
+   (`identify_via_strip`) rather than the naive `#if GPIO_NUM_2 ==
+   GPIO_NUM_15`-style comparison, which would silently and incorrectly
+   evaluate true for any two GPIO values (GPIO_NUM_* are C enum
+   constants, not preprocessor macros, so the preprocessor treats both
+   sides as undefined-identifier-equals-0) — a real class of bug worth
+   remembering for any future GPIO-equality check written as `#if` in
+   this repo. Build-verified in Docker for all 8 chips; not
+   hardware-tested (none of the 8 chips' hardware was physically
+   available when written). The richer Indicator/Identify-effect state
+   machine visible in those same manufacturing-tool screenshots (Setup
+   mode/started/complete/failed, Identification blink/breathe/okay/
+   channel-change/...) was deliberately deferred as a separate, later
+   task — it's a cross-cutting change touching every device type's
+   `app_identification_cb`, not just this one, and was explicitly scoped
+   out of this same sitting to keep this chip-expansion change reviewable
+   on its own.
 2. Implement Matter **OTA** — partially done. All ten firmware types ship
    `CONFIG_ENABLE_OTA_REQUESTOR=y`, which adds the OTA Requestor cluster
    to the root node endpoint entirely via Kconfig — esp-matter's own core

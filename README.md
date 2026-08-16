@@ -310,26 +310,32 @@ written).
 
 `firmware/addressable-light/` is a tenth example — the same Matter
 capability as `firmware/color-light/` (one Hue/Saturation/brightness
-color), but driving an addressable WS2812B or SK6812 LED strip over a
-single data pin via the ESP32's RMT peripheral instead of plain PWM
-channels. Every pixel is always set to the same color: Matter has no
-ratified way to command anything else (its `DynamicLighting` cluster,
-which would cover per-pixel/gradient effects, is still `provisional` and
-absent from every shipped Matter spec version — confirmed directly in
+color, plus color temperature for its two RGBCCT chips), but driving an
+addressable strip or driver chip instead of plain PWM channels. Every
+pixel/fixture is always set to the same color: Matter has no ratified way
+to command anything else (its `DynamicLighting` cluster, which would
+cover per-pixel/gradient effects, is still `provisional` and absent from
+every shipped Matter spec version — confirmed directly in
 connectedhomeip's own `controller-clusters.matter`), so this is a
 different physical layer for the same single-color light, not "RGBIC"
-per-zone control. `ADDRESSABLE_LIGHT_CHIP` selects WS2812B (24-bit, GRB
-byte order) or SK6812 (32-bit RGBW, RGBW byte order) — both independently
-verified against Worldsemi's own datasheets, including exact bit timing
-and a documented caveat that some community libraries assume a different
-byte order for SK6812 than its own datasheet specifies. Implemented via
-ESP-IDF's `driver/rmt_tx.h` (this repo's first RMT-based driver, rather
-than the bit-banged GPIO timing `firmware/temperature-sensor/`'s
-DHT11/DHT22/DS18B20 use), with the exact API pattern checked against
-Espressif's own official reference example. See its `app_main.cpp`
-header comment for the full explanation. Build-verified in Docker for
-both chips; not hardware-tested (no WS2812B/SK6812 strip physically
-available when written).
+per-zone control. `ADDRESSABLE_LIGHT_CHIP` selects from eight chips across
+three protocol families: six single-wire NRZ chips driven via ESP-IDF's
+`driver/rmt_tx.h` (WS2812B, WS2813, WS2815, SK6812, SK6812 RGBW, and
+WS2805 — the last a genuine 5-channel RGBCCT chip using the same
+ColorTemperature/interlock design as Color Light's own RGBWW mode);
+APA102 (DotStar), a real 2-wire SPI protocol driven via
+`driver/spi_master.h`; and SM2335EGH, a bit-banged 2-wire smart-bulb
+driver chip that — unlike every other chip here — drives one fixture's
+RGB+CW+WW channels directly rather than a chain of pixels, so the pixel
+count field doesn't apply to it. Every chip's protocol was independently
+verified against its own manufacturer datasheet where one exists
+(Worldsemi, fetched as PDFs and read with `pdftotext`) or the best
+available community-verified source where it doesn't (APA102, SM2335EGH
+— neither has a usable official protocol datasheet). Identify defaults to
+flashing the strip/fixture itself rather than a separate LED. See its
+`app_main.cpp` header comment for the full explanation of every chip's
+sourcing. Build-verified in Docker for all 8 chips; not hardware-tested
+(none of the 8 chips' hardware was physically available when written).
 
 To add another type, copy any of the ten folders and swap the endpoint
 type in `app_main.cpp` — esp-matter provides ready-made types like

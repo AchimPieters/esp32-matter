@@ -564,6 +564,41 @@ initially didn't implement `textContent`/`innerHTML`, so every
 only* — a test-harness gap, not a real bug, caught by cross-checking
 against an actual Playwright screenshot before concluding otherwise.
 
+`firmware/addressable-light/` then grew from 2 chips to 8, on request —
+WS2812B, SK6812, SK6812 RGBW, WS2813, WS2815, APA102, then, mid-turn,
+after the user shared screenshots of a real manufacturing/config tool's
+"Device Drivers"/"Indicators" screens, WS2805 and SM2335EGH too. Two real
+scope questions came up before writing any of it, resolved via
+AskUserQuestion rather than assumed: whether the same chip list should
+also appear on `Color Light` (it physically can't drive any of them —
+plain PWM only — so the user chose a purely cosmetic reference picker
+instead of real functionality there), and whether "5ch" should be a real
+chip (none of the first 6 requested is actually 5-channel — the user
+chose to have a genuine one researched, landing on WS2805). The wizard
+side needed exactly two small, reusable additions rather than one-off
+hacks: `hidesNumberField` on a COMPONENT_LIBRARY entry (SM2335EGH has no
+pixel-chain concept at all, so the wizard hides the pixel-count field
+when it's selected — checked everywhere `numberField` is read, the same
+"opt out of a field this device type otherwise has" principle already
+used for `usesPin2`), and `cosmetic` on an `extraPickers` entry (Color
+Light's new reference-only chip list — renders normally but is skipped
+entirely by `buildSedCommands` and given "reference only" framing instead
+of "verified"/"build-tested" language, reusing the same contract
+`componentsPurelyVisual` already established for contact-sensor's reed
+switch/Hall sensor list rather than inventing a second mechanism for the
+same idea). Building `hidesNumberField` surfaced two independently real,
+pre-existing gaps, both fixed the same way: `renderCustomiseReview`'s
+secondary-pin review row never checked `usesPin2` at all (would have
+shown a misleading Clock-pin row for the 6 chips that don't use one), and
+the sidebar's verified-hardware framing would have called a purely
+cosmetic chip choice "not personally tested... build-verified only" —
+true but misleading, since nothing is ever built from that choice.
+Verified with a Node.js sandboxed re-exec (including secondary-field and
+hidesNumberField checks across APA102/SM2335EGH) and headless-Chromium
+screenshots of the default chip, APA102 (both pins), SM2335EGH (both
+pins, pixel-count field correctly hidden), and Color Light's new cosmetic
+picker at both the Configure Device and Customise & Review steps.
+
 Reflashing a board that was previously commissioned with different
 firmware/identity (as happened testing this, repeatedly, across several
 of these device types) leaves stale fabric data in NVS — the write-flash
@@ -588,12 +623,13 @@ testing does.
   time-based position estimation, no position sensor), color light is
   the first with more than one PWM output channel driving one light
   (RGB/RGBW/RGBWW, up to 5 channels), and the addressable LED strip is
-  the first over a single-wire addressable protocol (WS2812B/SK6812 via
-  the RMT peripheral) rather than plain PWM — though, like color light,
-  it only ever shows one uniform color across the whole strip, since
-  Matter itself has no ratified per-pixel/effects concept (see its own
-  `app_main.cpp` header comment). All three options from the original
-  "next actuator" offer have now been built.
+  the first over addressable/digital protocols rather than plain PWM —
+  8 selectable chips across three families (six single-wire NRZ chips
+  via RMT, APA102 over real SPI, and SM2335EGH bit-banged) — though,
+  like color light, it only ever shows one uniform color across the
+  whole strip/fixture, since Matter itself has no ratified per-pixel/
+  effects concept (see its own `app_main.cpp` header comment). All three
+  options from the original "next actuator" offer have now been built.
 - The window covering has no position sensor of any kind — position is
   estimated purely from calibrated motor-on time (linear interpolation),
   the same technique ESPHome's/Tasmota's own time-based cover components
