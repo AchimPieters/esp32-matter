@@ -407,21 +407,6 @@ To add another (simpler) type, copy any of the other thirteen folders and
 swap the endpoint type in `app_main.cpp` — esp-matter provides ready-made
 types like `occupancy_sensor`, `air_quality`, and many more.
 
-### Optional: build &amp; flash straight from the wizard
-
-`tools/product-wizard/server.py` is a small local companion server (see
-its own header comment and `tools/product-wizard/README.md`'s "Optional:
-interactive Build & Flash" section) that adds real "Build & Flash" and
-"Generate update bin" buttons to the wizard's Generate Firmware step,
-with a live console and QR code — instead of only the copy-paste
-commands the wizard has always generated, which keep working exactly the
-same either way. Runs on `127.0.0.1` only, requires a per-run token on
-every request, and validates every value that reaches a shell command
-server-side against a fixed allow-list rather than trusting the browser.
-Genuinely tested end to end against real hardware while building it: a
-real Docker build, a real `esptool.py` flash to a connected board, and a
-real downloadable update-bin package.
-
 ## Updates
 
 No CI yet (see CLAUDE.md — an automated build/release workflow was tried

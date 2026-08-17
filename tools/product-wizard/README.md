@@ -13,118 +13,7 @@ No server, no build step — just open the file:
 open tools/product-wizard/index.html
 ```
 
-(or double-click it in Finder / drag it into a browser tab). Every device
-type's Generate Firmware step gives you the exact `docker run`/`esptool.py`
-commands to copy into your own terminal — that flow needs nothing from
-this section and keeps working exactly like this regardless of anything
-below.
-
-### Optional: interactive Build & Flash
-
-`tools/product-wizard/server.py` is a small, dependency-light local
-companion server that lets Generate Firmware's "Build & Flash" and
-"Generate update bin" buttons actually run those same two commands for
-you, with live output, instead of only handing you text to paste. Fully
-optional — skip this section entirely if you're happy with copy-paste.
-
-```bash
-cd tools/product-wizard
-python3 server.py
-```
-
-It prints a URL like `http://127.0.0.1:8787/?token=<random>` — open
-*that* instead of double-clicking `index.html`. The wizard behaves
-identically either way; opening it through the server just additionally
-unlocks the extra panel at the bottom of Generate Firmware:
-
-- **Build & Flash** — runs the same `sed` + `idf.py build` +
-  `tools/gen_factory.sh` steps as the Docker command above (server-side,
-  inside the same `espressif/esp-matter` image), streams the output live,
-  then lets you pick a detected serial port and flashes with
-  `esptool.py` — same as the flash command above, just run for you.
-  Once it's done, a link jumps you to the existing **Test Product** step
-  to watch the device boot live over the Web Serial API — the companion
-  server doesn't duplicate that *there*, since `esptool` needs the port
-  to itself while flashing anyway (though see the Safari note below —
-  it does add live monitoring for browsers Web Serial doesn't cover).
-- **Generate update bin** — zips the already-built app image + bootloader
-  + partition table + a small `flash.sh` into one downloadable file, so
-  you can hand a flashable build to someone else without them needing the
-  Docker toolchain at all. Deliberately does *not* include a factory/QR
-  partition — that's per-device commissioning data
-  (`tools/gen_factory.sh`'s own output), generated fresh for each
-  physical unit, not something to bake into a shared package.
-- A live QR code appears once Build & Flash's `gen_factory.sh` step
-  finishes — same PNG the copy-paste flow tells you to find under
-  `firmware/<type>/out/*/*/`, just shown inline.
-- **Test Product's serial monitor also works in Safari** when the
-  companion server is running — Safari doesn't implement the Web Serial
-  API at all (and WebKit's own public standards-positions list marks it
-  "negative", i.e. not planned; a Safari *Web* Extension doesn't help
-  either, since extensions share the page's own API surface and still
-  have no serial access). Instead of leaving Safari with just a "not
-  supported" message, Test Product falls back to asking the companion
-  server itself to open the port (via `pyserial`) and stream it down —
-  same live log, same Connect/Disconnect/baud-rate controls, just reading
-  the port server-side instead of directly from the page. Works in any
-  browser, not only Safari.
-
-**Why a server is needed at all**: a plain static HTML page has no way to
-run `docker`/`esptool.py`, or read a serial port in browsers that don't
-implement the Web Serial API — browsers can't spawn local processes or,
-in Safari's case, talk to hardware directly at all. This one Python file
-(standard library only; `pyserial` needed only for listing ports and the
-Safari-fallback serial monitor, both optional — Build/Flash/Package work
-without it) is the smallest thing that closes that gap while running the
-*exact* commands documented above, not different ones.
-
-**Security model** (a local dev tool, proportionate for that — not
-enterprise-grade, but not naive either):
-- Binds to `127.0.0.1` only — nothing outside this machine can ever reach
-  it.
-- Every API request must carry the random per-run token this script
-  prints (baked into the page only when *this server* serves it) and
-  must originate from this same server's own origin — closes off both
-  "guess the port" and "malicious page in another tab pokes localhost"
-  attack shapes, the classic risk any local dev server with an HTTP API
-  has to consider.
-- Every value that ends up in a shell command (or a raw serial-port open,
-  for the monitor endpoints) — firmware directory, target chip, bin name,
-  serial port, baud rate — is validated **server-side** against a fixed
-  allow-list (known device types/modules, the serial ports this machine
-  currently actually reports, and a small set of real baud rates), not
-  trusted from whatever the browser sends. A request that doesn't match
-  is rejected outright, never silently sanitized and run anyway. See
-  `server.py`'s own header comment for the full detail.
-- Flashing always runs directly on your host (never inside Docker) —
-  same reason the copy-paste flash command does: Docker Desktop can't
-  reach a USB serial port on macOS/Windows (see CLAUDE.md).
-
-Genuinely tested end to end against real hardware while building this —
-and not only via curl, but by actually driving a real headless Chrome
-through the whole flow (Puppeteer, against the same real board this
-repo's other hardware tests use): opened the wizard through
-`python3 server.py`, clicked through Get Started → Select Module →
-Generate Firmware for real, clicked the real **Build & Flash** button,
-watched the live console show actual `idf.py build` + `gen_factory.sh`
-output, confirmed the QR `<img>` actually loaded a real image (not just
-that the element existed), picked the real detected port from the real
-`<select>`, clicked **Flash**, and watched `esptool.py` actually flash
-the board and hard-reset it into the new firmware — confirmed by then
-clicking **Connect** on the new Safari-fallback serial monitor and
-watching the real ESP-IDF boot log, WiFi join, and Matter session
-establishment stream in live. This real, click-driven testing caught
-two genuine bugs a curl-only test missed entirely: `buildSedCommandPairs()`
-was sending `{name, value}` pairs but `server.py` was reading
-`item["defineName"]` — silently rejecting every real `sed` pair from the
-actual UI (fixed by matching the field name); and `detectRepoRoot()`
-only recognized a `file://` URL, so the page served by `server.py` itself
-(over `http://`) showed the "couldn't detect your checkout" warning and
-`<path-to-esp32-matter>` placeholders even though the server obviously
-already knows its own repo root (fixed by exposing it through
-`/api/health` and preferring that). Generate update bin was verified the
-same way: downloaded zip contains exactly the 4 expected `.bin` files
-plus a working `flash.sh`.
+(or double-click it in Finder / drag it into a browser tab).
 
 ## What's implemented
 
@@ -847,9 +736,6 @@ build-verified across all 3 sensor configs (MQ2+MQ7, MQ2-only, MQ7-only);
 not yet hardware-tested — no MQ-2/MQ-7 module was physically available
 when this was built.
 
-Right after this, the wizard itself gained a real new capability: an
-optional local companion server, see this file's own "Optional:
-interactive Build & Flash" section near the top for the full detail.
 
 ## Known limitations
 

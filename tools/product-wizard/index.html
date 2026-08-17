@@ -773,60 +773,6 @@
     color: #1a7f37;
   }
 
-  /* ---------- Interactive Build & Flash panel (only rendered when this
-     page was served by tools/product-wizard/server.py — see that
-     function's own header comment) ---------- */
-
-  .interactive-panel {
-    border: 1px solid var(--border);
-    border-radius: var(--radius);
-    padding: 16px;
-    margin-top: 14px;
-  }
-
-  .interactive-buttons {
-    display: flex;
-    gap: 10px;
-    flex-wrap: wrap;
-    margin: 12px 0;
-  }
-
-  .interactive-port-picker {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    flex-wrap: wrap;
-    margin: 12px 0;
-  }
-
-  .interactive-port-picker select {
-    padding: 8px 10px;
-    border: 1px solid var(--border);
-    border-radius: 6px;
-    font-size: 13px;
-  }
-
-  /* Same dark terminal look as .code-block, but scrolls vertically and
-     wraps long lines instead of .code-block's horizontal-scroll-a-single-
-     command shape — this one is a live, growing log, not one fixed
-     command. */
-  .interactive-console {
-    max-height: 280px;
-    overflow-y: auto;
-    white-space: pre-wrap;
-    word-break: break-word;
-  }
-
-  .interactive-qrcode {
-    width: 160px;
-    height: 160px;
-    image-rendering: pixelated;
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    padding: 8px;
-    background: #fff;
-  }
-
 </style>
 </head>
 <body>
@@ -2991,15 +2937,12 @@ function renderTestProduct(p) {
         <code>docs/getting-started.md</code>).
       </p>
 
-      ${serialState.supported ? renderSerialMonitor() : (interactiveModeAvailable() ? renderCompanionSerialMonitor() : `
+      ${serialState.supported ? renderSerialMonitor() : `
         <div class="warn-box">
           &#9888; Serial Monitor needs the Web Serial API — supported in
-          Chrome or Edge, not this browser. Run
-          <code>tools/product-wizard/server.py</code> and open the wizard
-          through it instead (see its own README) for a serial monitor
-          that works here too, including in Safari.
+          Chrome or Edge, not this browser.
         </div>
-      `)}
+      `}
 
       ${renderWizardFooter(p, true)}
     </div>
@@ -3097,182 +3040,6 @@ function updateSerialUI() {
   btn.textContent = serialState.connected ? "Disconnect" : "Connect";
   status.textContent = serialState.connected ? "Connected" : "Not connected";
   status.classList.toggle("connected", serialState.connected);
-}
-
-/* --- Companion-server-backed serial monitor — the Safari fallback -----
- * Safari doesn't implement the Web Serial API at all, and WebKit's own
- * public standards-positions list marks it "negative" (not planned) — so
- * serialState.supported above is simply false there, with no browser-side
- * workaround; a Safari (Web) Extension doesn't help either, since
- * extensions share the same API surface as the page itself and still have
- * no serial access. When tools/product-wizard/server.py is running
- * (interactiveModeAvailable()), it can read the port itself via pyserial
- * and stream it down over the exact same job/SSE mechanism Build & Flash
- * already uses — this works in literally any browser, not just as a
- * Safari-specific fix, which is why it's a companion-server feature
- * rather than a Safari App Extension (see server.py's own
- * run_serial_monitor_job() comment for the full reasoning). Deliberately
- * a parallel implementation of serialState/renderSerialMonitor() above,
- * not a shared one — same "copy-and-adapt over premature shared
- * abstraction" convention used throughout this repo, and the two are
- * genuinely different underneath (Web Serial's own port/reader objects
- * vs. an EventSource against a companion-server job). */
-const companionSerialState = {
-  connected: false,
-  jobId: null,
-  ports: [],
-  source: null,
-};
-
-function renderCompanionSerialMonitor() {
-  return `
-    <div class="serial-panel">
-      <div class="serial-controls">
-        <select id="companion-serial-port">
-          ${companionSerialState.ports.length ? companionSerialState.ports.map((port) => `
-            <option value="${escapeHtml(port)}">${escapeHtml(port)}</option>
-          `).join("") : `<option value="">No ports detected — plug in your board</option>`}
-        </select>
-        <select id="companion-serial-baud" title="Baud rate">
-          <option value="115200">115200 (idf.py monitor default)</option>
-          <option value="74880">74880 (ROM bootloader)</option>
-          <option value="230400">230400</option>
-          <option value="9600">9600</option>
-        </select>
-        <button class="secondary" id="companion-serial-refresh-btn" type="button">Refresh ports</button>
-        <button class="secondary" id="companion-serial-connect-btn">${companionSerialState.connected ? "Disconnect" : "Connect"}</button>
-        <button class="link" id="companion-serial-clear-btn">Clear log</button>
-        <span class="status-dot ${companionSerialState.connected ? "connected" : ""}" id="companion-serial-status">${companionSerialState.connected ? "Connected" : "Not connected"}</span>
-      </div>
-      <pre class="serial-log" id="companion-serial-log"></pre>
-      <p class="field-note" style="margin-top:8px;">
-        Via <code>tools/product-wizard/server.py</code> (works in Safari,
-        or any other browser without the Web Serial API) — reading the
-        port server-side instead of directly from this page.
-      </p>
-    </div>
-  `;
-}
-
-// Repopulates just the port <select>'s options directly, rather than
-// re-rendering the whole panel — refreshing ports while already connected
-// shouldn't tear down the live log or the open EventSource.
-async function companionSerialRefreshPorts() {
-  try {
-    const res = await fetch("/api/ports", { headers: wizardApiHeaders() });
-    const data = await res.json();
-    companionSerialState.ports = data.ports || [];
-  } catch (err) {
-    companionSerialState.ports = [];
-  }
-  const select = document.getElementById("companion-serial-port");
-  if (!select) return;
-  const previous = select.value;
-  select.innerHTML = companionSerialState.ports.length
-    ? companionSerialState.ports.map((port) => `<option value="${escapeHtml(port)}">${escapeHtml(port)}</option>`).join("")
-    : `<option value="">No ports detected — plug in your board</option>`;
-  if (companionSerialState.ports.includes(previous)) select.value = previous;
-}
-
-function companionSerialAppendLog(text) {
-  const log = document.getElementById("companion-serial-log");
-  if (!log) return;
-  log.textContent += text + "\n";
-  log.scrollTop = log.scrollHeight;
-}
-
-async function companionSerialConnect() {
-  const portSelect = document.getElementById("companion-serial-port");
-  const baudSelect = document.getElementById("companion-serial-baud");
-  const port = portSelect ? portSelect.value : null;
-  const baud = baudSelect ? parseInt(baudSelect.value, 10) : 115200;
-  if (!port) {
-    companionSerialAppendLog("[error] No serial port selected.");
-    return;
-  }
-  try {
-    const res = await fetch("/api/monitor/start", {
-      method: "POST",
-      headers: wizardApiHeaders({ "Content-Type": "application/json" }),
-      body: JSON.stringify({ port, baud }),
-    });
-    if (!res.ok) throw new Error((await res.json()).error || "Could not start monitor");
-    const { jobId } = await res.json();
-    companionSerialState.jobId = jobId;
-    companionSerialState.connected = true;
-    updateCompanionSerialUI();
-
-    const source = new EventSource(`/api/jobs/${jobId}/stream?token=${encodeURIComponent(window.__WIZARD_TOKEN__)}`);
-    companionSerialState.source = source;
-    source.onmessage = (event) => {
-      const data = JSON.parse(event.data);
-      if (data.line !== undefined) companionSerialAppendLog(data.line);
-    };
-    source.addEventListener("done", () => {
-      source.close();
-      companionSerialState.connected = false;
-      companionSerialState.source = null;
-      updateCompanionSerialUI();
-    });
-    source.onerror = () => {
-      source.close();
-      companionSerialState.connected = false;
-      companionSerialState.source = null;
-      updateCompanionSerialUI();
-    };
-  } catch (err) {
-    companionSerialAppendLog(`[error] ${err.message}`);
-  }
-}
-
-async function companionSerialDisconnect() {
-  if (companionSerialState.source) {
-    companionSerialState.source.close();
-    companionSerialState.source = null;
-  }
-  if (companionSerialState.jobId) {
-    try {
-      await fetch("/api/monitor/stop", {
-        method: "POST",
-        headers: wizardApiHeaders({ "Content-Type": "application/json" }),
-        body: JSON.stringify({ jobId: companionSerialState.jobId }),
-      });
-    } catch (err) {
-      // Best-effort — the server-side read loop also self-stops within its
-      // own 1s poll timeout even if this request fails.
-    }
-  }
-  companionSerialState.connected = false;
-  companionSerialState.jobId = null;
-  updateCompanionSerialUI();
-}
-
-function updateCompanionSerialUI() {
-  const btn = document.getElementById("companion-serial-connect-btn");
-  const status = document.getElementById("companion-serial-status");
-  if (!btn || !status) return;
-  btn.textContent = companionSerialState.connected ? "Disconnect" : "Connect";
-  status.textContent = companionSerialState.connected ? "Connected" : "Not connected";
-  status.classList.toggle("connected", companionSerialState.connected);
-}
-
-function bindCompanionSerialEvents() {
-  const connectBtn = document.getElementById("companion-serial-connect-btn");
-  if (connectBtn) {
-    connectBtn.addEventListener("click", () => {
-      if (companionSerialState.connected) companionSerialDisconnect();
-      else companionSerialConnect();
-    });
-  }
-  const clearBtn = document.getElementById("companion-serial-clear-btn");
-  if (clearBtn) {
-    clearBtn.addEventListener("click", () => {
-      const log = document.getElementById("companion-serial-log");
-      if (log) log.textContent = "";
-    });
-  }
-  const refreshBtn = document.getElementById("companion-serial-refresh-btn");
-  if (refreshBtn) refreshBtn.addEventListener("click", () => companionSerialRefreshPorts());
 }
 
 /* Selection completeness, shared by Customise & Review and Generate
@@ -3576,17 +3343,7 @@ function renderCustomiseReview(p) {
  * bake the real absolute path into the generated command. Returns null if
  * the page isn't being served as file:// from that expected location (e.g.
  * you renamed the folder, or it's running off a web server). */
-// Set once, asynchronously, from /api/health when interactive mode is
-// available (see the fetch call near the bottom of this script) — checked
-// here first since the http:// page served by server.py obviously isn't
-// file://, but the server itself always knows exactly where the repo is
-// (it computed the path to open server.py from), so there's no reason to
-// fall back to the "couldn't detect, edit it by hand" warning in that
-// case the way the plain static file:// page has to.
-let interactiveServerRepoRoot = null;
-
 function detectRepoRoot() {
-  if (interactiveServerRepoRoot) return interactiveServerRepoRoot;
   if (window.location.protocol !== "file:") return null;
   const marker = "/tools/product-wizard/";
   const path = decodeURIComponent(window.location.pathname);
@@ -3693,10 +3450,8 @@ function renderGenerateFirmware(p) {
 
       ${repoRoot ? `
         <p class="field-note">
-          Detected checkout at <code>${escapeHtml(repoRoot)}</code>
-          ${interactiveServerRepoRoot ? `from <code>tools/product-wizard/server.py</code>, which already
-          knows exactly where it's running from` : `from this
-          page's own file:// location`} — both commands below are ready to
+          Detected checkout at <code>${escapeHtml(repoRoot)}</code> from this
+          page's own file:// location — both commands below are ready to
           paste as-is, no editing needed (except <code>&lt;PORT&gt;</code>).
         </p>
       ` : `
@@ -3785,299 +3540,9 @@ function renderGenerateFirmware(p) {
         to check or run them yourself.
       </p>
 
-      ${renderInteractiveBuildPanel(p)}
-
       ${renderWizardFooter(p, true)}
     </div>
   `;
-}
-
-/* --- Interactive Build & Flash / Generate update bin ------------------
- * Progressive enhancement on top of everything above, which keeps working
- * completely unchanged: opening this file directly (file://) never defines
- * window.__WIZARD_TOKEN__, so this whole panel renders nothing and the
- * step is exactly the copy-paste-only experience it always was. It only
- * appears when this page was itself served by tools/product-wizard/
- * server.py (see that file's own header comment for why it injects the
- * token this checks for, and its full security model) — the wizard talks
- * back to that same local server via fetch()/EventSource(), which runs the
- * *exact* same two commands (buildDockerRunCmd/buildFlashCmd above) this
- * step already shows as copy-paste text, just server-side instead of in
- * your own terminal. Deliberately reuses the existing Web-Serial-based
- * Test Product step (interactiveState.js's serialState) for the "watch it
- * boot live" part after a flash, rather than building a second, redundant
- * serial-reading path here — esptool needs exclusive access to the port
- * during flashing anyway, so a live serial view during Build & Flash
- * itself wouldn't work regardless. */
-function interactiveModeAvailable() {
-  return typeof window !== "undefined" && !!window.__WIZARD_TOKEN__;
-}
-
-// Every fetch() to the companion server carries this header — the server
-// rejects anything without the exact per-run token (see server.py's
-// _check_auth()). Centralised here so every call site stays consistent.
-function wizardApiHeaders(extra) {
-  return Object.assign({ "X-Wizard-Token": window.__WIZARD_TOKEN__ }, extra || {});
-}
-
-const interactiveState = {
-  productId: null, // which product this state belongs to — see the reset check below
-  phase: "idle", // idle | building | built | flashing | flashed | packaging | packaged | error
-  log: [],
-  qrcodeJobId: null,
-  packageJobId: null,
-  ports: [],
-  selectedPort: null,
-  errorMessage: "",
-};
-
-// Guards against stale state leaking between products (e.g. seeing "built"
-// with the previous product's console log still showing after switching to
-// a different one) — this state lives outside the render cycle
-// (see renderInteractivePanelInPlace()'s own comment on why), so nothing
-// else clears it automatically the way saveProducts()/render() would for
-// state.currentProduct itself.
-function resetInteractiveStateIfNewProduct(productId) {
-  if (interactiveState.productId === productId) return;
-  interactiveState.productId = productId;
-  interactiveState.phase = "idle";
-  interactiveState.log = [];
-  interactiveState.qrcodeJobId = null;
-  interactiveState.packageJobId = null;
-  interactiveState.selectedPort = null;
-  interactiveState.errorMessage = "";
-}
-
-function interactiveLog(line) {
-  interactiveState.log.push(line);
-  const el = document.getElementById("interactive-console");
-  if (el) {
-    el.textContent = interactiveState.log.join("\n");
-    el.scrollTop = el.scrollHeight;
-  }
-}
-
-function interactiveSetPhase(phase, errorMessage) {
-  interactiveState.phase = phase;
-  interactiveState.errorMessage = errorMessage || "";
-  renderInteractivePanelInPlace();
-}
-
-// Re-renders just this panel's own DOM subtree rather than the whole
-// wizard — a full render() would tear down the <pre> console element and
-// any in-flight EventSource callbacks referencing it, the same reason
-// serialState's own UI updates (updateSerialUI() above) touch the DOM
-// directly instead of going through render().
-function renderInteractivePanelInPlace() {
-  const container = document.getElementById("interactive-panel");
-  if (!container || !state.currentProduct) return;
-  container.outerHTML = renderInteractiveBuildPanel(state.currentProduct);
-  bindInteractivePanelEvents();
-}
-
-function renderInteractiveBuildPanel(p) {
-  if (!interactiveModeAvailable()) return "";
-  resetInteractiveStateIfNewProduct(p.id);
-
-  const phase = interactiveState.phase;
-  const busy = phase === "building" || phase === "flashing" || phase === "packaging";
-
-  return `
-    <div class="interactive-panel" id="interactive-panel">
-      <h3 style="margin-top:24px;">Or: build &amp; flash it right now</h3>
-      <p class="field-note">
-        This page is being served by <code>tools/product-wizard/server.py</code>
-        — it can run the two commands above for you and show live output
-        below, instead of you pasting them into your own terminal. Fully
-        optional; the commands above still work exactly the same if you'd
-        rather run them yourself.
-      </p>
-
-      <div class="interactive-buttons">
-        <button class="primary" id="interactive-build-flash-btn" ${busy ? "disabled" : ""}>
-          ${phase === "building" ? "Building…" : phase === "flashing" ? "Flashing…" : "Build &amp; Flash"}
-        </button>
-        <button class="secondary" id="interactive-package-btn" ${busy ? "disabled" : ""}>
-          ${phase === "packaging" ? "Packaging…" : "Generate update bin"}
-        </button>
-      </div>
-
-      ${phase === "built" ? `
-        <div class="interactive-port-picker">
-          <label class="field-label" for="interactive-port-select">Serial port</label>
-          <select id="interactive-port-select">
-            ${interactiveState.ports.length ? interactiveState.ports.map((port) => `
-              <option value="${escapeHtml(port)}" ${port === interactiveState.selectedPort ? "selected" : ""}>${escapeHtml(port)}</option>
-            `).join("") : `<option value="">No ports detected — plug in your board</option>`}
-          </select>
-          <button class="secondary" id="interactive-refresh-ports-btn" type="button">Refresh</button>
-          <button class="primary" id="interactive-flash-now-btn" ${interactiveState.ports.length ? "" : "disabled"}>Flash to this port</button>
-        </div>
-      ` : ""}
-
-      ${phase === "error" ? `
-        <div class="warn-box">&#9888; ${escapeHtml(interactiveState.errorMessage)}</div>
-      ` : ""}
-
-      ${phase === "flashed" ? `
-        <div class="note-box">
-          Flashed. <button class="link" data-goto-step="3">Go to Test Product to watch it boot live &rarr;</button>
-          (uses the Web Serial API directly in your browser — a live
-          serial monitor needs the port free, which it now is again now
-          that flashing finished.)
-        </div>
-      ` : ""}
-
-      ${interactiveState.log.length ? `
-        <div class="code-block-wrap" style="margin-top:14px;">
-          <div class="code-block-label">LIVE OUTPUT</div>
-          <pre class="code-block interactive-console" id="interactive-console">${escapeHtml(interactiveState.log.join("\n"))}</pre>
-        </div>
-      ` : ""}
-
-      ${interactiveState.qrcodeJobId ? `
-        <div style="margin-top:14px;">
-          <div class="code-block-label">QR CODE</div>
-          <img class="interactive-qrcode" alt="Commissioning QR code"
-               src="/api/qrcode/${escapeHtml(interactiveState.qrcodeJobId)}?token=${escapeHtml(window.__WIZARD_TOKEN__)}">
-        </div>
-      ` : ""}
-
-      ${interactiveState.packageJobId && phase === "packaged" ? `
-        <p class="field-note" style="margin-top:14px;">
-          <a href="/api/download/${escapeHtml(interactiveState.packageJobId)}?token=${escapeHtml(window.__WIZARD_TOKEN__)}" download>
-            Download the packaged .zip
-          </a>
-          (app image + bootloader + partition table + a flash.sh script —
-          no factory/QR data, generate that separately per physical unit).
-        </p>
-      ` : ""}
-    </div>
-  `;
-}
-
-// Streams one job's SSE output into interactiveLog(), resolving once the
-// server sends its terminal "done" event. Rejects on a non-zero return
-// code so callers can chain build -> flash without flashing a broken
-// build.
-function streamInteractiveJob(jobId) {
-  return new Promise((resolve, reject) => {
-    const source = new EventSource(`/api/jobs/${jobId}/stream?token=${encodeURIComponent(window.__WIZARD_TOKEN__)}`);
-    source.onmessage = (event) => {
-      const data = JSON.parse(event.data);
-      if (data.line !== undefined) interactiveLog(data.line);
-    };
-    source.addEventListener("done", (event) => {
-      const data = JSON.parse(event.data);
-      source.close();
-      if (data.returncode === 0) {
-        resolve(data.extra || {});
-      } else {
-        reject(new Error(`Command exited with code ${data.returncode} — see the output above.`));
-      }
-    });
-    source.onerror = () => {
-      source.close();
-      reject(new Error("Lost connection to the companion server (tools/product-wizard/server.py) — is it still running?"));
-    };
-  });
-}
-
-async function interactiveRefreshPorts() {
-  try {
-    const res = await fetch("/api/ports", { headers: wizardApiHeaders() });
-    const data = await res.json();
-    interactiveState.ports = data.ports || [];
-    if (!interactiveState.ports.includes(interactiveState.selectedPort)) {
-      interactiveState.selectedPort = interactiveState.ports[0] || null;
-    }
-  } catch (err) {
-    interactiveState.ports = [];
-  }
-  renderInteractivePanelInPlace();
-}
-
-async function interactiveBuildAndFlash(p) {
-  interactiveState.log = [];
-  interactiveSetPhase("building");
-  try {
-    const buildRes = await fetch("/api/build", {
-      method: "POST",
-      headers: wizardApiHeaders({ "Content-Type": "application/json" }),
-      body: JSON.stringify({
-        deviceType: p.deviceType,
-        target: p.target,
-        productName: shellSafeName(p.name),
-        sedCommands: buildSedCommandPairs(p),
-      }),
-    });
-    if (!buildRes.ok) throw new Error((await buildRes.json()).error || "Build request failed");
-    const { jobId: buildJobId } = await buildRes.json();
-    const extra = await streamInteractiveJob(buildJobId);
-    if (extra.qrcode_path) interactiveState.qrcodeJobId = buildJobId;
-
-    await interactiveRefreshPorts();
-    interactiveSetPhase("built");
-  } catch (err) {
-    interactiveSetPhase("error", err.message);
-  }
-}
-
-async function interactiveFlashNow(p) {
-  const select = document.getElementById("interactive-port-select");
-  const port = select ? select.value : interactiveState.selectedPort;
-  if (!port) {
-    interactiveSetPhase("error", "No serial port selected.");
-    return;
-  }
-  interactiveState.selectedPort = port;
-  interactiveSetPhase("flashing");
-  try {
-    const flashRes = await fetch("/api/flash", {
-      method: "POST",
-      headers: wizardApiHeaders({ "Content-Type": "application/json" }),
-      body: JSON.stringify({ deviceType: p.deviceType, target: p.target, port }),
-    });
-    if (!flashRes.ok) throw new Error((await flashRes.json()).error || "Flash request failed");
-    const { jobId: flashJobId } = await flashRes.json();
-    await streamInteractiveJob(flashJobId);
-    interactiveSetPhase("flashed");
-  } catch (err) {
-    interactiveSetPhase("error", err.message);
-  }
-}
-
-async function interactivePackage(p) {
-  interactiveState.log = [];
-  interactiveSetPhase("packaging");
-  try {
-    const res = await fetch("/api/package", {
-      method: "POST",
-      headers: wizardApiHeaders({ "Content-Type": "application/json" }),
-      body: JSON.stringify({ deviceType: p.deviceType, target: p.target }),
-    });
-    if (!res.ok) throw new Error((await res.json()).error || "Package request failed");
-    const { jobId } = await res.json();
-    await streamInteractiveJob(jobId);
-    interactiveState.packageJobId = jobId;
-    interactiveSetPhase("packaged");
-  } catch (err) {
-    interactiveSetPhase("error", err.message);
-  }
-}
-
-function bindInteractivePanelEvents() {
-  const buildFlashBtn = document.getElementById("interactive-build-flash-btn");
-  if (buildFlashBtn) buildFlashBtn.addEventListener("click", () => interactiveBuildAndFlash(state.currentProduct));
-
-  const packageBtn = document.getElementById("interactive-package-btn");
-  if (packageBtn) packageBtn.addEventListener("click", () => interactivePackage(state.currentProduct));
-
-  const flashNowBtn = document.getElementById("interactive-flash-now-btn");
-  if (flashNowBtn) flashNowBtn.addEventListener("click", () => interactiveFlashNow(state.currentProduct));
-
-  const refreshPortsBtn = document.getElementById("interactive-refresh-ports-btn");
-  if (refreshPortsBtn) refreshPortsBtn.addEventListener("click", () => interactiveRefreshPorts());
 }
 
 // Strips anything that would need escaping inside a double-quoted shell
@@ -4098,107 +3563,6 @@ function shellSafeName(str) {
 // substitution anchored on the #define's name has no such format to get
 // wrong, doesn't care what the current value is (`GPIO_NUM_[0-9]+`
 // matches whatever's there), and needs no line numbers at all.
-// Structured {name, value} version of buildSedCommands() below, for
-// server.py's /api/build — the companion server validates and constructs
-// its own `sed -i` invocations from these pairs rather than trusting an
-// opaque shell-command string from the browser (see server.py's own header
-// comment on why). Deliberately a parallel duplicate of buildSedCommands()'
-// own field-selection logic rather than refactoring that function to build
-// on top of this one: buildSedCommands() is exercised by every existing
-// device type's copy-paste text today, so leaving it untouched is the
-// lower-risk choice, matching this repo's own established "copy-and-adapt
-// over premature shared abstraction" convention (e.g. makeRotaryEncoder()'s
-// own comment). One real, documented behavior difference from the
-// copy-paste version: every pair here gets matched against the companion
-// server's single broad `sed -i 's/^#define NAME .*/.../'` pattern, not
-// the narrower `GPIO_NUM_[0-9]+`-only pattern buildSedCommands() uses for
-// driver/secondary/extraButtons/identify/picker-pin fields — so Build &
-// Flash always overwrites those #defines to match your current
-// configuration, where the copy-paste commands intentionally no-op on a
-// line you've hand-edited into some other shape. Safe on a fresh checkout
-// (the normal case); don't use Build & Flash if you've manually customized
-// app_main.cpp beyond what this wizard already tracks — use the copy-paste
-// commands above instead in that case.
-function buildSedCommandPairs(p) {
-  const deviceType = findDeviceType(p.deviceType);
-  const driver = deviceType ? deviceType.driver : null;
-  const secondary = deviceType ? deviceType.secondary : null;
-  const identify = deviceType ? deviceType.identify : null;
-  const componentOptions = deviceType ? deviceType.componentOptions : null;
-  const extraButtons = deviceType ? deviceType.extraButtons : null;
-  const extraPickers = deviceType ? deviceType.extraPickers : null;
-  const statusLed = deviceType ? deviceType.statusLed : null;
-  const positionSensor = deviceType ? deviceType.positionSensor : null;
-  const pairs = [];
-  if (componentOptions && deviceType.componentDefineName) {
-    const selectedSensor = findComponent(p.component) || findComponent(componentOptions[0]);
-    pairs.push({ name: deviceType.componentDefineName, value: selectedSensor.defineValue });
-  }
-  if (extraButtons && deviceType.buttonCountDefineName) {
-    const buttonCount = Number.isInteger(p.buttonCount) ? p.buttonCount : 1;
-    pairs.push({ name: deviceType.buttonCountDefineName, value: String(buttonCount) });
-  }
-  if (extraPickers) {
-    extraPickers.forEach((picker) => {
-      if (picker.cosmetic) return;
-      const selected = findComponent(p[picker.key]) || findComponent(picker.options[0]);
-      pairs.push({ name: picker.defineName, value: selected.defineValue });
-      if (selected && Array.isArray(selected.pins)) {
-        selected.pins.forEach((pin) => {
-          const gpio = p.pickerPins && p.pickerPins[pin.defineName] != null
-            ? p.pickerPins[pin.defineName]
-            : (pin.defaultsByModule[p.target] != null ? pin.defaultsByModule[p.target] : 0);
-          pairs.push({ name: pin.defineName, value: `GPIO_NUM_${gpio}` });
-        });
-      }
-    });
-  }
-  if (driver) {
-    pairs.push({ name: driver.defineName, value: `GPIO_NUM_${p.gpioPin}` });
-  }
-  if (extraButtons) {
-    const buttonCount = Number.isInteger(p.buttonCount) ? p.buttonCount : 1;
-    extraButtons.slice(0, buttonCount - 1).forEach((b, i) => {
-      const gpio = Array.isArray(p.buttonGpios) && p.buttonGpios[i] != null ? p.buttonGpios[i] : b.currentGpio;
-      pairs.push({ name: b.defineName, value: `GPIO_NUM_${gpio}` });
-    });
-  }
-  if (secondary) {
-    pairs.push({ name: secondary.defineName, value: `GPIO_NUM_${p.secondaryGpioPin}` });
-  }
-  if (deviceType && deviceType.numberField) {
-    const nf = deviceType.numberField;
-    const value = Number.isInteger(p[nf.key]) ? p[nf.key] : nf.defaultValue;
-    pairs.push({ name: nf.defineName, value: String(value) });
-  }
-  if (statusLed && statusLedIsEnabled(p)) {
-    pairs.push({ name: statusLed.defineName, value: `GPIO_NUM_${p.statusLedGpioPin}` });
-  }
-  if (positionSensor && positionSensorIsEnabled(p)) {
-    pairs.push({ name: positionSensor.defineName, value: `GPIO_NUM_${p.positionSensorGpioPin}` });
-  }
-  if (deviceType && deviceType.rgbStatusLed && rgbStatusLedIsEnabled(p)) {
-    deviceType.rgbStatusLed.pins.forEach((pin) => {
-      const gpio = p.rgbStatusLedPins && p.rgbStatusLedPins[pin.defineName] != null
-        ? p.rgbStatusLedPins[pin.defineName]
-        : (pin.defaultsByModule[p.target] != null ? pin.defaultsByModule[p.target] : 0);
-      pairs.push({ name: pin.defineName, value: `GPIO_NUM_${gpio}` });
-    });
-  }
-  if (deviceType && deviceType.rotaryEncoder && rotaryEncoderIsEnabled(p)) {
-    deviceType.rotaryEncoder.pins.forEach((pin) => {
-      const gpio = p.rotaryEncoderPins && p.rotaryEncoderPins[pin.defineName] != null
-        ? p.rotaryEncoderPins[pin.defineName]
-        : (pin.defaultsByModule[p.target] != null ? pin.defaultsByModule[p.target] : 0);
-      pairs.push({ name: pin.defineName, value: `GPIO_NUM_${gpio}` });
-    });
-  }
-  if (identify && identifyIsEnabled(p)) {
-    pairs.push({ name: identify.defineName, value: `GPIO_NUM_${p.identifyGpioPin}` });
-  }
-  return pairs;
-}
-
 function buildSedCommands(p) {
   const deviceType = findDeviceType(p.deviceType);
   const driver = deviceType ? deviceType.driver : null;
@@ -4853,13 +4217,6 @@ function bindEvents() {
       }
     });
   }
-
-  bindInteractivePanelEvents();
-
-  if (document.getElementById("companion-serial-port")) {
-    bindCompanionSerialEvents();
-    companionSerialRefreshPorts();
-  }
 }
 
 function escapeHtml(str) {
@@ -4874,23 +4231,6 @@ function formatDate(iso) {
 }
 
 render();
-
-// Only fires when this page was served by tools/product-wizard/server.py
-// (see interactiveModeAvailable()'s own comment) — asks it for the repo
-// root it already knows, then re-renders so detectRepoRoot() above picks
-// it up instead of showing the "couldn't detect your checkout" warning
-// that only makes sense for the plain file:// workflow.
-if (interactiveModeAvailable()) {
-  fetch("/api/health", { headers: wizardApiHeaders() })
-    .then((res) => res.json())
-    .then((data) => {
-      if (data.repoRoot) {
-        interactiveServerRepoRoot = data.repoRoot;
-        render();
-      }
-    })
-    .catch(() => {}); // companion server not actually reachable — copy-paste commands just keep their file:// fallback behavior
-}
 </script>
 
 </body>
