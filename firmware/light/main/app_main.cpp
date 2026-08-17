@@ -11,62 +11,6 @@
  * Works on other ESP32 chips too (C3, C6, S3, H2) — see the README for how to
  * switch target. Note: C6/H2 additionally support Thread; classic ESP32 is Wi-Fi.
  *
- * --- Optional RGB Status LED -----------------------------------------------
- * Off by default (all three GPIOs at GPIO_NUM_NC, checked at runtime the
- * same way firmware/outlet/'s own Status LED is — that sentinel is a
- * gpio_num_t enumerator, not a preprocessor macro, so it can't be tested
- * with `#if`). When wired up, shows Matter's own defined commissioning and
- * Identify states with color + a blink/breathe pattern engine (LEDC PWM,
- * same peripheral firmware/dimmable-light/ and firmware/color-light/
- * already use for their own outputs) — every state and its color/timing is
- * sourced from two real, verified places, not invented and not copied from
- * a reference screenshot without checking it against the actual spec/SDK
- * source first:
- *
- * "Setup ..." states — the DeviceLayer's own lifecycle events, confirmed
- * directly in connectedhomeip's own CHIPDeviceEvent.h:
- *   Setup mode      (breathing green,  ~2s cycle) — kCHIPoBLEAdvertisingChange
- *                    with Result == kActivity_Started (device is
- *                    advertising, not yet paired).
- *   Setup started   (breathing yellow, ~1s cycle) — kSecureSessionEstablished
- *                    (a commissioner has opened a PASE session).
- *   Setup complete  (LED returns to off)          — kCommissioningComplete
- *                    (already logged here before this feature existed).
- *   Setup failed    (solid red)                   — kFailSafeTimerExpired
- *                    ("Signals that the fail-safe timer expired before the
- *                    CommissioningComplete command was successfully
- *                    invoked" — connectedhomeip's own doc comment).
- *
- * "Identification ..." states — the Identify cluster's own
- * EffectIdentifierEnum, confirmed directly in the generated
- * Identify/Enums.h (kBlink=0x00, kBreathe=0x01, kOkay=0x02,
- * kChannelChange=0x0B, kFinishEffect=0xFE, kStopEffect=0xFF — the same six
- * values `app_identification_cb`'s EFFECT case already receives as
- * `effect_id`, previously left undifferentiated ("blinking as usual") in
- * every device type in this repo):
- *   start           (blinking red,    ~1s cycle) — a plain Identify command
- *                    with no specific effect (identification::START).
- *   stop                                          — identification::STOP.
- *   blink           (white, 1 on/off cycle, 1s total)   — kBlink.
- *   breathe         (breathing white, ~1s cycle, 15s total) — kBreathe.
- *   okay            (green,  1s-on/1s-off, repeats until Finish/Stop) — kOkay.
- *   channel change  (yellow, 8s-on/8s-off, repeats until Finish/Stop) —
- *                    kChannelChange.
- *   finish/stop effect (LED returns to off) — kFinishEffect/kStopEffect.
- * The BLINK pattern below is a plain 50%-duty square wave over whatever
- * period it's given — that alone reproduces every one of the timing
- * descriptions above (e.g. "blinks for 8 seconds, about 16 seconds per
- * cycle" is exactly a 50%-duty wave at a 16s period) without needing a
- * separate duty-cycle parameter.
- *
- * Reuses 3 LEDC channels on their own timer (LEDC_TIMER_1, channels 5-7)
- * so this never collides with a device type's own LEDC usage for its main
- * output (LEDC_TIMER_0, channels 0-4 at most, e.g.
- * firmware/color-light/'s RGBWW mode). GPIO 25/26/27 are the defaults here
- * — free on every device type's own default pin set in this repo except
- * firmware/outlet/'s power-monitor chips, which use different defaults
- * there (see that file's own header comment).
- *
  * --- Factory reset via quick power cycle ------------------------------------
  * Power the device off and on 3 times in a row (roughly a couple of
  * seconds each way) and it factory-resets and re-enters commissioning
@@ -100,9 +44,7 @@
 #include <esp_log.h>
 #include <nvs_flash.h>
 #include <driver/gpio.h>
-#include <driver/ledc.h>
 #include <esp_timer.h>
-#include <math.h>
 
 #include <esp_matter.h>
 
@@ -122,22 +64,6 @@ static const char *TAG = "matter_light";
 #define IDENTIFY_LED_GPIO GPIO_NUM_4
 #define IDENTIFY_BLINK_INTERVAL_MS 500
 
-/* Optional RGB status LED — see the header comment above for the full
- * state list and sourcing. Off by default; adjust to match your board if
- * you have one wired up. */
-#define STATUS_LED_RED_GPIO GPIO_NUM_NC
-#define STATUS_LED_GREEN_GPIO GPIO_NUM_NC
-#define STATUS_LED_BLUE_GPIO GPIO_NUM_NC
-#define STATUS_LED_LEDC_TIMER LEDC_TIMER_1
-#define STATUS_LED_LEDC_RED_CHANNEL LEDC_CHANNEL_5
-#define STATUS_LED_LEDC_GREEN_CHANNEL LEDC_CHANNEL_6
-#define STATUS_LED_LEDC_BLUE_CHANNEL LEDC_CHANNEL_7
-#define STATUS_LED_LEDC_MODE LEDC_LOW_SPEED_MODE
-#define STATUS_LED_LEDC_DUTY_RES LEDC_TIMER_8_BIT
-#define STATUS_LED_LEDC_FREQUENCY_HZ 5000
-#define STATUS_LED_TICK_MS 20 /* pattern-engine update interval */
-#define STATUS_LED_PI 3.14159265f
-
 /* Quick-power-cycle factory reset — see the header comment above for the
  * full mechanism and its sourcing. */
 #define FACTORY_RESET_NVS_NAMESPACE "boot_info"
@@ -152,82 +78,6 @@ using namespace chip::app::Clusters;
 static uint16_t light_endpoint_id = 0;
 static esp_timer_handle_t identify_led_timer = NULL;
 
-/* --- Status LED pattern engine ------------------------------------------
- * A small timer-driven state machine: status_led_set() records a target
- * color + pattern + period + optional auto-off duration, and the periodic
- * tick callback computes the current brightness multiplier for whichever
- * pattern is active and writes it to the 3 LEDC channels. */
-typedef enum {
-    STATUS_LED_PATTERN_OFF,
-    STATUS_LED_PATTERN_SOLID,
-    STATUS_LED_PATTERN_BLINK,
-    STATUS_LED_PATTERN_BREATHE,
-} status_led_pattern_t;
-
-static bool status_led_enabled = false;
-static esp_timer_handle_t status_led_timer = NULL;
-static uint8_t status_led_r = 0, status_led_g = 0, status_led_b = 0;
-static status_led_pattern_t status_led_pattern = STATUS_LED_PATTERN_OFF;
-static uint32_t status_led_period_ms = 1000;
-static uint32_t status_led_elapsed_ms = 0;
-static uint32_t status_led_duration_ms = 0; /* 0 = indefinite, until the next status_led_set()/status_led_off() */
-
-static void status_led_set(uint8_t r, uint8_t g, uint8_t b, status_led_pattern_t pattern,
-                            uint32_t period_ms, uint32_t duration_ms)
-{
-    if (!status_led_enabled) {
-        return;
-    }
-    status_led_r = r;
-    status_led_g = g;
-    status_led_b = b;
-    status_led_pattern = pattern;
-    status_led_period_ms = period_ms > 0 ? period_ms : 1000;
-    status_led_duration_ms = duration_ms;
-    status_led_elapsed_ms = 0;
-}
-
-static void status_led_off(void)
-{
-    status_led_set(0, 0, 0, STATUS_LED_PATTERN_OFF, 1000, 0);
-}
-
-static void status_led_tick_cb(void *arg)
-{
-    if (!status_led_enabled) {
-        return;
-    }
-    status_led_elapsed_ms += STATUS_LED_TICK_MS;
-    if (status_led_duration_ms > 0 && status_led_elapsed_ms >= status_led_duration_ms) {
-        status_led_off();
-    }
-
-    float phase = fmodf((float)status_led_elapsed_ms, (float)status_led_period_ms) / (float)status_led_period_ms;
-    float brightness;
-    switch (status_led_pattern) {
-    case STATUS_LED_PATTERN_SOLID:
-        brightness = 1.0f;
-        break;
-    case STATUS_LED_PATTERN_BLINK:
-        brightness = (phase < 0.5f) ? 1.0f : 0.0f; /* plain 50%-duty square wave — see header comment */
-        break;
-    case STATUS_LED_PATTERN_BREATHE:
-        brightness = (sinf(phase * 2.0f * STATUS_LED_PI - STATUS_LED_PI / 2.0f) + 1.0f) / 2.0f;
-        break;
-    case STATUS_LED_PATTERN_OFF:
-    default:
-        brightness = 0.0f;
-        break;
-    }
-
-    ledc_set_duty(STATUS_LED_LEDC_MODE, STATUS_LED_LEDC_RED_CHANNEL, (uint32_t)(status_led_r * brightness));
-    ledc_update_duty(STATUS_LED_LEDC_MODE, STATUS_LED_LEDC_RED_CHANNEL);
-    ledc_set_duty(STATUS_LED_LEDC_MODE, STATUS_LED_LEDC_GREEN_CHANNEL, (uint32_t)(status_led_g * brightness));
-    ledc_update_duty(STATUS_LED_LEDC_MODE, STATUS_LED_LEDC_GREEN_CHANNEL);
-    ledc_set_duty(STATUS_LED_LEDC_MODE, STATUS_LED_LEDC_BLUE_CHANNEL, (uint32_t)(status_led_b * brightness));
-    ledc_update_duty(STATUS_LED_LEDC_MODE, STATUS_LED_LEDC_BLUE_CHANNEL);
-}
-
 static void set_led(bool on)
 {
     gpio_set_level(LIGHT_LED_GPIO, on ? 1 : 0);
@@ -241,26 +91,12 @@ static void identify_led_timer_cb(void *arg)
     gpio_set_level(IDENTIFY_LED_GPIO, identify_led_state ? 1 : 0);
 }
 
-/* Lifecycle events from the Matter stack (commissioning, connectivity, ...).
- * See the header comment on the Status LED for exactly which events map to
- * which "Setup ..." state and why. */
+/* Lifecycle events from the Matter stack (commissioning, connectivity, ...). */
 static void app_event_cb(const ChipDeviceEvent *event, intptr_t arg)
 {
     switch (event->Type) {
-    case chip::DeviceLayer::DeviceEventType::kCHIPoBLEAdvertisingChange:
-        if (event->CHIPoBLEAdvertisingChange.Result == chip::DeviceLayer::kActivity_Started) {
-            status_led_set(0, 255, 0, STATUS_LED_PATTERN_BREATHE, 2000, 0); /* Setup mode */
-        }
-        break;
-    case chip::DeviceLayer::DeviceEventType::kSecureSessionEstablished:
-        status_led_set(255, 255, 0, STATUS_LED_PATTERN_BREATHE, 1000, 0); /* Setup started */
-        break;
     case chip::DeviceLayer::DeviceEventType::kCommissioningComplete:
         ESP_LOGI(TAG, "Commissioning complete — device is now paired");
-        status_led_off(); /* Setup complete */
-        break;
-    case chip::DeviceLayer::DeviceEventType::kFailSafeTimerExpired:
-        status_led_set(255, 0, 0, STATUS_LED_PATTERN_SOLID, 1000, 0); /* Setup failed */
         break;
     default:
         break;
@@ -282,9 +118,7 @@ static esp_err_t app_attribute_update_cb(attribute::callback_type_t type, uint16
 }
 
 /* Called when a controller asks the device to "identify" itself — starts
- * or stops the identify LED blinking accordingly, and (when the Status LED
- * is wired up) shows the matching color/pattern for the specific Identify
- * effect — see the header comment for the full state list and sourcing. */
+ * or stops the identify LED blinking accordingly. */
 static esp_err_t app_identification_cb(identification::callback_type_t type, uint16_t endpoint_id,
                                        uint8_t effect_id, uint8_t effect_variant, void *priv_data)
 {
@@ -292,29 +126,15 @@ static esp_err_t app_identification_cb(identification::callback_type_t type, uin
     case identification::START:
         ESP_LOGI(TAG, "Identify started on endpoint %u", endpoint_id);
         esp_timer_start_periodic(identify_led_timer, IDENTIFY_BLINK_INTERVAL_MS * 1000);
-        status_led_set(255, 0, 0, STATUS_LED_PATTERN_BLINK, 1000, 0);
         break;
     case identification::STOP:
         ESP_LOGI(TAG, "Identify stopped on endpoint %u", endpoint_id);
         esp_timer_stop(identify_led_timer);
         gpio_set_level(IDENTIFY_LED_GPIO, 0);
-        status_led_off();
         break;
     case identification::EFFECT:
         ESP_LOGI(TAG, "Identify effect %u (variant %u) on endpoint %u",
                  effect_id, effect_variant, endpoint_id);
-        if (effect_id == chip::to_underlying(Identify::EffectIdentifierEnum::kBlink)) {
-            status_led_set(255, 255, 255, STATUS_LED_PATTERN_BLINK, 1000, 1000);
-        } else if (effect_id == chip::to_underlying(Identify::EffectIdentifierEnum::kBreathe)) {
-            status_led_set(255, 255, 255, STATUS_LED_PATTERN_BREATHE, 1000, 15000);
-        } else if (effect_id == chip::to_underlying(Identify::EffectIdentifierEnum::kOkay)) {
-            status_led_set(0, 255, 0, STATUS_LED_PATTERN_BLINK, 2000, 0);
-        } else if (effect_id == chip::to_underlying(Identify::EffectIdentifierEnum::kChannelChange)) {
-            status_led_set(255, 255, 0, STATUS_LED_PATTERN_BLINK, 16000, 0);
-        } else {
-            /* kFinishEffect, kStopEffect, or anything unrecognized. */
-            status_led_off();
-        }
         break;
     }
     return ESP_OK;
@@ -411,52 +231,6 @@ extern "C" void app_main(void)
         .name = "identify_led",
     };
     esp_timer_create(&identify_timer_args, &identify_led_timer);
-
-    /* 2c. Configure the optional RGB status LED + its pattern-engine timer
-     * — only if at least one of its 3 GPIOs is actually wired up (not the
-     * GPIO_NUM_NC default). */
-    status_led_enabled = (STATUS_LED_RED_GPIO != GPIO_NUM_NC) ||
-                          (STATUS_LED_GREEN_GPIO != GPIO_NUM_NC) ||
-                          (STATUS_LED_BLUE_GPIO != GPIO_NUM_NC);
-    if (status_led_enabled) {
-        ledc_timer_config_t status_led_ledc_timer = {};
-        status_led_ledc_timer.speed_mode = STATUS_LED_LEDC_MODE;
-        status_led_ledc_timer.duty_resolution = STATUS_LED_LEDC_DUTY_RES;
-        status_led_ledc_timer.timer_num = STATUS_LED_LEDC_TIMER;
-        status_led_ledc_timer.freq_hz = STATUS_LED_LEDC_FREQUENCY_HZ;
-        status_led_ledc_timer.clk_cfg = LEDC_AUTO_CLK;
-        ledc_timer_config(&status_led_ledc_timer);
-
-        struct {
-            ledc_channel_t channel;
-            gpio_num_t gpio;
-        } status_led_channels[] = {
-            { STATUS_LED_LEDC_RED_CHANNEL, STATUS_LED_RED_GPIO },
-            { STATUS_LED_LEDC_GREEN_CHANNEL, STATUS_LED_GREEN_GPIO },
-            { STATUS_LED_LEDC_BLUE_CHANNEL, STATUS_LED_BLUE_GPIO },
-        };
-        for (size_t i = 0; i < sizeof(status_led_channels) / sizeof(status_led_channels[0]); i++) {
-            if (status_led_channels[i].gpio == GPIO_NUM_NC) {
-                continue; /* e.g. only the green channel wired up */
-            }
-            ledc_channel_config_t status_led_channel = {};
-            status_led_channel.gpio_num = status_led_channels[i].gpio;
-            status_led_channel.speed_mode = STATUS_LED_LEDC_MODE;
-            status_led_channel.channel = status_led_channels[i].channel;
-            status_led_channel.intr_type = LEDC_INTR_DISABLE;
-            status_led_channel.timer_sel = STATUS_LED_LEDC_TIMER;
-            status_led_channel.duty = 0;
-            status_led_channel.hpoint = 0;
-            ledc_channel_config(&status_led_channel);
-        }
-
-        const esp_timer_create_args_t status_led_timer_args = {
-            .callback = &status_led_tick_cb,
-            .name = "status_led",
-        };
-        esp_timer_create(&status_led_timer_args, &status_led_timer);
-        esp_timer_start_periodic(status_led_timer, STATUS_LED_TICK_MS * 1000);
-    }
 
     /* 3. Build the Matter data model: one node, one On/Off Light endpoint. */
     node::config_t node_config;

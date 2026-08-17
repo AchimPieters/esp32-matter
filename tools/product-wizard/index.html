@@ -1015,45 +1015,14 @@ const COMPONENT_LIBRARY = {
   ] },
 };
 
-/* Optional RGB status LED — same 3 #define names
- * (STATUS_LED_RED/GREEN/BLUE_GPIO) and shape on every device type, so
- * this is a small factory rather than repeating the same pins array 10
- * times; only the actual default GPIO numbers vary per device type
- * (avoiding collisions with that device type's own other pins — e.g.
- * firmware/outlet/'s power-monitor chips already default to GPIO
- * 25/26/27, so its status LED uses 32/33/14 instead). Off by default
- * (GPIO_NUM_NC on app_main.cpp's side, unchecked here) — see the
- * `rgbStatusLed` render block in renderConfigureDevice for the
- * checkbox-gated shape, same pattern as outlet's own (unrelated,
- * single-color, single-GPIO) `statusLed`. Shows Matter's own defined
- * commissioning ("Setup ...") and Identify effect states with color +
- * blink/breathe patterns — see any device type's own
- * app_main.cpp header comment for the full state list and its sourcing
- * (connectedhomeip's CHIPDeviceEvent.h lifecycle events + the Identify
- * cluster's own EffectIdentifierEnum, not invented and not just copied
- * from a reference screenshot without checking it first). */
-function makeRgbStatusLed(redGpio, greenGpio, blueGpio) {
-  const modules = ["esp32", "esp32c2", "esp32c3", "esp32c5", "esp32c6", "esp32c61", "esp32s3", "esp32h2"];
-  const defaultsFor = (n) => Object.fromEntries(modules.map((m) => [m, n]));
-  return {
-    label: "Status LED",
-    pins: [
-      { key: "red", label: "Red", defineName: "STATUS_LED_RED_GPIO", defaultsByModule: defaultsFor(redGpio) },
-      { key: "green", label: "Green", defineName: "STATUS_LED_GREEN_GPIO", defaultsByModule: defaultsFor(greenGpio) },
-      { key: "blue", label: "Blue", defineName: "STATUS_LED_BLUE_GPIO", defaultsByModule: defaultsFor(blueGpio) },
-    ],
-  };
-}
-
 /* Optional rotary encoder — firmware/thermostat/'s own local setpoint
  * control (see that file's header comment: rotate to adjust whichever
  * setpoint the current SystemMode uses, press to cycle Off -> Heat ->
- * Cool -> Off). Same "off by default, checked at runtime via GPIO_NUM_NC"
- * shape as makeRgbStatusLed() above, deliberately duplicated as its own
- * parallel field/render path rather than generalizing rgbStatusLed into a
- * shared "array of optional pin blocks" mechanism — this repo's own
- * established convention (see CLAUDE.md) is copy-and-adapt over premature
- * shared abstraction, and only one device type needs this so far. */
+ * Cool -> Off). Off by default, checked at runtime via GPIO_NUM_NC —
+ * deliberately its own parallel field/render path rather than a shared
+ * "array of optional pin blocks" mechanism — this repo's own established
+ * convention (see CLAUDE.md) is copy-and-adapt over premature shared
+ * abstraction, and only one device type needs this so far. */
 function makeRotaryEncoder(aGpio, bGpio, buttonGpio) {
   const modules = ["esp32", "esp32c2", "esp32c3", "esp32c5", "esp32c6", "esp32c61", "esp32s3", "esp32h2"];
   const defaultsFor = (n) => Object.fromEntries(modules.map((m) => [m, n]));
@@ -1102,7 +1071,6 @@ const DEVICE_TYPES = [
     },
     // Separate LED that blinks for the Matter "Identify" cluster — lets you
     // physically find the device, independent of its on/off state.
-    rgbStatusLed: makeRgbStatusLed(25, 26, 27),
     identify: {
       summary: "GPIO (digital output)",
       fieldLabel: "Identify LED GPIO pin",
@@ -1191,7 +1159,6 @@ const DEVICE_TYPES = [
         defaultsByModule: { esp32: 18, esp32c3: 18, esp32c6: 18, esp32s3: 18, esp32h2: 18 },
       },
     ],
-    rgbStatusLed: makeRgbStatusLed(25, 26, 27),
     identify: {
       summary: "GPIO (digital output)",
       fieldLabel: "Identify LED GPIO pin",
@@ -1240,7 +1207,6 @@ const DEVICE_TYPES = [
       // specific board.
       defaultsByModule: { esp32: 4, esp32c3: 4, esp32c6: 4, esp32s3: 4, esp32h2: 4 },
     },
-    rgbStatusLed: makeRgbStatusLed(25, 26, 27),
     identify: {
       summary: "GPIO (digital output)",
       fieldLabel: "Identify LED GPIO pin",
@@ -1315,7 +1281,6 @@ const DEVICE_TYPES = [
       currentGpio: 4,
       defaultsByModule: { esp32: 4, esp32c3: 4, esp32c6: 4, esp32s3: 4, esp32h2: 4 },
     },
-    rgbStatusLed: makeRgbStatusLed(32, 33, 14),
     identify: {
       summary: "GPIO (digital output)",
       fieldLabel: "Identify LED GPIO pin",
@@ -1394,7 +1359,6 @@ const DEVICE_TYPES = [
       currentGpio: 22,
       defaultsByModule: { esp32: 22, esp32c3: 22, esp32c6: 22, esp32s3: 22, esp32h2: 22 },
     },
-    rgbStatusLed: makeRgbStatusLed(25, 26, 27),
     identify: {
       summary: "GPIO (digital output)",
       fieldLabel: "Identify LED GPIO pin",
@@ -1452,7 +1416,6 @@ const DEVICE_TYPES = [
       currentGpio: 22,
       defaultsByModule: { esp32: 22, esp32c3: 22, esp32c6: 22, esp32s3: 22, esp32h2: 22 },
     },
-    rgbStatusLed: makeRgbStatusLed(25, 26, 27),
     identify: {
       summary: "GPIO (digital output)",
       fieldLabel: "Identify LED GPIO pin",
@@ -1487,7 +1450,6 @@ const DEVICE_TYPES = [
       currentGpio: 2,
       defaultsByModule: { esp32: 2, esp32c3: 8, esp32c6: 8, esp32s3: 2, esp32h2: 8 },
     },
-    rgbStatusLed: makeRgbStatusLed(25, 26, 27),
     identify: {
       summary: "GPIO (digital output)",
       fieldLabel: "Identify LED GPIO pin",
@@ -1533,7 +1495,6 @@ const DEVICE_TYPES = [
       currentGpio: 5,
       defaultsByModule: { esp32: 5, esp32c2: 5, esp32c3: 5, esp32c5: 5, esp32c6: 5, esp32c61: 5, esp32s3: 5, esp32h2: 5 },
     },
-    rgbStatusLed: makeRgbStatusLed(25, 26, 27),
     identify: {
       summary: "GPIO (digital output)",
       fieldLabel: "Identify LED GPIO pin",
@@ -1627,7 +1588,6 @@ const DEVICE_TYPES = [
         defaultsByModule: { esp32: 5, esp32c2: 5, esp32c3: 5, esp32c5: 5, esp32c6: 5, esp32c61: 5, esp32s3: 5, esp32h2: 5 },
       },
     ],
-    rgbStatusLed: makeRgbStatusLed(25, 26, 27),
     identify: {
       summary: "GPIO (digital output)",
       fieldLabel: "Identify LED GPIO pin",
@@ -1698,7 +1658,6 @@ const DEVICE_TYPES = [
       currentGpio: 4,
       defaultsByModule: { esp32: 4, esp32c2: 4, esp32c3: 4, esp32c5: 4, esp32c6: 4, esp32c61: 4, esp32s3: 4, esp32h2: 4 },
     },
-    rgbStatusLed: makeRgbStatusLed(25, 26, 27),
     identify: {
       summary: "GPIO (digital output, or the strip/fixture itself)",
       fieldLabel: "Identify LED GPIO pin",
@@ -1774,7 +1733,6 @@ const DEVICE_TYPES = [
     // external pulls them during boot — flagged here rather than picking
     // a collision silently. Adjust by hand if enabling several optional
     // features at once runs out of room.
-    rgbStatusLed: makeRgbStatusLed(0, 12, 23),
     identify: {
       summary: "GPIO (digital output)",
       fieldLabel: "Identify LED GPIO pin",
@@ -1838,7 +1796,6 @@ const DEVICE_TYPES = [
       currentGpio: 16,
       defaultsByModule: { esp32: 16, esp32c2: 16, esp32c3: 16, esp32c5: 16, esp32c6: 16, esp32c61: 16, esp32s3: 16, esp32h2: 16 },
     },
-    rgbStatusLed: makeRgbStatusLed(25, 26, 27),
     identify: {
       summary: "GPIO (digital output)",
       fieldLabel: "Identify LED GPIO pin",
@@ -1888,7 +1845,6 @@ const DEVICE_TYPES = [
       currentGpio: 34,
       defaultsByModule: { esp32: 34, esp32c2: 34, esp32c3: 34, esp32c5: 34, esp32c6: 34, esp32c61: 34, esp32s3: 34, esp32h2: 34 },
     },
-    rgbStatusLed: makeRgbStatusLed(25, 26, 27),
     identify: {
       summary: "GPIO (digital output)",
       fieldLabel: "Identify LED GPIO pin",
@@ -2335,17 +2291,10 @@ function positionSensorIsEnabled(p) {
   return p.positionSensorEnabled === true;
 }
 
-// RGB status LED (all 10 device types) — same off-by-default shape as
-// outlet's own single-color statusLed above, just a genuinely different,
-// coexisting feature (full color + Matter commissioning/Identify state
-// patterns, not a plain power-state indicator).
-function rgbStatusLedIsEnabled(p) {
-  return p.rgbStatusLedEnabled === true;
-}
-
 // Rotary encoder (firmware/thermostat/ only, so far) — same off-by-default
-// shape as rgbStatusLed above, deliberately parallel rather than sharing
-// its render code (see makeRotaryEncoder()'s own comment for why).
+// shape as statusLed/positionSensor above, deliberately parallel rather
+// than sharing its render code (see makeRotaryEncoder()'s own comment for
+// why).
 function rotaryEncoderIsEnabled(p) {
   return p.rotaryEncoderEnabled === true;
 }
@@ -2357,7 +2306,6 @@ function renderConfigureDevice(p) {
   const identify = deviceType ? deviceType.identify : null;
   const statusLed = deviceType ? deviceType.statusLed : null;
   const positionSensor = deviceType ? deviceType.positionSensor : null;
-  const rgbStatusLed = deviceType ? deviceType.rgbStatusLed : null;
   const rotaryEncoder = deviceType ? deviceType.rotaryEncoder : null;
   const componentOptions = deviceType ? deviceType.componentOptions : null;
   const extraButtons = deviceType ? deviceType.extraButtons : null;
@@ -2371,17 +2319,6 @@ function renderConfigureDevice(p) {
   const statusLedOn = statusLed ? statusLedIsEnabled(p) : false;
   const defaultPositionSensorGpio = positionSensor ? (positionSensor.defaultsByModule[p.target] != null ? positionSensor.defaultsByModule[p.target] : 16) : 16;
   const positionSensorOn = positionSensor ? positionSensorIsEnabled(p) : false;
-  const rgbStatusLedOn = rgbStatusLed ? rgbStatusLedIsEnabled(p) : false;
-  if (rgbStatusLed) {
-    if (typeof p.rgbStatusLedPins !== "object" || p.rgbStatusLedPins == null) p.rgbStatusLedPins = {};
-    rgbStatusLed.pins.forEach((pin) => {
-      if (p.rgbStatusLedPins[pin.defineName] == null) {
-        p.rgbStatusLedPins[pin.defineName] = pin.defaultsByModule[p.target] != null ? pin.defaultsByModule[p.target] : 0;
-      }
-    });
-  }
-  const rgbStatusLedValid = !rgbStatusLedOn || rgbStatusLed.pins.every((pin) =>
-    Number.isInteger(p.rgbStatusLedPins[pin.defineName]) && p.rgbStatusLedPins[pin.defineName] >= 0);
   const rotaryEncoderOn = rotaryEncoder ? rotaryEncoderIsEnabled(p) : false;
   if (rotaryEncoder) {
     if (typeof p.rotaryEncoderPins !== "object" || p.rotaryEncoderPins == null) p.rotaryEncoderPins = {};
@@ -2490,7 +2427,7 @@ function renderConfigureDevice(p) {
   if (numberField && p[numberField.key] == null) p[numberField.key] = numberField.defaultValue;
   const numberFieldValid = !numberField ||
     (Number.isInteger(p[numberField.key]) && p[numberField.key] >= numberField.min && p[numberField.key] <= numberField.max);
-  const allValid = gpioValid && secondaryGpioValid && identifyGpioValid && extraButtonsValid && statusLedGpioValid && positionSensorGpioValid && pickerPinsValid && numberFieldValid && rgbStatusLedValid && rotaryEncoderValid;
+  const allValid = gpioValid && secondaryGpioValid && identifyGpioValid && extraButtonsValid && statusLedGpioValid && positionSensorGpioValid && pickerPinsValid && numberFieldValid && rotaryEncoderValid;
 
   // Component-aware field labels: falls back to the device type's own
   // static text when there's no componentOptions list (every device type
@@ -2719,40 +2656,6 @@ function renderConfigureDevice(p) {
           </div>
         ` : ""}
 
-        ${rgbStatusLed ? `
-          <div class="driver-block">
-            <label class="checkbox-label" for="rgb-status-led-enabled">
-              <input type="checkbox" id="rgb-status-led-enabled" ${rgbStatusLedOn ? "checked" : ""}>
-              <h3 style="display:inline; margin:0;">Add an RGB Status LED</h3>
-            </label>
-            <p class="field-note" style="margin-top:4px;">
-              An optional 3-channel RGB LED (PWM/LEDC) showing Matter's own
-              defined commissioning states (breathing green while
-              discoverable, breathing yellow once a commissioner connects,
-              solid red if commissioning times out) and Identify effect
-              states (the Identify cluster's Blink/Breathe/Okay/Channel
-              Change effects, each with their own color and timing) — see
-              the header comment in ${escapeHtml(driver ? driver.filePath : "app_main.cpp")}
-              for the exact state list and its sourcing. Off by default
-              since not every board has one; the firmware ships all three
-              pins disabled (<code>GPIO_NUM_NC</code>) until you tick this
-              and set real pins.
-            </p>
-
-            ${rgbStatusLedOn ? rgbStatusLed.pins.map((pin) => `
-              <label class="field-label" for="rgb-status-led-${escapeHtml(pin.key)}" style="margin-top:12px;">${escapeHtml(pin.label)} channel GPIO pin</label>
-              <input type="number" id="rgb-status-led-${escapeHtml(pin.key)}" data-rgb-status-pin="${escapeHtml(pin.defineName)}" min="0" max="48" value="${p.rgbStatusLedPins[pin.defineName]}" style="margin-bottom:12px;">
-              <div class="field-error">${Number.isInteger(p.rgbStatusLedPins[pin.defineName]) && p.rgbStatusLedPins[pin.defineName] >= 0 ? "" : "Enter a valid GPIO number (0 or higher)."}</div>
-            `).join("") : ""}
-            ${rgbStatusLedOn ? `
-              <p class="field-note">
-                Adjust to match your board — these defaults are common for
-                ${escapeHtml(moduleName(p.target))} devkits, not a guarantee for yours.
-              </p>
-            ` : ""}
-          </div>
-        ` : ""}
-
         ${rotaryEncoder ? `
           <div class="driver-block">
             <label class="checkbox-label" for="rotary-encoder-enabled">
@@ -2824,8 +2727,7 @@ function renderConfigureDevice(p) {
           <code>${escapeHtml(secondary.defineName)}</code>${secondaryFieldNeeded ? "" : " (kept at its default — unused by this sensor)"}` : ""}${numberField ? `,
           <code>${escapeHtml(numberField.defineName)}</code>` : ""}${statusLedOn ? `,
           <code>${escapeHtml(statusLed.defineName)}</code>` : ""}${positionSensorOn ? `,
-          <code>${escapeHtml(positionSensor.defineName)}</code>` : ""}${rgbStatusLedOn ? rgbStatusLed.pins.map((pin) => `,
-          <code>${escapeHtml(pin.defineName)}</code>`).join("") : ""}${rotaryEncoderOn ? rotaryEncoder.pins.map((pin) => `,
+          <code>${escapeHtml(positionSensor.defineName)}</code>` : ""}${rotaryEncoderOn ? rotaryEncoder.pins.map((pin) => `,
           <code>${escapeHtml(pin.defineName)}</code>`).join("") : ""}${identifyOn ? `,
           <code>${escapeHtml(identify ? identify.defineName : "IDENTIFY_LED_GPIO")}</code>` : ""}${activePickerPins.map(({ pin }) => `,
           <code>${escapeHtml(pin.defineName)}</code>`).join("")}) happens
@@ -2886,14 +2788,6 @@ function renderConfigureDevice(p) {
           <div class="summary-row">
             <div class="summary-label">POSITION SENSOR</div>
             <div class="summary-detail">${positionSensorOn ? `IO pin: GPIO ${positionSensorGpioValid ? p.positionSensorGpioPin : "?"}` : "Not added"}</div>
-          </div>
-        ` : ""}
-        ${rgbStatusLed ? `
-          <div class="summary-row">
-            <div class="summary-label">RGB STATUS LED</div>
-            <div class="summary-detail">${rgbStatusLedOn
-              ? rgbStatusLed.pins.map((pin) => `${escapeHtml(pin.label)}: GPIO ${p.rgbStatusLedPins[pin.defineName] != null ? p.rgbStatusLedPins[pin.defineName] : "?"}`).join(", ")
-              : "Not added"}</div>
           </div>
         ` : ""}
         ${rotaryEncoder ? `
@@ -3072,10 +2966,6 @@ function isProductComplete(p) {
     (Number.isInteger(p.statusLedGpioPin) && p.statusLedGpioPin >= 0);
   const positionSensorOk = !(deviceType && deviceType.positionSensor) || !positionSensorIsEnabled(p) ||
     (Number.isInteger(p.positionSensorGpioPin) && p.positionSensorGpioPin >= 0);
-  const rgbStatusLed = deviceType ? deviceType.rgbStatusLed : null;
-  const rgbStatusLedOk = !rgbStatusLed || !rgbStatusLedIsEnabled(p) ||
-    rgbStatusLed.pins.every((pin) =>
-      p.rgbStatusLedPins && Number.isInteger(p.rgbStatusLedPins[pin.defineName]) && p.rgbStatusLedPins[pin.defineName] >= 0);
   const rotaryEncoder = deviceType ? deviceType.rotaryEncoder : null;
   const rotaryEncoderOk = !rotaryEncoder || !rotaryEncoderIsEnabled(p) ||
     rotaryEncoder.pins.every((pin) =>
@@ -3105,7 +2995,7 @@ function isProductComplete(p) {
     (Number.isInteger(p[numberField.key]) && p[numberField.key] >= numberField.min && p[numberField.key] <= numberField.max);
   return !!p.deviceType && !!p.target &&
     Number.isInteger(p.gpioPin) && p.gpioPin >= 0 &&
-    secondaryOk && identifyOk && buttonsOk && statusLedOk && positionSensorOk && rgbStatusLedOk && rotaryEncoderOk && pickerPinsOk && numberFieldOk;
+    secondaryOk && identifyOk && buttonsOk && statusLedOk && positionSensorOk && rotaryEncoderOk && pickerPinsOk && numberFieldOk;
 }
 
 function buildConfigPreview(p) {
@@ -3267,22 +3157,6 @@ function renderCustomiseReview(p) {
             <button class="link" data-goto-step="2">Edit</button>
           </div>
         ` : ""}
-        ${(() => {
-          const dt = findDeviceType(p.deviceType);
-          if (!dt || !dt.rgbStatusLed) return "";
-          const on = rgbStatusLedIsEnabled(p);
-          return `
-            <div class="review-row">
-              <div>
-                <div class="summary-label">RGB STATUS LED</div>
-                <div class="summary-value">${on
-                  ? dt.rgbStatusLed.pins.map((pin) => `${escapeHtml(pin.label)} GPIO ${p.rgbStatusLedPins && p.rgbStatusLedPins[pin.defineName] != null ? p.rgbStatusLedPins[pin.defineName] : "?"}`).join(", ")
-                  : "Not added"}</div>
-              </div>
-              <button class="link" data-goto-step="2">Edit</button>
-            </div>
-          `;
-        })()}
         ${(() => {
           const dt = findDeviceType(p.deviceType);
           if (!dt || !dt.rotaryEncoder) return "";
@@ -3655,19 +3529,9 @@ function buildSedCommands(p) {
     // GPIO_NUM_NC by default, not a numeric value.
     cmds.push(`sed -i 's/^#define ${positionSensor.defineName} .*/#define ${positionSensor.defineName} GPIO_NUM_${p.positionSensorGpioPin}/' ${filePath}`);
   }
-  if (deviceType && deviceType.rgbStatusLed && rgbStatusLedIsEnabled(p)) {
-    // Same broad `.*` match as statusLed above — all three pins ship as
-    // GPIO_NUM_NC by default, not a numeric value.
-    deviceType.rgbStatusLed.pins.forEach((pin) => {
-      const gpio = p.rgbStatusLedPins && p.rgbStatusLedPins[pin.defineName] != null
-        ? p.rgbStatusLedPins[pin.defineName]
-        : (pin.defaultsByModule[p.target] != null ? pin.defaultsByModule[p.target] : 0);
-      cmds.push(`sed -i 's/^#define ${pin.defineName} .*/#define ${pin.defineName} GPIO_NUM_${gpio}/' ${filePath}`);
-    });
-  }
   if (deviceType && deviceType.rotaryEncoder && rotaryEncoderIsEnabled(p)) {
-    // Same broad `.*` match as rgbStatusLed above — all three pins ship
-    // as GPIO_NUM_NC by default.
+    // Same broad `.*` match as statusLed/positionSensor above — all three
+    // pins ship as GPIO_NUM_NC by default.
     deviceType.rotaryEncoder.pins.forEach((pin) => {
       const gpio = p.rotaryEncoderPins && p.rotaryEncoderPins[pin.defineName] != null
         ? p.rotaryEncoderPins[pin.defineName]
@@ -3902,10 +3766,6 @@ function bindEvents() {
         // statusLed above.
         state.currentProduct.positionSensorGpioPin = null;
         state.currentProduct.positionSensorEnabled = null;
-        // rgbStatusLed (all device types): same stale-value risk as
-        // statusLed above, just with a pins object instead of one GPIO.
-        state.currentProduct.rgbStatusLedPins = null;
-        state.currentProduct.rgbStatusLedEnabled = null;
         // rotaryEncoder (thermostat only, so far): same stale-value risk.
         state.currentProduct.rotaryEncoderPins = null;
         state.currentProduct.rotaryEncoderEnabled = null;
@@ -4050,32 +3910,6 @@ function bindEvents() {
     });
   }
 
-  const rgbStatusLedEnabledInput = document.getElementById("rgb-status-led-enabled");
-  if (rgbStatusLedEnabledInput) {
-    rgbStatusLedEnabledInput.addEventListener("change", () => {
-      state.currentProduct.rgbStatusLedEnabled = rgbStatusLedEnabledInput.checked;
-      saveProducts();
-      render();
-    });
-  }
-
-  // RGB status LED pins — same delegated data-attribute handler shape as
-  // data-pin-define below, keyed into rgbStatusLedPins instead of
-  // pickerPins since it's a device-type-level field, not a chip choice's.
-  document.querySelectorAll('input[data-rgb-status-pin]').forEach((el) => {
-    el.addEventListener("input", () => {
-      const defineName = el.getAttribute("data-rgb-status-pin");
-      if (typeof state.currentProduct.rgbStatusLedPins !== "object" || state.currentProduct.rgbStatusLedPins == null) {
-        state.currentProduct.rgbStatusLedPins = {};
-      }
-      const raw = el.value;
-      state.currentProduct.rgbStatusLedPins[defineName] = raw === "" ? null : parseInt(raw, 10);
-      saveProducts();
-      render();
-      document.getElementById(el.id).focus();
-    });
-  });
-
   const rotaryEncoderEnabledInput = document.getElementById("rotary-encoder-enabled");
   if (rotaryEncoderEnabledInput) {
     rotaryEncoderEnabledInput.addEventListener("change", () => {
@@ -4086,7 +3920,7 @@ function bindEvents() {
   }
 
   // Rotary encoder pins — same delegated data-attribute handler shape as
-  // data-rgb-status-pin above, keyed into rotaryEncoderPins instead.
+  // data-pin-define below, keyed into rotaryEncoderPins instead.
   document.querySelectorAll('input[data-rotary-encoder-pin]').forEach((el) => {
     el.addEventListener("input", () => {
       const defineName = el.getAttribute("data-rotary-encoder-pin");

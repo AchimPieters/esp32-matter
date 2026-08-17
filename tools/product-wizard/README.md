@@ -619,24 +619,17 @@ manufacturing/config tool's own "Indicators" and "Factory Reset" tabs,
 which showed a much richer commissioning/Identify indicator state
 machine and a power-cycle reset procedure neither existed here yet:
 
-- **RGB status LED** — a new optional, independently-toggleable checkbox
-  + 3 GPIO fields (red/green/blue) in Configure Device, off by default,
-  rendered via a new `rgbStatusLed` mechanism on `DEVICE_TYPES`
-  (`makeRgbStatusLed(redGpio, greenGpio, blueGpio)`, modeled on the
-  outlet's existing single-pin `statusLed` above but generalized to an
-  array of 3 pins — reusing the exact same per-component `pins` shape
-  `extraPickers` already established for BL0942/ADE7953/APA102/SM2335,
-  not a new mechanism). Wired into the same places every other optional
-  GPIO block is: Configure Device's render/validate/default-fill/sed
-  logic, the note box listing which `#define`s get applied, the
-  Configuration summary sidebar (a new "RGB STATUS LED" row), Customise &
-  Review, and the device-type-switch reset logic. On the firmware side
-  this drives a real color + blink/breathe pattern engine reflecting
-  commissioning state and Identify effects — grounded in connectedhomeip's
-  own `CHIPDeviceEvent.h` lifecycle events and the Identify cluster's own
-  `EffectIdentifierEnum`, not invented from the screenshot; see
-  `firmware/light/main/app_main.cpp`'s header comment for the full
-  state/color/timing table.
+- **RGB status LED (later removed)** — an optional, independently-
+  toggleable checkbox + 3 GPIO fields (red/green/blue) was added to
+  Configure Device for every device type, driving a real color +
+  blink/breathe pattern engine on the firmware side reflecting
+  commissioning state and Identify effects. Built, extended to every
+  device type added afterward, then removed entirely — firmware code,
+  the wizard's `rgbStatusLed` mechanism (`DEVICE_TYPES` field,
+  `makeRgbStatusLed()` factory, and all its render/validate/sed/review
+  wiring), and its documentation — once it became clear this wasn't
+  actually wanted on real hardware. Not a technical problem with the
+  implementation; see CLAUDE.md's "Open next steps" for the fuller note.
 - **Factory reset info box** — a new static card rendered directly under
   the Configuration summary sidebar on every device type, describing the
   quick-power-cycle procedure every device type's firmware now actually
@@ -652,8 +645,8 @@ machine and a power-cycle reset procedure neither existed here yet:
   `#define`s, the mechanism is always compiled in, so the box is purely
   informational.
 
-Both features are Docker build-verified across all ten device types that
-existed at the time (`firmware/thermostat/`, added afterward, got both
+Factory reset is Docker build-verified across all ten device types that
+existed at the time (`firmware/thermostat/`, added afterward, got it
 from the start — see below); not yet hardware-tested.
 
 An eleventh device type, `firmware/thermostat/` (Heat + Cool), followed —
@@ -673,10 +666,10 @@ temperature) AND two `extraPickers` (Output, Display) at the same time.
 Fixed by letting them coexist and stack in the same sidebar, separated by
 the same `<hr>` rule `extraPickers`' own multiple entries already used
 when more than one was present. The new optional rotary-encoder
-checkbox + 3-GPIO-fields block is a deliberate parallel duplicate of the
-existing `rgbStatusLed` mechanism (`makeRotaryEncoder()`, its own
-`rotaryEncoder` product field, full render/validate/sed/review wiring)
-rather than a shared "array of optional pin blocks" refactor — lower
+checkbox + 3-GPIO-fields block is its own new mechanism
+(`makeRotaryEncoder()`, its own `rotaryEncoder` product field, full
+render/validate/sed/review wiring) rather than a shared "array of
+optional pin blocks" refactor — lower
 risk (zero changes to the other ten device types' existing code path)
 and matches this repo's own established copy-and-adapt convention over
 premature shared abstraction. The Output and Display pickers themselves

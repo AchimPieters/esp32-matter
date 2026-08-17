@@ -1079,29 +1079,23 @@ firmware/thermostat/      Thermostat (Heat + Cool) — eleventh device type,
                            left sidebar, separated by the same `<hr>` rule
                            extraPickers' own multiple entries already use.
                            The rotary encoder's checkbox+3-GPIO-fields
-                           block is a deliberate parallel duplicate of the
-                           rgbStatusLed mechanism (new `rotaryEncoder`
-                           field, `makeRotaryEncoder()` factory, its own
-                           render/validate/sed/review wiring) rather than
-                           a generalized "array of optional pin blocks"
-                           refactor — lower risk (zero changes to the
-                           other ten device types' existing rgbStatusLed
-                           code path) and matches this repo's own
-                           established copy-and-adapt convention.
+                           block is its own new `rotaryEncoder` field +
+                           `makeRotaryEncoder()` factory with its own
+                           render/validate/sed/review wiring, matching
+                           this repo's established copy-and-adapt
+                           convention rather than a generalized "array of
+                           optional pin blocks" refactor.
                            Output/Display both reuse the existing
                            extraPickers `pins`-per-option mechanism
                            unchanged (RELAY: 2 pins, BINDING: 0 pins,
                            OPENTHERM: 2 pins; GC9A01/ST7789: 5 SPI pins
                            each, SSD1306: 2 I2C pins, DISPLAY_NONE: 0
                            pins) — zero new mechanism needed there, only
-                           new COMPONENT_LIBRARY entries. RGB status LED
-                           defaults (GPIO 0/12/23) are this repo's first
-                           to knowingly reuse boot-strapping pins as
-                           defaults — flagged explicitly in a code
-                           comment — since this device type's unusually
-                           large number of optional peripherals (sensor +
-                           relay/OpenTherm + encoder + SPI display) simply
-                           runs out of the classic ESP32's ~17 usable
+                           new COMPONENT_LIBRARY entries. This device
+                           type's unusually large number of optional
+                           peripherals (sensor + relay/OpenTherm +
+                           encoder + SPI display) simply runs out of the
+                           classic ESP32's ~17 usable
                            GPIOs otherwise.
   partitions.csv           same OTA + fctry layout as firmware/light/
   sdkconfig.defaults        same as firmware/light/, plus
@@ -1317,8 +1311,8 @@ firmware/door-lock/       Door Lock — thirteenth device type, back to this
                            `DlLockType` — confirmed by an actual Docker
                            build failure (`'DlLockType' has not been
                            declared`) before fully qualifying it. Standard
-                           RGB status LED + quick-power-cycle factory
-                           reset, same as every other device type here.
+                           quick-power-cycle factory reset, same as every
+                           other device type here.
                            Build-verified in Docker across all 3
                            meaningful configs (servo/no-sensor, servo/
                            with-sensor, relay/no-sensor); not
@@ -1408,8 +1402,8 @@ firmware/smoke-co-alarm/  Smoke/CO Alarm — fourteenth device type, and this
                            HardwareFaultAlert is set from a simple, module-
                            polarity-agnostic heuristic: several consecutive
                            readings pinned at the ADC's extreme raw values.
-                           Standard RGB status LED + quick-power-cycle
-                           factory reset. Build-verified in Docker across
+                           Standard quick-power-cycle factory reset.
+                           Build-verified in Docker across
                            all 3 sensor configs (MQ2+MQ7, MQ2-only,
                            MQ7-only); not hardware-tested (no MQ-2/MQ-7
                            module physically available when written).
@@ -2060,8 +2054,9 @@ SECURITY.md               flash encryption / secure boot / signed OTA guidance
    on its own.
 
    An eleventh device type, `firmware/thermostat/` (Thermostat, Heat +
-   Cool), followed the RGB Status LED / Factory Reset cross-cutting work
-   below — this repo's first device type with a genuine control loop
+   Cool), followed the RGB Status LED (later removed) / Factory Reset
+   cross-cutting work below — this repo's first device type with a
+   genuine control loop
    (compares a measured value against a setpoint and drives an output)
    rather than a direct command pass-through or plain sensor readout.
    Requested with real ambition from the start: Heat + Cool (not
@@ -2175,9 +2170,9 @@ SECURITY.md               flash encryption / secure boot / signed OTA guidance
    convention); an optional position sensor (reed switch,
    `firmware/contact-sensor/`'s own simple digital-input technique) lets
    LockState reflect a real reading instead of the spec-allowed
-   optimistic default. Standard RGB status LED + factory reset. The
+   optimistic default. Standard factory reset. The
    wizard integration reused every existing mechanism (`extraPickers` for
-   Output type, the `driver`/`identify`/`rgbStatusLed` shapes already
+   Output type, the `driver`/`identify`/`statusLed` shapes already
    established) and added exactly one new parallel field,
    `positionSensor` — a deliberate duplicate of `statusLed`'s single-GPIO
    checkbox-gated shape rather than a reuse of that literal field, since
@@ -2223,8 +2218,8 @@ SECURITY.md               flash encryption / secure boot / signed OTA guidance
    Sensor picker's own `extraPickers` `pins` array instead — so the MQ2
    field stays visible-but-unused when "MQ-7 only" is selected, the same
    small, documented, harmless quirk as door-lock's own Servo/Relay
-   tradeoff, not a new mechanism. Standard RGB status LED + quick-power-
-   cycle factory reset. Build-verified in Docker across all 3 sensor
+   tradeoff, not a new mechanism. Standard quick-power-cycle factory
+   reset. Build-verified in Docker across all 3 sensor
    configs (MQ2+MQ7, MQ2-only, MQ7-only); not hardware-tested (no MQ-2/
    MQ-7 module physically available when written).
 2. Implement Matter **OTA** — partially done. All fourteen firmware types
@@ -2263,35 +2258,17 @@ SECURITY.md               flash encryption / secure boot / signed OTA guidance
    richer "Indicators" state machine and a "Factory Reset" tab than
    anything this repo had:
 
-   **Optional RGB status LED.** Off by default (all three GPIOs at
-   `GPIO_NUM_NC`, checked at runtime the same way `firmware/outlet/`'s
-   pre-existing single-color status LED already is — that sentinel is a
-   `gpio_num_t` enumerator, not a preprocessor macro, so `#if` can't test
-   it). When wired up, it shows real commissioning/Identify state via
-   color + a small blink/breathe pattern engine (LEDC PWM, the same
-   peripheral `firmware/dimmable-light/`/`firmware/color-light/` already
-   use — on its own timer/channels, `LEDC_TIMER_1` + channels 5-7,
-   verified against every device type's own existing LEDC usage first so
-   nothing collides). Every state and its color/timing is sourced from
-   two real, verified places, not invented from the screenshot and not
-   copied without checking it against the actual spec/SDK source first:
-   the DeviceLayer's own lifecycle events, confirmed directly in
-   connectedhomeip's `CHIPDeviceEvent.h`
-   (`kCHIPoBLEAdvertisingChange`/`kSecureSessionEstablished`/
-   `kCommissioningComplete`/`kFailSafeTimerExpired`), and the Identify
-   cluster's own `EffectIdentifierEnum`, confirmed directly in the
-   generated `Identify/Enums.h` (`kBlink`/`kBreathe`/`kOkay`/
-   `kChannelChange`/`kFinishEffect`/`kStopEffect` — the same six values
-   `app_identification_cb`'s EFFECT case already received as `effect_id`
-   in every device type here, previously left undifferentiated). See
-   `firmware/light/main/app_main.cpp`'s header comment for the full
-   state/color/timing table and its exact sourcing — every other device
-   type's own header comment points back to it rather than repeating it.
-   `firmware/outlet/` needed one real naming fix while wiring this up: it
-   already had its own unrelated single-color `status_led_*`-named
-   feature, so its new RGB version uses a distinct `rgb_status_led_*`
-   prefix throughout to avoid a silent symbol collision — caught by
-   grepping the file before adding anything, not after.
+   **Optional RGB status LED (later removed, see below).** Built,
+   documented, and extended to every device type added afterward —
+   color + blink/breathe patterns showing real commissioning/Identify
+   state, sourced from connectedhomeip's own `CHIPDeviceEvent.h`
+   lifecycle events and the Identify cluster's own
+   `EffectIdentifierEnum` — but explicitly not what the user actually
+   wanted on real hardware, and removed entirely (firmware code, the
+   wizard's `rgbStatusLed` mechanism, and its documentation) once that
+   became clear. Worth remembering if this ever comes up again: the
+   feature itself worked and was hardware-agnostic to add, the call was
+   about product fit, not a technical problem with the implementation.
 
    **Quick-power-cycle factory reset.** Power the device off and on 3
    times in a row (roughly a couple of seconds each way) and it
@@ -2321,24 +2298,20 @@ SECURITY.md               flash encryption / secure boot / signed OTA guidance
    whether a reset is due; the actual `factory_reset()` call happens
    later in `app_main()`, after `esp_matter::start()` has completed.
 
-   Both features are Docker build-verified across all ten device types
-   (light, switch, contact-sensor, outlet, temperature-sensor,
-   light-sensor, dimmable-light, window-covering, color-light,
-   addressable-light) — not yet hardware-tested. The wizard
-   (`tools/product-wizard/`) gained a new `rgbStatusLed` mechanism on
-   `DEVICE_TYPES` (a `makeRgbStatusLed(redGpio, greenGpio, blueGpio)`
-   factory, modeled on the outlet's existing single-pin `statusLed` but
-   generalized to a 3-pin array — reusing the same per-component `pins`
-   shape `extraPickers` already established for BL0942/ADE7953/
-   APA102/SM2335 — fully wired into Configure Device's render/validate/
-   sed logic, the Configuration summary sidebar, and Customise & Review)
-   plus a new static "Factory reset" info box rendered directly under the
-   Configuration summary sidebar on every device type (wrapped together
-   in a `.config-sidebar-stack` flex column so both stay in the same grid
-   column regardless of whether that step also has a left-hand picker
-   sidebar). Factory reset itself needed no wizard mechanism beyond that
-   box — it has no configurable GPIOs or `#define`s, so there's nothing
-   to sed.
+   Quick-power-cycle factory reset is Docker build-verified across all
+   fourteen device types — not yet hardware-tested. The wizard
+   (`tools/product-wizard/`) has a static "Factory reset" info box
+   rendered directly under the Configuration summary sidebar on every
+   device type (wrapped together in a `.config-sidebar-stack` flex
+   column so it stays in the same grid column regardless of whether that
+   step also has a left-hand picker sidebar). It needed no wizard
+   mechanism beyond that box — it has no configurable GPIOs or
+   `#define`s, so there's nothing to sed.
+
+   RGB status LED's own wizard mechanism (`rgbStatusLed` on
+   `DEVICE_TYPES`, a `makeRgbStatusLed(redGpio, greenGpio, blueGpio)`
+   factory) was fully removed along with the feature itself — see the
+   "later removed" note above.
 
 ## Note on hardware/USB
 

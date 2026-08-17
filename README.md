@@ -427,28 +427,20 @@ errors); the provider side and a full transfer are open, tracked in
 CLAUDE.md's next steps alongside the binding test, which hits the same
 "needs a second commissioned device + tooling" wall.
 
-All thirteen device types other than `firmware/camera/` (Espressif's own
-unmodified reference code) also have two optional, off-by-default
-features (see CLAUDE.md's "Open next steps" for the full sourcing/
-verification detail):
+All fourteen device types also have a quick-power-cycle factory reset
+(see CLAUDE.md's "Open next steps" for the full sourcing/verification
+detail): power the device off and on 3 times in a row (about 2 seconds
+each way) and it factory-resets and re-enters setup mode, no button or
+extra pin needed. Built on esp-matter's own `esp_matter::factory_reset()`,
+called only after Matter has started (confirmed against its own
+implementation and reference `app_reset` component).
 
-- **RGB status LED** — wire up 3 GPIOs (`STATUS_LED_RED/GREEN/BLUE_GPIO`,
-  all `GPIO_NUM_NC`/disabled by default) and the device shows real
-  commissioning + Identify state with color and a blink/breathe pattern,
-  driven from connectedhomeip's own lifecycle events and the Identify
-  cluster's own `EffectIdentifierEnum` — not invented, cross-checked
-  against the SDK source directly.
-- **Quick-power-cycle factory reset** — power the device off and on 3
-  times in a row (about 2 seconds each way) and it factory-resets and
-  re-enters setup mode, no button or extra pin needed. Built on
-  esp-matter's own `esp_matter::factory_reset()`, called only after
-  Matter has started (confirmed against its own implementation and
-  reference `app_reset` component).
-
-Both are Docker build-verified across all thirteen of those device types, not yet
-hardware-tested. The product wizard (`tools/product-wizard/`) has a
-checkbox + 3 GPIO fields for the status LED and shows the factory-reset
-procedure as a standalone info box under Configuration Summary.
+Docker build-verified across all fourteen device types, not yet
+hardware-tested. The product wizard (`tools/product-wizard/`) shows the
+factory-reset procedure as a standalone info box under Configuration
+Summary. (An earlier optional RGB status LED feature was built and
+extended across every device type here too, then removed — see
+CLAUDE.md's "Open next steps" for why.)
 
 ## Honest expectations
 
