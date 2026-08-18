@@ -836,8 +836,14 @@ firmware/addressable-light/  Addressable LED strip / smart-bulb driver —
                            choice — the first plain-integer field type this
                            wizard has), reusable by any future device type
                            needing one. Build-verified in Docker for all 8
-                           chips; not hardware-tested (none of the 8 chips'
-                           hardware was physically available when written).
+                           chips. WS2812B is now hardware-verified end to
+                           end (real 12-pixel strip, GPIO 2, commissioned
+                           and controlled live via Apple Home — see "Open
+                           next steps" for the full debugging story, which
+                           also fixed two real endpoint-construction bugs
+                           shared with firmware/color-light/); the other 7
+                           chips remain build-verified only (no hardware
+                           for them was physically available).
   partitions.csv           same OTA + fctry layout as firmware/light/
   sdkconfig.defaults        same as firmware/light/
 firmware/thermostat/      Thermostat (Heat + Cool) — eleventh device type,
@@ -2312,6 +2318,129 @@ SECURITY.md               flash encryption / secure boot / signed OTA guidance
    `DEVICE_TYPES`, a `makeRgbStatusLed(redGpio, greenGpio, blueGpio)`
    factory) was fully removed along with the feature itself — see the
    "later removed" note above.
+5. `firmware/addressable-light/` (WS2812B, 12-pixel strip, GPIO 2) taken
+   through a real hardware test with Apple Home — the first time any
+   ColorControl-bearing device type in this repo was tested against Apple
+   Home rather than Home Assistant — and it initially failed completely:
+   paired fine, but Apple Home showed it as a generic, unrecognized "Matter
+   Accessory" ("Niet geschikt" / "Not compatible", no control tile at all),
+   auto-removing its own fabric shortly after. Three real, independently
+   confirmed bugs were found and fixed, all shared with
+   `firmware/color-light/`'s identical hand-assembled ExtendedColorLight
+   endpoint construction (both files were fixed together; only
+   addressable-light was hardware-verified, since no RGB(W)(W) LED/driver
+   board exists for color-light):
+   1. **Missing `RemainingTime` attribute on ColorControl** — a mandatory
+      global attribute per the Matter spec, confirmed by reading
+      esp-matter's own `endpoint::extended_color_light::add()` in
+      `esp_matter_endpoint.cpp` directly: it always calls
+      `color_control::attribute::create_remaining_time()` explicitly,
+      separate from anything the individual feature `add()` functions set
+      up. This hand-assembled endpoint never called it at all.
+   2. **Only the optional HueSaturation ColorControl feature was
+      implemented — XY and ColorTemperature, both *mandatory* conformance
+      for the ExtendedColorLight device type, were missing entirely.**
+      Confirmed directly against the CSA's own
+      `data_model/1.6/device_types/ExtendedColorLight.xml` (fetched from
+      inside the esp-matter SDK image): `<feature code="XY">
+      <mandatoryConform/>`, `<feature code="CT"><mandatoryConform/>`,
+      HueSaturation itself only `<optionalConform/>`. The original
+      HS-only design (deliberately choosing HS over esp-matter's own
+      XY+CT default, reasoning that most controllers' color wheels drive
+      Hue/Saturation directly) passed Home Assistant's lenient Matter
+      integration but not Apple's. Fixed by adding real XY support (a new
+      `xy_to_rgb()` — Philips' own published Hue CIE-xyY-to-sRGB
+      conversion algorithm, the same one Home Assistant's color utility
+      uses) and real ColorTemperature support even on the plain RGB/RGBW
+      chips that have no dedicated warm/cool white channel (a new
+      `mireds_to_rgb_approx()` — Tanner Helland's widely-used
+      blackbody-radiation Kelvin-to-RGB approximation, the same technique
+      WLED uses for this exact "no physical white LED" case) — RGBCCT
+      chips (WS2805/SM2335EGH, and color-light's RGBWW mode) keep driving
+      their real warm/cool channels for CT as before. `light_color_source`
+      became a 3-way HS/XY/CT interlock (was 2-way HS/CT, and only existed
+      at all for the RGBCCT chips) tracking whichever color space a
+      controller most recently commanded.
+   3. **The real root cause, found last: the endpoint had no Descriptor
+      cluster at all.** Confirmed by reading esp-matter's own
+      `common::create<T>()` template (used internally by *every* top-level
+      endpoint helper — `endpoint::on_off_light::create()`,
+      `endpoint::contact_sensor::create()`, `endpoint::extended_color_light
+      ::create()`, all of them) directly in `esp_matter_endpoint.cpp`: it
+      always calls `descriptor::create()` explicitly, before the device
+      type's own `add()` runs. `firmware/color-light/` and
+      `firmware/addressable-light/` hand-assemble their endpoint from raw
+      `endpoint::create()` + individual `cluster::xxx::create()` calls
+      instead (see each file's own header comment for why — to get
+      HueSaturation instead of esp-matter's XY+CT default), which skipped
+      this step entirely — the one thing every *other* device type in this
+      repo gets for free by using a complete top-level helper.
+      `add_device_type()` does NOT create or populate a Descriptor cluster
+      itself (confirmed by reading its implementation: it only appends to
+      the endpoint's own internal `device_types[]` array) — without an
+      actual Descriptor cluster object on the endpoint, a controller has no
+      standard way to discover what device type or clusters even exist
+      there at all. This explains every symptom observed: commissioning
+      itself doesn't touch Descriptor so it always succeeded (confirmed via
+      a live serial log across every attempt — clean `CommissioningComplete`,
+      `UpdateFabricLabel`, no protocol errors), but Apple Home's
+      HomeKit-Matter bridge apparently can't (or won't) expose *any*
+      service without one, while Home Assistant's more lenient Matter
+      implementation tolerated the gap — which is exactly why this was
+      never caught by this repo's existing Home Assistant-based testing.
+      Fixed by explicitly creating a `cluster::descriptor::create(ep,
+      &descriptor_config, CLUSTER_FLAG_SERVER)` right after
+      `endpoint::create()`, before `add_device_type()` and every other
+      cluster — matching `common::create<T>()`'s own order exactly.
+
+   Debugging this took four full flash/pair/inspect cycles before finding
+   the Descriptor cluster gap, including two that used a completely fresh
+   factory-partition identity (new UUID/serial/discriminator via
+   `tools/gen_factory.sh`) to rule out an Apple-side compatibility cache as
+   the explanation for the identical failure repeating — a real, useful
+   process reminder: `tools/gen_factory.sh` is meant to be re-run per
+   physical unit rather than reusing one factory partition's `out/`
+   output across multiple flashes, both for real deployments (every real
+   product needs its own identity) and for exactly this kind of hardware
+   debugging (ruling out identity-keyed caching as a variable). Each
+   fix was isolated and confirmed via a live, unbuffered pyserial log
+   read directly from the board during actual commissioning attempts
+   (see the `hardware-test-setup` memory) rather than guessed at from
+   Apple's opaque UI alone — the log showed the exact moment each
+   commissioning attempt succeeded or got torn down
+   (`OpCreds: Received a RemoveFabric Command`), which is what made it
+   possible to tell "commissioning failing" apart from "commissioning
+   succeeding but the resulting endpoint being rejected afterward" (it
+   was always the latter).
+
+   Once fixed: end-to-end confirmed live via Apple Home on real hardware
+   (WS2812B, 12 pixels, GPIO 2) — Hue/Saturation, ColorTemperature (mireds),
+   and CurrentLevel (brightness) all exercised live via the Home app's
+   color wheel/color-temperature slider/brightness slider, every single
+   command visible in the serial log reaching `app_attribute_update_cb()`
+   and correctly updating the physical strip's color/brightness in real
+   time, confirmed visually against the actual LEDs. This is also the
+   first confirmation that this repo's XY-to-RGB and CCT-to-RGB
+   approximation math (both newly added) produce visually correct,
+   sensible-looking colors on real hardware, not just numerically
+   plausible ones.
+
+   Separately, also fixed while investigating: Apple Home proposed the
+   generic "Matter Accessory" as this device's suggested name during
+   pairing (rather than anything specific) because the `NodeLabel`
+   attribute (Basic Information cluster, root endpoint) was left at
+   esp-matter's own empty default — both files now set
+   `node_config.root_node.basic_information.node_label` to a real default
+   ("Addressable Light" / "Color Light") — cosmetic (a controller can
+   always rename it) but a real, easy, worthwhile fix found in the same
+   sitting.
+
+   `firmware/color-light/` itself remains build-verified only for all
+   three color modes (RGB/RGBW/RGBWW) with this same set of fixes applied —
+   not hardware-tested (no RGB(W)(W) LED/driver board for this device type
+   physically available), so its XY/CT rendering in particular (verified
+   working on addressable-light's WS2812B path) hasn't been visually
+   confirmed there yet.
 
 ## Note on hardware/USB
 

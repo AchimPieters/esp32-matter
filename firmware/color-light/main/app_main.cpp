@@ -152,6 +152,7 @@
 #include <driver/ledc.h>
 #include <esp_timer.h>
 #include <math.h>
+#include <string.h>
 
 #include <esp_matter.h>
 
@@ -257,15 +258,20 @@ static uint8_t light_level = COLOR_LIGHT_DEFAULT_LEVEL;
 static uint8_t light_hue = COLOR_LIGHT_DEFAULT_HUE;
 static uint8_t light_saturation = COLOR_LIGHT_DEFAULT_SATURATION;
 
-#if COLOR_LIGHT_COLOR_MODE == COLOR_LIGHT_MODE_RGBWW
-/* Which color space was most recently commanded — see the header comment
- * on the RGB/CCT "interlock" this hardware variant needs. Starts in HS
- * mode to match COLOR_LIGHT_DEFAULT_HUE/_SATURATION being the light's
- * initial visible color. */
-enum color_source_t { COLOR_SOURCE_HS, COLOR_SOURCE_CCT };
+/* Which color space was most recently commanded — HS/XY/CT are mutually
+ * exclusive ColorMode values in Matter's own ColorControl cluster, so this
+ * local interlock just remembers which one to render with. Originally only
+ * needed for the RGBWW hardware variant's real HS-vs-CT interlock; now
+ * unconditional for every variant since XY and ColorTemperature are both
+ * mandatory ColorControl features for the ExtendedColorLight device type
+ * (see the header comment on why), not just an RGBWW-specific extra.
+ * Starts in HS mode to match COLOR_LIGHT_DEFAULT_HUE/_SATURATION being the
+ * light's initial visible color. */
+enum color_source_t { COLOR_SOURCE_HS, COLOR_SOURCE_XY, COLOR_SOURCE_CT };
 static color_source_t light_color_source = COLOR_SOURCE_HS;
+static uint16_t light_x = 24939; /* esp-matter's own xy feature config_t default */
+static uint16_t light_y = 24701;
 static uint16_t light_mireds = COLOR_LIGHT_COOL_WHITE_MIREDS;
-#endif
 
 /* Textbook HSV -> RGB conversion (six 60-degree hue sectors). h in
  * degrees [0,360), s and v in [0,1]. Output components in [0,1]; caller
@@ -288,6 +294,83 @@ static void hsv_to_rgb(float h, float s, float v, float *r, float *g, float *b)
     *r = r1 + m;
     *g = g1 + m;
     *b = b1 + m;
+}
+
+/* CIE xyY -> sRGB, for the XY ColorControl feature — Philips' own published
+ * Hue conversion algorithm (the standard reference for this exact
+ * transform, reused as-is by Home Assistant's color utility and countless
+ * open-source Hue/Matter libraries — not invented for this file, same
+ * "known, widely-used algorithm" sourcing standard this repo already
+ * applies to e.g. WLED's/ESPHome's formulas elsewhere). x/y are the
+ * fractions CurrentX/CurrentY decode to (raw attribute value / 65536,
+ * confirmed against the ZCL/Matter spec's own documented scaling); v is
+ * brightness [0,1]. Includes the algorithm's own gamma (sRGB companding)
+ * step, without which colors come out visibly washed out. */
+static void xy_to_rgb(float x, float y, float v, float *r, float *g, float *b)
+{
+    if (y <= 0.0f) {
+        *r = *g = *b = 0.0f;
+        return;
+    }
+    float z = 1.0f - x - y;
+    float Y = v;
+    float X = (Y / y) * x;
+    float Z = (Y / y) * z;
+
+    float r_lin = X * 1.656492f - Y * 0.354851f - Z * 0.255038f;
+    float g_lin = -X * 0.707196f + Y * 1.655397f + Z * 0.036152f;
+    float b_lin = X * 0.051713f - Y * 0.121364f + Z * 1.011530f;
+
+    float *chans[3] = {&r_lin, &g_lin, &b_lin};
+    for (int i = 0; i < 3; i++) {
+        float c = *chans[i];
+        c = (c <= 0.0031308f) ? (12.92f * c) : (1.055f * powf(c, 1.0f / 2.4f) - 0.055f);
+        *chans[i] = fminf(fmaxf(c, 0.0f), 1.0f);
+    }
+    *r = r_lin;
+    *g = g_lin;
+    *b = b_lin;
+}
+
+/* Correlated color temperature (Kelvin) -> approximate sRGB, for rendering
+ * a ColorTemperature command on the RGB/RGBW variants (no dedicated
+ * warm/cool white channel — RGBWW has real ones, driven by
+ * mireds_to_cw_ww() below instead). This is Tanner Helland's widely-used
+ * blackbody-radiation RGB approximation ("How to Convert Temperature (K)
+ * to RGB: Algorithm and Sample Code") — the same practical approximation
+ * reused across the maker community (WLED's own Kelvin white-balance
+ * slider among others) for exactly this "no physical white LED,
+ * approximate it in RGB instead" case. Output channels are [0,1] fractions
+ * of `v` (brightness). */
+static void mireds_to_rgb_approx(uint16_t mireds, float v, float *r, float *g, float *b)
+{
+    float clamped_mireds = fminf(fmaxf((float)mireds, (float)COLOR_LIGHT_COOL_WHITE_MIREDS),
+                                  (float)COLOR_LIGHT_WARM_WHITE_MIREDS);
+    float kelvin = 1000000.0f / clamped_mireds;
+    float t = kelvin / 100.0f;
+    float rf, gf, bf;
+
+    if (t <= 66.0f) {
+        rf = 255.0f;
+    } else {
+        rf = 329.698727446f * powf(t - 60.0f, -0.1332047592f);
+    }
+    if (t <= 66.0f) {
+        gf = 99.4708025861f * logf(t) - 161.1195681661f;
+    } else {
+        gf = 288.1221695283f * powf(t - 60.0f, -0.0755148492f);
+    }
+    if (t >= 66.0f) {
+        bf = 255.0f;
+    } else if (t <= 19.0f) {
+        bf = 0.0f;
+    } else {
+        bf = 138.5177312231f * logf(t - 10.0f) - 305.0447927307f;
+    }
+
+    *r = fminf(fmaxf(rf, 0.0f), 255.0f) / 255.0f * v;
+    *g = fminf(fmaxf(gf, 0.0f), 255.0f) / 255.0f * v;
+    *b = fminf(fmaxf(bf, 0.0f), 255.0f) / 255.0f * v;
 }
 
 #if COLOR_LIGHT_COLOR_MODE == COLOR_LIGHT_MODE_RGBW
@@ -341,22 +424,37 @@ static void set_output(void)
 
     if (light_on) {
         float value_fraction = (float)light_level / 254.0f;
+        bool rendered_via_white_channels = false;
 
 #if COLOR_LIGHT_COLOR_MODE == COLOR_LIGHT_MODE_RGBWW
-        if (light_color_source == COLOR_SOURCE_CCT) {
-            /* CCT mode: drive cool/warm only, RGB stays off — see the
-             * header comment on the RGB/CCT interlock. */
+        if (light_color_source == COLOR_SOURCE_CT) {
+            /* CT mode: drive cool/warm only, RGB stays off — see the
+             * header comment on the RGB/CT interlock. */
             float cool_fraction, warm_fraction;
             mireds_to_cw_ww(light_mireds, value_fraction, &cool_fraction, &warm_fraction);
             cool_white_duty = (uint32_t)(cool_fraction * 255.0f + 0.5f);
             warm_white_duty = (uint32_t)(warm_fraction * 255.0f + 0.5f);
-        } else
+            rendered_via_white_channels = true;
+        }
 #endif
-        {
-            float hue_degrees = (float)light_hue * 360.0f / 254.0f;
-            float saturation_fraction = (float)light_saturation / 254.0f;
+        if (!rendered_via_white_channels) {
             float r, g, b;
-            hsv_to_rgb(hue_degrees, saturation_fraction, value_fraction, &r, &g, &b);
+            if (light_color_source == COLOR_SOURCE_XY) {
+                float x_fraction = (float)light_x / 65536.0f;
+                float y_fraction = (float)light_y / 65536.0f;
+                xy_to_rgb(x_fraction, y_fraction, value_fraction, &r, &g, &b);
+#if COLOR_LIGHT_COLOR_MODE != COLOR_LIGHT_MODE_RGBWW
+            } else if (light_color_source == COLOR_SOURCE_CT) {
+                /* No dedicated white channel on this variant — approximate
+                 * the commanded color temperature in RGB instead (see the
+                 * header comment on mireds_to_rgb_approx()). */
+                mireds_to_rgb_approx(light_mireds, value_fraction, &r, &g, &b);
+#endif
+            } else {
+                float hue_degrees = (float)light_hue * 360.0f / 254.0f;
+                float saturation_fraction = (float)light_saturation / 254.0f;
+                hsv_to_rgb(hue_degrees, saturation_fraction, value_fraction, &r, &g, &b);
+            }
 
 #if COLOR_LIGHT_COLOR_MODE == COLOR_LIGHT_MODE_RGBW
             float w;
@@ -435,25 +533,29 @@ static esp_err_t app_attribute_update_cb(attribute::callback_type_t type, uint16
         ESP_LOGI(TAG, "Light level set to %u/254", light_level);
     } else if (cluster_id == ColorControl::Id && attribute_id == ColorControl::Attributes::CurrentHue::Id) {
         light_hue = val->val.u8;
-#if COLOR_LIGHT_COLOR_MODE == COLOR_LIGHT_MODE_RGBWW
         light_color_source = COLOR_SOURCE_HS;
-#endif
         set_output();
         ESP_LOGI(TAG, "Hue set to %u/254", light_hue);
     } else if (cluster_id == ColorControl::Id && attribute_id == ColorControl::Attributes::CurrentSaturation::Id) {
         light_saturation = val->val.u8;
-#if COLOR_LIGHT_COLOR_MODE == COLOR_LIGHT_MODE_RGBWW
         light_color_source = COLOR_SOURCE_HS;
-#endif
         set_output();
         ESP_LOGI(TAG, "Saturation set to %u/254", light_saturation);
-#if COLOR_LIGHT_COLOR_MODE == COLOR_LIGHT_MODE_RGBWW
+    } else if (cluster_id == ColorControl::Id && attribute_id == ColorControl::Attributes::CurrentX::Id) {
+        light_x = val->val.u16;
+        light_color_source = COLOR_SOURCE_XY;
+        set_output();
+        ESP_LOGI(TAG, "Color x set to %u/65536", light_x);
+    } else if (cluster_id == ColorControl::Id && attribute_id == ColorControl::Attributes::CurrentY::Id) {
+        light_y = val->val.u16;
+        light_color_source = COLOR_SOURCE_XY;
+        set_output();
+        ESP_LOGI(TAG, "Color y set to %u/65536", light_y);
     } else if (cluster_id == ColorControl::Id && attribute_id == ColorControl::Attributes::ColorTemperatureMireds::Id) {
         light_mireds = val->val.u16;
-        light_color_source = COLOR_SOURCE_CCT;
+        light_color_source = COLOR_SOURCE_CT;
         set_output();
         ESP_LOGI(TAG, "Color temperature set to %u mireds", light_mireds);
-#endif
     }
     return ESP_OK;
 }
@@ -612,6 +714,15 @@ extern "C" void app_main(void)
      * RGBWW mode] + ScenesManagement) — see the header comment on why
      * this isn't endpoint::extended_color_light::create(). */
     node::config_t node_config;
+    /* NodeLabel (Basic Information cluster) — left empty by default in
+     * esp-matter's own config_t, which is exactly why Apple Home proposed
+     * the generic "Matter Accessory" as this device's suggested name
+     * instead of anything specific (found while hardware-testing
+     * firmware/addressable-light/'s identical construction). Harmless (a
+     * controller can always rename it), but a better default costs
+     * nothing. */
+    strncpy(node_config.root_node.basic_information.node_label, "Color Light",
+            sizeof(node_config.root_node.basic_information.node_label) - 1);
     node_t *node = node::create(&node_config, app_attribute_update_cb, app_identification_cb);
     if (!node) {
         ESP_LOGE(TAG, "Failed to create Matter node");
@@ -623,6 +734,38 @@ extern "C" void app_main(void)
         ESP_LOGE(TAG, "Failed to create endpoint");
         return;
     }
+
+    /* Every one of esp-matter's own top-level endpoint helpers
+     * (endpoint::on_off_light::create(), endpoint::contact_sensor::create(),
+     * etc.) goes through a shared `common::create<T>()` template that
+     * creates a Descriptor cluster BEFORE calling the device type's own
+     * add() — confirmed by reading esp_matter_endpoint.cpp's own
+     * `common::create<T>()` directly. This endpoint is hand-assembled from
+     * lower-level free functions instead (see the header comment on why),
+     * which skipped that step entirely — the one thing every other device
+     * type in this repo gets for free by using a complete top-level helper.
+     * Without a Descriptor cluster, a controller has no standard way to
+     * discover what device type/clusters even exist on this endpoint —
+     * add_device_type() below only updates this SDK's own internal
+     * bookkeeping (confirmed by reading its implementation: it just appends
+     * to the endpoint's device_types[] array), it does NOT itself create or
+     * populate a Descriptor cluster object a controller can read. This is
+     * almost certainly the real reason Apple Home's HomeKit-Matter bridge
+     * showed this device as "Niet geschikt"/"Not compatible" with no
+     * control tile across every attempt so far (found and fixed on
+     * firmware/addressable-light/'s identical endpoint construction first —
+     * see that file's own copy of this comment for the full debugging
+     * story), regardless of which ColorControl attributes/features were
+     * also fixed above — Home Assistant's more lenient Matter
+     * implementation apparently tolerated the missing Descriptor cluster,
+     * which is why this was never caught there. */
+    cluster::descriptor::config_t descriptor_config;
+    cluster_t *descriptor_cluster = cluster::descriptor::create(ep, &descriptor_config, CLUSTER_FLAG_SERVER);
+    if (!descriptor_cluster) {
+        ESP_LOGE(TAG, "Failed to create descriptor cluster");
+        return;
+    }
+
     add_device_type(ep, ESP_MATTER_EXTENDED_COLOR_LIGHT_DEVICE_TYPE_ID, ESP_MATTER_EXTENDED_COLOR_LIGHT_DEVICE_TYPE_VERSION);
 
     cluster::identify::config_t identify_config;
@@ -649,22 +792,41 @@ extern "C" void app_main(void)
     cluster::level_control::feature::on_off::add(level_control_cluster);
     cluster::level_control::feature::lighting::add(level_control_cluster, &level_control_lighting_config);
 
+    /* ColorControl's XY and ColorTemperature features are BOTH mandatory
+     * conformance for the ExtendedColorLight device type — confirmed
+     * directly against the CSA's own data_model/1.6/device_types/
+     * ExtendedColorLight.xml (`<feature code="XY"><mandatoryConform/>`,
+     * `<feature code="CT"><mandatoryConform/>`; HueSaturation itself is
+     * only `<optionalConform/>`), fetched from inside the esp-matter SDK
+     * image rather than assumed. This was NOT implemented at first —
+     * deliberately HueSaturation-only, reasoning that most controllers'
+     * color wheels drive Hue/Saturation directly (still true, and still
+     * supported here as an extra) — which passed Home Assistant's lenient
+     * Matter integration but was real hardware testing (of
+     * firmware/addressable-light/'s identical endpoint construction) via
+     * Apple Home that surfaced the gap: HomeKit's Matter bridge enforces
+     * device-type conformance strictly and refused to expose ANY control
+     * tile at all (paired fine, then showed "Niet geschikt" / "Not
+     * compatible", no error a controller-side log would show) for an
+     * endpoint declaring ExtendedColorLight without its two mandatory
+     * color features. All three (HS/XY/CT) are now implemented; see
+     * light_color_source and xy_to_rgb()/mireds_to_rgb_approx() above for
+     * how each renders to the actual PWM output. */
     cluster::color_control::config_t color_control_config;
     color_control_config.color_mode = chip::to_underlying(ColorControl::ColorModeEnum::kCurrentHueAndCurrentSaturation);
     color_control_config.enhanced_color_mode = chip::to_underlying(ColorControl::ColorModeEnum::kCurrentHueAndCurrentSaturation);
-    {
-        uint16_t color_capabilities = chip::to_underlying(ColorControl::ColorCapabilitiesBitmap::kHueSaturation);
-#if COLOR_LIGHT_COLOR_MODE == COLOR_LIGHT_MODE_RGBWW
-        color_capabilities |= chip::to_underlying(ColorControl::ColorCapabilitiesBitmap::kColorTemperature);
-#endif
-        color_control_config.color_capabilities = color_capabilities;
-    }
+    color_control_config.color_capabilities = chip::to_underlying(ColorControl::ColorCapabilitiesBitmap::kHueSaturation) |
+        chip::to_underlying(ColorControl::ColorCapabilitiesBitmap::kXy) |
+        chip::to_underlying(ColorControl::ColorCapabilitiesBitmap::kColorTemperature);
     cluster_t *color_control_cluster = cluster::color_control::create(ep, &color_control_config, CLUSTER_FLAG_SERVER);
     cluster::color_control::feature::hue_saturation::config_t hue_saturation_config;
     hue_saturation_config.current_hue = COLOR_LIGHT_DEFAULT_HUE;
     hue_saturation_config.current_saturation = COLOR_LIGHT_DEFAULT_SATURATION;
     cluster::color_control::feature::hue_saturation::add(color_control_cluster, &hue_saturation_config);
-#if COLOR_LIGHT_COLOR_MODE == COLOR_LIGHT_MODE_RGBWW
+    cluster::color_control::feature::xy::config_t xy_config;
+    xy_config.current_x = light_x;
+    xy_config.current_y = light_y;
+    cluster::color_control::feature::xy::add(color_control_cluster, &xy_config);
     cluster::color_control::feature::color_temperature::config_t color_temperature_config;
     color_temperature_config.color_temperature_mireds = COLOR_LIGHT_COOL_WHITE_MIREDS;
     color_temperature_config.color_temp_physical_min_mireds = COLOR_LIGHT_COOL_WHITE_MIREDS;
@@ -672,7 +834,25 @@ extern "C" void app_main(void)
     color_temperature_config.couple_color_temp_to_level_min_mireds = COLOR_LIGHT_COOL_WHITE_MIREDS;
     color_temperature_config.start_up_color_temperature_mireds = nullable<uint16_t>((uint16_t)COLOR_LIGHT_COOL_WHITE_MIREDS);
     cluster::color_control::feature::color_temperature::add(color_control_cluster, &color_temperature_config);
-#endif
+
+    /* RemainingTime is a global ColorControl attribute (ms left in an
+     * in-progress color/level transition, independent of which color
+     * feature is enabled) — mandatory per the Matter spec, and esp-matter's
+     * own endpoint::extended_color_light::add() always creates it
+     * explicitly via color_control::attribute::create_remaining_time()
+     * (confirmed by reading esp_matter_endpoint.cpp directly), separate
+     * from anything feature::hue_saturation::add()/xy::add()/
+     * color_temperature::add() set up on their own. This hand-assembled
+     * endpoint had been missing it — harmless against Home Assistant, but
+     * real hardware testing of firmware/addressable-light/'s identical
+     * endpoint construction via Apple Home surfaced it: Apple's stricter
+     * HomeKit-Matter bridge silently refused to expose ANY control tile at
+     * all for a ColorControl cluster missing this mandatory attribute
+     * (paired fine, then showed "Niet geschikt" / "Not compatible" and
+     * auto-removed its own fabric — no error a controller-side log would
+     * show, only visible by comparing against esp-matter's own reference
+     * endpoint construction). 0 = no transition currently in progress. */
+    cluster::color_control::attribute::create_remaining_time(color_control_cluster, 0);
 
     cluster::scenes_management::config_t scenes_management_config;
     cluster_t *scenes_management_cluster = cluster::scenes_management::create(ep, &scenes_management_config, CLUSTER_FLAG_SERVER);
@@ -682,21 +862,24 @@ extern "C" void app_main(void)
     color_light_endpoint_id = endpoint::get_id(ep);
     ESP_LOGI(TAG, "Color light endpoint id: %u", color_light_endpoint_id);
 
-    /* CurrentLevel/CurrentHue/CurrentSaturation all change rapidly while a
-     * controller is actively dragging a brightness/color slider —
-     * deferring their NVS persistence avoids writing flash on every
-     * single step. Same call firmware/dimmable-light/ makes for
-     * CurrentLevel, for the same reason. */
+    /* CurrentLevel/CurrentHue/CurrentSaturation/CurrentX/CurrentY/
+     * ColorTemperatureMireds all change rapidly while a controller is
+     * actively dragging a brightness/color slider — deferring their NVS
+     * persistence avoids writing flash on every single step. Same call
+     * firmware/dimmable-light/ makes for CurrentLevel, for the same
+     * reason. */
     attribute::set_deferred_persistence(attribute::get(color_light_endpoint_id, LevelControl::Id,
                                                         LevelControl::Attributes::CurrentLevel::Id));
     attribute::set_deferred_persistence(attribute::get(color_light_endpoint_id, ColorControl::Id,
                                                         ColorControl::Attributes::CurrentHue::Id));
     attribute::set_deferred_persistence(attribute::get(color_light_endpoint_id, ColorControl::Id,
                                                         ColorControl::Attributes::CurrentSaturation::Id));
-#if COLOR_LIGHT_COLOR_MODE == COLOR_LIGHT_MODE_RGBWW
+    attribute::set_deferred_persistence(attribute::get(color_light_endpoint_id, ColorControl::Id,
+                                                        ColorControl::Attributes::CurrentX::Id));
+    attribute::set_deferred_persistence(attribute::get(color_light_endpoint_id, ColorControl::Id,
+                                                        ColorControl::Attributes::CurrentY::Id));
     attribute::set_deferred_persistence(attribute::get(color_light_endpoint_id, ColorControl::Id,
                                                         ColorControl::Attributes::ColorTemperatureMireds::Id));
-#endif
 
     /* 4. Start Matter — begins BLE advertising so a controller can commission it. */
     err = esp_matter::start(app_event_cb);
