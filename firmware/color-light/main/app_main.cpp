@@ -785,7 +785,20 @@ extern "C" void app_main(void)
 
     cluster::level_control::config_t level_control_config;
     level_control_config.current_level = nullable<uint8_t>(COLOR_LIGHT_DEFAULT_LEVEL);
-    level_control_config.on_level = nullable<uint8_t>(COLOR_LIGHT_DEFAULT_LEVEL);
+    /* OnLevel deliberately left null (nullable<uint8_t>()'s default
+     * constructor — confirmed to actually produce a null value by reading
+     * esp_matter_attribute_utils.h directly), NOT a concrete level. A real,
+     * reported bug (found on firmware/addressable-light/'s identical
+     * config first — see that file's own copy of this comment for the
+     * full detail): setting a concrete OnLevel here means
+     * connectedhomeip's own OnOff/LevelControl interaction handler forces
+     * CurrentLevel to OnLevel on every single OnOff::On, so dimming to
+     * e.g. 21%, turning off, then back on, would always jump back to
+     * OnLevel instead of staying at 21%. With OnLevel null, that same
+     * handler instead restores the level from right before the light went
+     * off — the "remember brightness" behavior every real dimmable light
+     * has. */
+    level_control_config.on_level = nullable<uint8_t>();
     cluster::level_control::feature::lighting::config_t level_control_lighting_config;
     level_control_lighting_config.start_up_current_level = nullable<uint8_t>(COLOR_LIGHT_DEFAULT_LEVEL);
     cluster_t *level_control_cluster = cluster::level_control::create(ep, &level_control_config, CLUSTER_FLAG_SERVER);

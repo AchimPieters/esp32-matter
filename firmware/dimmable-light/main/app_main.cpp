@@ -345,15 +345,14 @@ extern "C" void app_main(void)
     esp_timer_create(&identify_timer_args, &identify_led_timer);
 
     /* 3. Build the Matter data model: one node, one Dimmable Light endpoint
-     * (OnOff + LevelControl clusters). current_level/on_level/
-     * start_up_current_level are set explicitly to DIMMABLE_LIGHT_DEFAULT_LEVEL
-     * rather than left at the config defaults' null/0 — matches
-     * esp-matter's own examples/light/, which does the same for the same
-     * reason: a null CurrentLevel has no defined brightness, which is a
-     * worse first-boot/first-read experience than a concrete, reasonable
-     * value. on_off.on_off and on_off_lighting.start_up_on_off are left at
-     * their config defaults (false / 0 = Off) — see the header comment on
-     * booting off. */
+     * (OnOff + LevelControl clusters). current_level/start_up_current_level
+     * are set explicitly to DIMMABLE_LIGHT_DEFAULT_LEVEL rather than left
+     * at the config defaults' null/0 — matches esp-matter's own
+     * examples/light/, which does the same for the same reason: a null
+     * CurrentLevel has no defined brightness, which is a worse first-boot/
+     * first-read experience than a concrete, reasonable value. on_off.on_off
+     * and on_off_lighting.start_up_on_off are left at their config defaults
+     * (false / 0 = Off) — see the header comment on booting off. */
     node::config_t node_config;
     node_t *node = node::create(&node_config, app_attribute_update_cb, app_identification_cb);
     if (!node) {
@@ -363,7 +362,21 @@ extern "C" void app_main(void)
 
     dimmable_light::config_t light_config;
     light_config.level_control.current_level = DIMMABLE_LIGHT_DEFAULT_LEVEL;
-    light_config.level_control.on_level = DIMMABLE_LIGHT_DEFAULT_LEVEL;
+    /* OnLevel deliberately left null, NOT DIMMABLE_LIGHT_DEFAULT_LEVEL — a
+     * real, reported bug: a concrete OnLevel here means connectedhomeip's
+     * own OnOff/LevelControl interaction handler
+     * (emberAfOnOffClusterLevelControlEffectCallback(), confirmed by
+     * reading src/app/clusters/level-control/codegen/level-control.cpp
+     * directly) forces CurrentLevel to OnLevel on every single OnOff::On —
+     * so dimming to e.g. 21%, turning off, then back on, would always jump
+     * back to DIMMABLE_LIGHT_DEFAULT_LEVEL instead of staying at 21%. With
+     * OnLevel null, that same handler instead restores the level from
+     * right before the light went off — the "remember brightness"
+     * behavior every real dimmable light has. Assigning the config_t's
+     * default-constructed nullable<uint8_t>() here (rather than any int
+     * literal) is what actually produces a null value — confirmed by
+     * reading esp_matter_attribute_utils.h directly. */
+    light_config.level_control.on_level = nullable<uint8_t>();
     light_config.level_control_lighting.start_up_current_level = DIMMABLE_LIGHT_DEFAULT_LEVEL;
     endpoint_t *endpoint = dimmable_light::create(node, &light_config, ENDPOINT_FLAG_NONE, NULL);
     if (!endpoint) {

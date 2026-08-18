@@ -2442,6 +2442,34 @@ SECURITY.md               flash encryption / secure boot / signed OTA guidance
    working on addressable-light's WS2812B path) hasn't been visually
    confirmed there yet.
 
+   A fourth real bug was found in the same hardware-testing session, this
+   time from ordinary live use rather than a compatibility failure:
+   dimming the strip to a low level (e.g. 21%), turning it off, then back
+   on caused it to jump to a fixed ~50% instead of staying at 21%. Root
+   cause, confirmed by reading connectedhomeip's own
+   `src/app/clusters/level-control/codegen/level-control.cpp`
+   (`emberAfOnOffClusterLevelControlEffectCallback()`) directly: all three
+   of `firmware/addressable-light/`, `firmware/color-light/`, and
+   `firmware/dimmable-light/` set LevelControl's `OnLevel` attribute to a
+   *concrete* default level (`..._DEFAULT_LEVEL`, 128 ≈ 50%) instead of
+   leaving it null. Per that handler, whenever OnLevel is non-null,
+   CurrentLevel is forced to OnLevel on every plain OnOff::On — the SDK
+   doing exactly what it was told, just not what any real dimmable light
+   should do. With OnLevel null, the same handler instead falls back to
+   restoring whatever level was in effect right before the light went
+   off — the "remembers your last brightness" behavior every real
+   dimmable light has. Fixed in all three files by constructing
+   `nullable<uint8_t>()` (confirmed, by reading
+   `esp_matter_attribute_utils.h` directly, that the no-argument
+   constructor actually produces a null value, not just a
+   zero-initialized one) instead of passing a concrete level. Rebuilt and
+   reflashed to the same addressable-light hardware and confirmed live:
+   dimming down, turning off, turning back on now correctly restores the
+   pre-off brightness rather than jumping to a fixed default.
+   `firmware/color-light/` and `firmware/dimmable-light/` get the
+   identical fix, Docker build-verified; only addressable-light was
+   re-flashed and hardware-confirmed (it's what was on the bench).
+
 ## Note on hardware/USB
 
 Building happens in Docker; flashing happens on the host with `esptool`. On Linux
