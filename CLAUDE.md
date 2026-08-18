@@ -836,12 +836,17 @@ firmware/addressable-light/  Addressable LED strip / smart-bulb driver —
                            choice — the first plain-integer field type this
                            wizard has), reusable by any future device type
                            needing one. Build-verified in Docker for all 8
-                           chips. WS2812B is now hardware-verified end to
-                           end (real 12-pixel strip, GPIO 2, commissioned
-                           and controlled live via Apple Home — see "Open
-                           next steps" for the full debugging story, which
-                           also fixed two real endpoint-construction bugs
-                           shared with firmware/color-light/); the other 7
+                           chips. WS2812B and SK6812_RGBW are now hardware-
+                           verified end to end (WS2812B: real 12-pixel
+                           strip; SK6812_RGBW: real 3-pixel strip, its own
+                           white-channel RGB->RGBW extraction specifically
+                           confirmed via a ColorTemperature command driving
+                           the strip visibly whiter — both on GPIO 2,
+                           commissioned and controlled live via Apple Home
+                           — see "Open next steps" for the full debugging
+                           story, which also fixed two real endpoint-
+                           construction bugs shared with
+                           firmware/color-light/); the other 6
                            chips remain build-verified only (no hardware
                            for them was physically available).
   partitions.csv           same OTA + fctry layout as firmware/light/
