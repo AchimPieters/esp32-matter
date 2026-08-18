@@ -2475,6 +2475,29 @@ SECURITY.md               flash encryption / secure boot / signed OTA guidance
    identical fix, Docker build-verified; only addressable-light was
    re-flashed and hardware-confirmed (it's what was on the bench).
 
+   `firmware/dimmable-light/`'s own copy of the same fix was then also
+   confirmed on real hardware, in a follow-up session on the same rig — a
+   fresh factory-partition identity (own `gen_factory.sh` run, per-device
+   as intended — see below), full commission via Apple Home, then dim to
+   ~26% (67/254), turn off, turn back on: the live serial log showed
+   `Light turned ON` immediately followed by `Light level set to 67/254`,
+   i.e. the same "remembers your last brightness" restore already
+   confirmed on addressable-light, not the old ~50% jump. This
+   confirmation is log-based only, not visual — GPIO 2 on this rig still
+   had the addressable strip's DATA line wired to it from the prior test,
+   and a plain PWM duty cycle (what dimmable-light drives) is not a valid
+   WS2812B/SK6812 bitstream, so the strip predictably stayed dark
+   regardless of what the firmware was doing internally; a real visual
+   confirmation would need a plain LED (+ resistor) wired to GPIO 2
+   instead. Also encountered and worth remembering for future hardware
+   sessions: Apple Home's app itself got stuck twice during this same
+   session, in each case only sending an `Off` command repeatedly (never
+   the `On` the user was actually tapping) until the Home app was fully
+   force-quit and reopened — confirmed as a client-side quirk, not a
+   firmware issue, by reading the live serial log directly (the firmware
+   correctly processed every command it was actually sent; no `On`
+   command reached the device at all until the app was restarted).
+
 ## Note on hardware/USB
 
 Building happens in Docker; flashing happens on the host with `esptool`. On Linux
