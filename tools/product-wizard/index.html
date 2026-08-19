@@ -1013,6 +1013,21 @@ const COMPONENT_LIBRARY = {
   SMOKE_MQ7: { name: "MQ-7 only (CO)", category: "smoke-co-sensor", bus: "ADC", verified: false, defineValue: "SENSOR_MQ7", note: "Carbon-monoxide sensing only — enables just the COAlarm cluster feature. The “MQ2 GPIO” field above goes unused in this mode — this option's own MQ7 pin field below is what the firmware actually reads.", pins: [
     { key: "mq7", label: "MQ7 (CO)", defineName: "SMOKE_CO_ALARM_MQ7_GPIO", defaultsByModule: { esp32: 35, esp32c2: 35, esp32c3: 35, esp32c5: 35, esp32c6: 35, esp32c61: 35, esp32s3: 35, esp32h2: 35 } },
   ] },
+  // Occupancy Sensor's Sensor picker. All three share the exact same
+  // single-GPIO electrical interface — a 3.3V-logic, actively-driven,
+  // active-HIGH digital OUT pin, no pull-up needed — confirmed per chip
+  // against real sourcing (not assumed identical just because they're all
+  // "motion sensors"): RCWL-0516's and HLK-LD2410's own widely-cited
+  // pinout documentation, cross-checked across multiple independent
+  // sources for each (see app_main.cpp's header comment for the full
+  // sourcing and each module's own separate VIN/VCC voltage requirement —
+  // both need a real 5V supply, NOT the ESP32's own 3.3V rail, unlike the
+  // OUT signal pin itself). So, same as the temperature/light sensors,
+  // this is a plain componentOptions picker (one shared GPIO field,
+  // pin1Label-only) rather than needing per-option `pins` arrays.
+  OCC_PIR: { name: "PIR (e.g. HC-SR501)", category: "occupancy-sensor", bus: "GPIO (digital, active-high)", pin1Label: "OUT", pin2Label: null, usesPin2: false, verified: true, defineValue: "OCCUPANCY_SENSOR_TYPE_PIR", note: "Passive InfraRed. The module's own onboard hold-time potentiometer (commonly ~5s-300s) decides how long OUT stays high after the last detected motion — this firmware only reports it, it doesn't add its own hold timer. Hardware-verified end to end: commissioned and controlled live via Apple Home." },
+  OCC_RCWL0516: { name: "RCWL-0516 (microwave Doppler)", category: "occupancy-sensor", bus: "GPIO (digital, active-high)", pin1Label: "OUT", pin2Label: null, usesPin2: false, verified: false, defineValue: "OCCUPANCY_SENSOR_TYPE_RCWL0516", note: "Microwave Doppler radar. OUT is 3.3V TTL, HIGH for a fixed ~2s per detected motion event (no adjustable hold time, unlike PIR) — confirmed against the module's own widely-cited pinout documentation. VIN needs a separate 4-28V supply (5V is typical) — do not power it from the ESP32's own 3.3V rail." },
+  OCC_LD2410: { name: "HLK-LD2410 (24GHz mmWave presence)", category: "occupancy-sensor", bus: "GPIO (digital, active-high)", pin1Label: "OUT", pin2Label: null, usesPin2: false, verified: false, defineValue: "OCCUPANCY_SENSOR_TYPE_LD2410", note: "24GHz mmWave human-presence radar. This firmware only uses its simple OUT pin (3.3V logic — confirmed safe to wire directly into an ESP32 GPIO even though the module itself runs on 5V), not its much richer UART protocol (per-target distance/energy, moving-vs-stationary distinction, 256000 baud) — a reasonable future addition, not attempted here. VCC needs a separate 5V supply, not the ESP32's own 3.3V rail." },
 };
 
 /* Optional rotary encoder — firmware/thermostat/'s own local setpoint
@@ -1858,21 +1873,32 @@ const DEVICE_TYPES = [
   {
     id: "occupancy",
     name: "Occupancy Sensor",
-    desc: "Matter occupancy sensor: a PIR (Passive InfraRed) motion module reports occupied/unoccupied via the Occupancy Sensing cluster (PassiveInfrared feature). The module's own onboard hold-time potentiometer decides how long it reports \"occupied\" after the last detected motion — this firmware just reports whatever the module's OUT pin is currently doing, it doesn't add its own hold timer on top. Reference device in firmware/occupancy-sensor/.",
-    shortDesc: "PIR motion, reports occupied/unoccupied.",
+    desc: "Matter occupancy sensor: a motion module (PIR, or a microwave/mmWave radar) reports occupied/unoccupied via the Occupancy Sensing cluster. Every supported sensor drives the exact same single active-high digital GPIO pin — the module's own onboard timing (PIR's hold-time potentiometer, or RCWL-0516's fixed ~2s pulse) decides how long it reports \"occupied\"; this firmware just reports whatever the pin is currently doing. Reference device in firmware/occupancy-sensor/.",
+    shortDesc: "PIR or radar motion, reports occupied/unoccupied.",
     // Matches project(matter_occupancy_sensor) in
     // firmware/occupancy-sensor/CMakeLists.txt.
     binName: "matter_occupancy_sensor.bin",
+    // PIR (hardware-verified) plus two microwave/mmWave radar options —
+    // see the COMPONENT_LIBRARY comment on OCC_PIR/OCC_RCWL0516/OCC_LD2410
+    // for why this is a plain componentOptions picker (one shared GPIO
+    // field) despite the three being genuinely different sensing
+    // technologies: all three happen to share the identical simple
+    // digital-OUT-pin interface.
+    componentOptions: ["OCC_PIR", "OCC_RCWL0516", "OCC_LD2410"],
+    componentDefineName: "OCCUPANCY_SENSOR_TYPE",
     driver: {
       summary: "GPIO (digital input, active-high)",
-      fieldLabel: "PIR OUT GPIO pin",
-      blockTitle: "PIR OUT · digital GPIO input",
+      fieldLabel: "Sensor OUT GPIO pin",
+      blockTitle: "Sensor OUT · digital GPIO input",
       filePath: "firmware/occupancy-sensor/main/app_main.cpp",
       defineName: "OCCUPANCY_GPIO",
       // The literal value app_main.cpp ships with today — this is the sed
-      // baseline. Reference wiring: PIR module OUT -> GPIO directly, no
-      // pull-up needed (the module actively drives its own output, unlike
-      // firmware/contact-sensor/'s passive reed switch).
+      // baseline. Reference wiring: sensor module OUT -> GPIO directly, no
+      // pull-up needed on any of the three supported sensors (each
+      // actively drives its own output, unlike firmware/contact-sensor/'s
+      // passive reed switch). RCWL-0516/HLK-LD2410 additionally need a
+      // separate 5V(-ish) supply on their own VIN/VCC pin — see each
+      // option's own note above; that's not a GPIO the wizard tracks.
       currentGpio: 4,
       defaultsByModule: { esp32: 4, esp32c2: 4, esp32c3: 4, esp32c5: 4, esp32c6: 4, esp32c61: 4, esp32s3: 4, esp32h2: 4 },
     },

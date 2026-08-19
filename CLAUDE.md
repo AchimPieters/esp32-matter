@@ -1480,41 +1480,85 @@ firmware/occupancy-sensor/  Occupancy Sensor — fifteenth device type. First
                            firmware always sets PassiveInfrared, so it's
                            satisfied automatically, but worth remembering
                            for any future sensing modality added here.
-                           SENSOR_TYPE is PIR-only for now (a cheap PIR
-                           module — e.g. the ubiquitous HC-SR501 or any of
-                           its many clones — same "smallest reasonable
-                           next step" scoping this repo has applied to
-                           every other device type's first cut); a real
-                           mmWave/radar presence sensor (mapping to
-                           OccupancySensing's own Radar feature bit) would
-                           be a genuinely different, UART-based driver and
-                           a reasonable next addition, deliberately not
-                           attempted in this first pass — same
-                           one-sensor-then-grow-a-picker precedent
-                           firmware/temperature-sensor/ and
-                           firmware/light-sensor/ both followed. PIR
-                           module wiring confirmed against multiple
-                           independent HC-SR501-class module documentation
-                           sources (no single canonical datasheet exists —
-                           it's a widely cloned hobbyist module, not one
+                           OCCUPANCY_SENSOR_TYPE grew from PIR-only to
+                           three chips soon after this device type first
+                           shipped, once the user shared two real radar
+                           modules (an unbranded RCWL-0516-class board and
+                           a labeled HLK-LD2410) to add: PIR (default — a
+                           cheap module, e.g. the ubiquitous HC-SR501 or
+                           any of its many clones; same "smallest
+                           reasonable next step" scoping this repo has
+                           applied to every other device type's first
+                           cut), RCWL-0516 (a cheap microwave Doppler
+                           radar module), and HLK-LD2410 (a real 24GHz
+                           mmWave human-presence radar with its own
+                           configurable UART protocol — only its simple
+                           OUT pin is used here, not that richer protocol,
+                           same "smallest reasonable next step" scoping
+                           again). All three turned out to share the exact
+                           same electrical interface — a single, actively-
+                           driven (no pull-up needed), active-HIGH,
+                           3.3V-logic digital OUT pin — confirmed per chip
+                           against real sourcing rather than assumed
+                           identical just because they're all "motion
+                           sensors": PIR against multiple independent
+                           HC-SR501-class module documentation sources (no
+                           single canonical datasheet exists — it's a
+                           widely cloned hobbyist module, not one
                            manufacturer's own part, same "best available,
                            cross-checked" sourcing standard already used
-                           for e.g. APA102/SM2335EGH): OUT is a plain,
-                           actively-driven push-pull digital output (no
-                           internal pull-up needed, unlike
-                           firmware/contact-sensor/'s passive reed switch).
-                           These modules already have their own onboard
-                           analog "occupied hold time" (an adjustable
-                           potentiometer, commonly ~5s-300s) that keeps OUT
-                           held HIGH for a while after the last detected
-                           motion — this firmware does NOT reimplement
-                           that timing in software, it only reports
-                           whatever the module's OUT pin is currently
+                           for e.g. APA102/SM2335EGH), RCWL-0516 and
+                           HLK-LD2410 each against their own widely-cited
+                           pinout documentation (confirmed the HLK-LD2410's
+                           OUT is 3.3V logic even though the module itself
+                           needs a separate 5V supply — safe to wire
+                           directly into an ESP32 GPIO with no level
+                           shifting). Because all three share one GPIO
+                           interface, the existing GPIO-read/debounce code
+                           needed zero changes — only the
+                           OccupancySensorType/OccupancySensorTypeBitmap/
+                           FeatureMap values set at endpoint-creation time
+                           differ per chip. A real spec gap surfaced while
+                           wiring this up: the legacy 4-value
+                           OccupancySensorTypeEnum / 3-bit
+                           OccupancySensorTypeBitmap (both explicitly
+                           `deprecateConform`, kept only for backward
+                           compatibility — FeatureMap is the modern
+                           authoritative source) have no Radar value at
+                           all, confirmed by reading the cluster XML
+                           directly — so both radar sensors fall back to
+                           Ultrasonic as the closest available legacy
+                           analog (another active-emission sensing
+                           technology, unlike PIR's passive heat sensing),
+                           documented in the code rather than left as an
+                           unexplained magic number. PIR's own module
+                           already has its own onboard analog "occupied
+                           hold time" (an adjustable potentiometer,
+                           commonly ~5s-300s); RCWL-0516 instead outputs a
+                           *fixed* ~2s HIGH pulse per detected motion event
+                           (no adjustable hold time — a real behavioral
+                           difference from PIR); HLK-LD2410's own internal
+                           presence algorithm (distance gating,
+                           sensitivity, moving/static timeout) decides what
+                           OUT does. None of that timing is reimplemented
+                           in software for any of the three — this
+                           firmware only reports whatever OUT is currently
                            doing; the same short software debounce every
                            other GPIO-input device type here uses exists
                            only to reject electrical noise, not to
                            implement any occupancy-hold behavior of its
-                           own. GPIO 4 default, same convention
+                           own. Wizard integration needed zero new
+                           mechanism — the exact same componentOptions/
+                           componentDefineName picker firmware/
+                           temperature-sensor/ and firmware/light-sensor/
+                           already established, one more `COMPONENT_
+                           LIBRARY` category (`occupancy-sensor`) with
+                           three entries. Build-verified in Docker for all
+                           three OCCUPANCY_SENSOR_TYPE values; only PIR is
+                           hardware-tested (no RCWL-0516/HLK-LD2410 module
+                           was physically on the bench for this specific
+                           verification pass, beyond the photos used to
+                           identify them). GPIO 4 default, same convention
                            firmware/contact-sensor/ and firmware/switch/
                            already use for their own single digital sensor
                            input. Build-verified in Docker and validated

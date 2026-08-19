@@ -404,16 +404,21 @@ MQ7-only); not yet hardware-tested (no MQ-2/MQ-7 module was physically
 available when written).
 
 `firmware/occupancy-sensor/` (Matter Occupancy Sensor) is this repo's
-fifteenth device type — a PIR motion module reporting occupied/unoccupied
-via the OccupancySensing cluster. Built using esp-matter's own complete
+fifteenth device type — a motion module reporting occupied/unoccupied via
+the OccupancySensing cluster, with a choice of three sensors
+(`OCCUPANCY_SENSOR_TYPE`): PIR (default, e.g. HC-SR501), RCWL-0516
+(microwave Doppler radar), or HLK-LD2410 (24GHz mmWave presence radar —
+only its simple digital OUT pin is used, not its richer UART protocol).
+All three share the exact same GPIO interface, confirmed per chip against
+real sourcing. Built using esp-matter's own complete
 `endpoint::occupancy_sensor::create()` top-level helper rather than
 hand-assembling clusters — deliberately, since that's exactly what
 sidesteps the missing-Descriptor-cluster bug `firmware/color-light/` and
 `firmware/addressable-light/` were found to have during this repo's own
 Apple Home hardware testing (see CLAUDE.md's "Open next steps" for the
-full story). Docker build-verified and validated end to end on real
-hardware: commissioned via Apple Home with zero errors, then real PIR
-motion correctly flipped the Home app's tile live.
+full story). Docker build-verified for all three sensor types; only PIR
+is hardware-verified end to end: commissioned via Apple Home with zero
+errors, then real PIR motion correctly flipped the Home app's tile live.
 
 To add another (simpler) type, copy any of the other fourteen folders and
 swap the endpoint type in `app_main.cpp` — esp-matter provides many more

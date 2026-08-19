@@ -59,38 +59,88 @@
  * satisfied automatically; worth remembering if a future sensor type is
  * added here that doesn't map to one of the eight modality bits.
  *
- * --- SENSOR_TYPE: PIR only, for now ------------------------------------
- * A cheap PIR (Passive InfraRed) module — e.g. the ubiquitous HC-SR501 or
- * any of its many clones — is the obvious first, cheapest, most common
- * choice, the same "smallest reasonable next step" scoping this repo has
- * applied to every other device type's first cut (dimmable-light's
- * Level-only scope, window-covering's Lift-only scope, thermostat's
- * Heat+Cool-only scope, etc.). A real mmWave/radar presence sensor (e.g. the
- * HLK-LD2410, mapping to OccupancySensing's own Radar feature bit) would be
- * a genuinely different, UART-based driver and a reasonable next addition —
- * deliberately not attempted in this first pass, the same way
- * firmware/temperature-sensor/ and firmware/light-sensor/ each started with
- * one sensor and grew a componentOptions picker later once a second,
- * genuinely different sensor was actually requested.
+ * --- OCCUPANCY_SENSOR_TYPE: three sensors, one shared GPIO interface -------
+ * All three supported sensors happen to share the exact same electrical
+ * interface — a single, actively-driven (no pull-up needed), active-HIGH
+ * 3.3V-logic digital OUT pin — despite being three genuinely different
+ * sensing technologies. That's why one shared GPIO-read/debounce code path
+ * (occupancy_task() below, unchanged from the original PIR-only version)
+ * covers all three, the same way firmware/addressable-light/'s single
+ * set_output() serves eight different pixel-chain chips; only the
+ * OccupancySensorType/OccupancySensorTypeBitmap/FeatureMap setup at
+ * endpoint-creation time differs per sensor (see app_main() below).
  *
- * PIR module wiring/behavior, checked against the datasheet-level detail
- * multiple independent HC-SR501-class module documentation sources agree on
- * (no single canonical "HC-SR501 datasheet" exists — it's a widely cloned
- * hobbyist module, not a single manufacturer's own part — so this is the
- * same "best available, cross-checked" sourcing standard this repo already
- * applies to e.g. APA102/SM2335EGH in firmware/addressable-light/): the
- * module's OUT pin is a plain, actively-driven push-pull digital output
- * (HIGH = motion currently detected/held, LOW = clear) — unlike
- * firmware/contact-sensor/'s reed switch, it needs no internal pull-up,
- * since it's never left floating. Critically, these modules already have
+ * OCCUPANCY_SENSOR_TYPE_PIR (default) — a cheap PIR (Passive InfraRed)
+ * module, e.g. the ubiquitous HC-SR501 or any of its many clones — the
+ * first, cheapest, most common choice, the same "smallest reasonable next
+ * step" scoping this repo has applied to every other device type's first
+ * cut. Checked against the datasheet-level detail multiple independent
+ * HC-SR501-class module documentation sources agree on (no single
+ * canonical "HC-SR501 datasheet" exists — it's a widely cloned hobbyist
+ * module, not one manufacturer's own part — same "best available,
+ * cross-checked" sourcing standard this repo already applies to e.g.
+ * APA102/SM2335EGH in firmware/addressable-light/): these modules have
  * their own onboard analog "occupied hold time" (typically an adjustable
  * potentiometer, commonly ~5s-300s depending on the specific board) that
  * keeps OUT held HIGH for a while after the last detected motion — this
- * firmware does NOT reimplement that timing in software at all, it just
- * reports whatever the module's OUT pin is currently doing. The short
- * software debounce below exists only to reject brief electrical
- * noise/glitches on the GPIO line, not to implement any occupancy-hold
- * behavior of its own (that's the module's own job).
+ * firmware does NOT reimplement that timing in software, it just reports
+ * whatever OUT is currently doing. Maps to OccupancySensing's
+ * PassiveInfrared feature; OccupancySensorType=PIR(0),
+ * OccupancySensorTypeBitmap=PIR bit(1) (both a clean, exact match).
+ *
+ * OCCUPANCY_SENSOR_TYPE_RCWL0516 — a cheap microwave Doppler radar module
+ * (the RCWL-0516, built around the RCWL-9196 chip), confirmed against its
+ * own widely-cited pinout documentation (no manufacturer-published
+ * datasheet with real protocol/timing detail exists for this one either —
+ * same situation as PIR above): OUT is 3.3V TTL, HIGH for a *fixed* ~2s
+ * per detected motion event (no adjustable hold time, unlike PIR — that's
+ * a real behavioral difference worth knowing if migrating between the
+ * two). VIN needs a separate 4-28V supply (5V is typical) — it is NOT
+ * powered from the ESP32's own 3.3V rail; the module has its own onboard
+ * 3.3V regulator (exposed on its 3V3 pin as an *output*, not a power
+ * input — a real, easy-to-get-backwards mistake this firmware's wizard
+ * integration doesn't need to worry about since it only ever tracks the
+ * OUT signal pin, not power wiring). Maps to OccupancySensing's Radar
+ * feature.
+ *
+ * OCCUPANCY_SENSOR_TYPE_LD2410 — the HLK-LD2410, a genuinely different
+ * class of sensor from the other two: a real 24GHz mmWave human-presence
+ * radar module with its own configurable UART protocol (256000 baud,
+ * per-target distance/energy reporting, moving-vs-stationary-presence
+ * distinction). This firmware deliberately only uses its simple OUT pin
+ * (same "smallest reasonable next step" scoping as everywhere else in
+ * this repo) — confirmed, across multiple independent sources, to output
+ * a plain digital HIGH-when-present/LOW-when-absent signal at 3.3V logic
+ * even though the module itself is powered from a separate 5V supply (its
+ * own VCC pin, again NOT the ESP32's 3.3V rail) — safe to wire directly
+ * into an ESP32 GPIO with no level shifting needed. The module's own
+ * internal presence-detection algorithm (distance gating, sensitivity,
+ * moving/static timeout) decides what OUT does; this firmware doesn't
+ * configure or override any of it over UART. A real UART-based driver
+ * exposing its richer engineering-mode data is a reasonable future
+ * addition, deliberately not attempted here. Maps to OccupancySensing's
+ * Radar feature, same as RCWL-0516.
+ *
+ * Neither radar sensor's underlying technology has a real representation
+ * in the legacy 4-value OccupancySensorTypeEnum / 3-bit
+ * OccupancySensorTypeBitmap (both attributes only enumerate
+ * PIR/Ultrasonic/PhysicalContact — no Radar value exists at all, even
+ * though the newer FeatureMap has a proper Radar bit) — confirmed by
+ * reading the cluster XML directly, not assumed. Both legacy attributes
+ * are themselves explicitly `deprecateConform` (the spec's own signal
+ * that FeatureMap is the authoritative modern source of truth and these
+ * exist only for backward compatibility with older clients), so this
+ * firmware picks Ultrasonic as the closest available legacy analog for
+ * both radar sensors — another active-emission sensing technology, unlike
+ * PIR's passive heat sensing — documented here rather than left as an
+ * unexplained magic number.
+ *
+ * All three sensors' OUT pin needs no internal pull-up (each is
+ * actively-driven, never left floating) — unlike firmware/contact-sensor/'s
+ * passive reed switch. The short software debounce below exists only to
+ * reject brief electrical noise/glitches on the GPIO line, not to
+ * implement any occupancy-hold behavior of its own (that's each module's
+ * own job, per its own note above).
  */
 
 #include <esp_err.h>
@@ -109,9 +159,21 @@
 
 static const char *TAG = "matter_occupancy";
 
-/* Change this to the GPIO your PIR module's OUT pin is wired to. Reference
- * wiring: PIR module OUT -> GPIO directly (no pull-up needed — see the
- * header comment on why: it's an actively-driven push-pull output, unlike
+/* OCCUPANCY_SENSOR_TYPE selects which motion sensor to build for — see the
+ * header comment for the full explanation and exact sourcing of each. All
+ * three share the identical GPIO interface, so this only changes the
+ * OccupancySensorType/OccupancySensorTypeBitmap/FeatureMap values set at
+ * endpoint-creation time in app_main() below — nothing about the GPIO
+ * reading/debounce code itself. */
+#define OCCUPANCY_SENSOR_TYPE_PIR 0
+#define OCCUPANCY_SENSOR_TYPE_RCWL0516 1
+#define OCCUPANCY_SENSOR_TYPE_LD2410 2
+#define OCCUPANCY_SENSOR_TYPE OCCUPANCY_SENSOR_TYPE_PIR
+
+/* Change this to the GPIO your sensor module's OUT pin is wired to.
+ * Reference wiring: sensor module OUT -> GPIO directly (no pull-up needed
+ * on any of the three supported sensors — see the header comment on why:
+ * each is an actively-driven push-pull output, unlike
  * firmware/contact-sensor/'s passive reed switch). GPIO 4 is a plain,
  * unreserved GPIO on classic ESP32 (WROOM-32) — the same default
  * firmware/contact-sensor/ and firmware/switch/ use for their own single
@@ -119,7 +181,9 @@ static const char *TAG = "matter_occupancy";
  * (GPIO 0), which shares boot-mode-select traffic and was an unreliable
  * choice for an external input on the board this repo's other devices were
  * tested against (see CLAUDE.md's "Open next steps"). Adjust to match your
- * board if you wire it elsewhere. */
+ * board if you wire it elsewhere. RCWL-0516/HLK-LD2410 additionally need
+ * their own separate 5V(-ish) supply on VIN/VCC — see the header comment;
+ * that's not a GPIO this #define (or the wizard) tracks. */
 #define OCCUPANCY_GPIO GPIO_NUM_4
 
 /* LED for the Matter "Identify" cluster — blinks so you can physically find
@@ -431,21 +495,30 @@ extern "C" void app_main(void)
 
     endpoint::occupancy_sensor::config_t occupancy_config;
     occupancy_config.occupancy_sensing.occupancy = occupancy_occupied ? 1 : 0;
-    /* OccupancySensorType/OccupancySensorTypeBitmap: PIR (0 / bit 0) — see
-     * the header comment on SENSOR_TYPE. Both attributes exist in parallel
-     * because the spec deprecated the single-value enum in favor of the
-     * bitmap (which can express multiple simultaneous modalities) but kept
-     * the enum mandatory for legacy client compatibility — confirmed
-     * directly in the cluster XML's own <otherwiseConform> tag on
-     * OccupancySensorType. */
-    occupancy_config.occupancy_sensing.occupancy_sensor_type = 0;
-    occupancy_config.occupancy_sensing.occupancy_sensor_type_bitmap = 1;
-    /* FeatureMap: PassiveInfrared — mandatory to set at least one sensing
-     * modality feature (see the header comment's "at least one" section);
-     * esp-matter's own occupancy_sensing::create() aborts cluster creation
-     * via VALIDATE_FEATURES_AT_LEAST_ONE() if this is left at 0. */
+    /* OccupancySensorType/OccupancySensorTypeBitmap and FeatureMap — see
+     * the header comment on OCCUPANCY_SENSOR_TYPE for the full explanation
+     * (including why the two radar sensors both fall back to Ultrasonic
+     * for the legacy enum/bitmap, which has no Radar value at all). Both
+     * legacy attributes exist in parallel because the spec deprecated the
+     * single-value enum in favor of the bitmap (which can express multiple
+     * simultaneous modalities) but kept the enum mandatory for legacy
+     * client compatibility — confirmed directly in the cluster XML's own
+     * <otherwiseConform> tag on OccupancySensorType. FeatureMap is
+     * mandatory to set at least one sensing modality feature (see the
+     * header comment's "at least one" section) — esp-matter's own
+     * occupancy_sensing::create() aborts cluster creation via
+     * VALIDATE_FEATURES_AT_LEAST_ONE() if this is left at 0. */
+#if OCCUPANCY_SENSOR_TYPE == OCCUPANCY_SENSOR_TYPE_PIR
+    occupancy_config.occupancy_sensing.occupancy_sensor_type = 0;         /* PIR */
+    occupancy_config.occupancy_sensing.occupancy_sensor_type_bitmap = 1;  /* PIR bit */
     occupancy_config.occupancy_sensing.feature_flags =
         cluster::occupancy_sensing::feature::passive_infrared::get_id();
+#else
+    occupancy_config.occupancy_sensing.occupancy_sensor_type = 1;         /* Ultrasonic (closest legacy analog) */
+    occupancy_config.occupancy_sensing.occupancy_sensor_type_bitmap = 2;  /* Ultrasonic bit */
+    occupancy_config.occupancy_sensing.feature_flags =
+        cluster::occupancy_sensing::feature::radar::get_id();
+#endif
     endpoint_t *endpoint = endpoint::occupancy_sensor::create(node, &occupancy_config, ENDPOINT_FLAG_NONE, NULL);
     if (!endpoint) {
         ESP_LOGE(TAG, "Failed to create occupancy sensor endpoint");
