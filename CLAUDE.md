@@ -1420,6 +1420,117 @@ firmware/smoke-co-alarm/  Smoke/CO Alarm — fourteenth device type, and this
                            module physically available when written).
   partitions.csv           same OTA + fctry layout as firmware/light/
   sdkconfig.defaults        same as firmware/light/
+firmware/occupancy-sensor/  Occupancy Sensor — fifteenth device type. First
+                           in this repo to use a device type whose cluster
+                           has a real "at least one of N features" spec
+                           requirement rather than every feature being
+                           independently optional or a fixed mandatory set.
+  main/app_main.cpp        `endpoint::occupancy_sensor::create()` confirmed
+                           to be a complete, ready-to-use top-level helper
+                           (Identify + OccupancySensing, no Groups) by
+                           reading esp-matter's own generated
+                           occupancy_sensor_device.cpp directly — matches
+                           the CSA's own data_model/1.6/device_types/
+                           OccupancySensor.xml exactly (both clusters
+                           `<mandatoryConform/>`). Using the complete
+                           top-level helper here — rather than hand-
+                           assembling from lower-level free functions the
+                           way firmware/color-light/ and
+                           firmware/addressable-light/ originally did —
+                           sidesteps that whole class of bug from the
+                           start: `common::create<T>()`, the shared
+                           template underneath every complete top-level
+                           helper, always creates the endpoint's Descriptor
+                           cluster automatically, which is exactly what
+                           those two device types' hand-assembled
+                           endpoints were found to be missing during this
+                           same session's Apple Home hardware testing (see
+                           "Open next steps" below for the full story).
+                           OccupancySensing confirmed to be a "code-driven"
+                           cluster class, same category as
+                           firmware/contact-sensor/'s BooleanState,
+                           firmware/temperature-sensor/'s
+                           TemperatureMeasurement, and
+                           firmware/smoke-co-alarm/'s SmokeCoAlarm (a real
+                           `occupancy_sensing/` folder exists under
+                           `data_model_provider/clusters/`, backed by
+                           connectedhomeip's own `OccupancySensingCluster`
+                           class) — so the Occupancy attribute is written
+                           through `OccupancySensingCluster::SetOccupancy()`,
+                           looked up via the data model provider's
+                           registry, reusing firmware/contact-sensor/'s
+                           `update_contact_state()` pattern almost verbatim
+                           (one real, quickly-caught mistake along the way:
+                           `OccupancySensingCluster` lives directly in
+                           `chip::app::Clusters`, not nested under an
+                           `OccupancySensing::` sub-namespace the way the
+                           cluster's *attribute IDs* are — an actual Docker
+                           build failure, not a guess, caught this).
+                           OccupancySensing's eight sensing-modality
+                           features (PIR/Ultrasonic/PhysicalContact/etc.)
+                           form a single CSA "choice" group requiring at
+                           least one, confirmed two ways: the cluster XML
+                           marks every one of them `optionalConform
+                           choice="a" more="true" min="1"` (the CSA's own
+                           idiom for "at least 1 of this named choice set
+                           is required"), and esp-matter's own generated
+                           occupancy_sensing.cpp enforces it directly via a
+                           `VALIDATE_FEATURES_AT_LEAST_ONE(...)` macro that
+                           aborts cluster creation if none are set — this
+                           firmware always sets PassiveInfrared, so it's
+                           satisfied automatically, but worth remembering
+                           for any future sensing modality added here.
+                           SENSOR_TYPE is PIR-only for now (a cheap PIR
+                           module — e.g. the ubiquitous HC-SR501 or any of
+                           its many clones — same "smallest reasonable
+                           next step" scoping this repo has applied to
+                           every other device type's first cut); a real
+                           mmWave/radar presence sensor (mapping to
+                           OccupancySensing's own Radar feature bit) would
+                           be a genuinely different, UART-based driver and
+                           a reasonable next addition, deliberately not
+                           attempted in this first pass — same
+                           one-sensor-then-grow-a-picker precedent
+                           firmware/temperature-sensor/ and
+                           firmware/light-sensor/ both followed. PIR
+                           module wiring confirmed against multiple
+                           independent HC-SR501-class module documentation
+                           sources (no single canonical datasheet exists —
+                           it's a widely cloned hobbyist module, not one
+                           manufacturer's own part, same "best available,
+                           cross-checked" sourcing standard already used
+                           for e.g. APA102/SM2335EGH): OUT is a plain,
+                           actively-driven push-pull digital output (no
+                           internal pull-up needed, unlike
+                           firmware/contact-sensor/'s passive reed switch).
+                           These modules already have their own onboard
+                           analog "occupied hold time" (an adjustable
+                           potentiometer, commonly ~5s-300s) that keeps OUT
+                           held HIGH for a while after the last detected
+                           motion — this firmware does NOT reimplement
+                           that timing in software, it only reports
+                           whatever the module's OUT pin is currently
+                           doing; the same short software debounce every
+                           other GPIO-input device type here uses exists
+                           only to reject electrical noise, not to
+                           implement any occupancy-hold behavior of its
+                           own. GPIO 4 default, same convention
+                           firmware/contact-sensor/ and firmware/switch/
+                           already use for their own single digital sensor
+                           input. Build-verified in Docker and validated
+                           end to end on real hardware: commissioned via
+                           Apple Home (clean `CommissioningComplete`, no
+                           `RemoveFabric` — confirmed via a live serial
+                           log, same verification method used throughout
+                           this session), then real PIR motion in front of
+                           the sensor correctly flipped the Home app's
+                           tile between "Aanwezig — geen beweging
+                           gedetecteerd" and "Beweging gedetecteerd",
+                           confirmed against the same live serial log
+                           showing each debounced edge and the resulting
+                           `ReportData` sent to the controller.
+  partitions.csv           same OTA + fctry layout as firmware/light/
+  sdkconfig.defaults        same as firmware/light/
 tools/
   dev.sh                  opens the Docker dev environment
   gen_factory.sh          local QR + factory partition generator
@@ -2233,7 +2344,21 @@ SECURITY.md               flash encryption / secure boot / signed OTA guidance
    reset. Build-verified in Docker across all 3 sensor
    configs (MQ2+MQ7, MQ2-only, MQ7-only); not hardware-tested (no MQ-2/
    MQ-7 module physically available when written).
-2. Implement Matter **OTA** — partially done. All fourteen firmware types
+
+   A fifteenth device type, `firmware/occupancy-sensor/` (PIR motion,
+   OccupancySensing cluster), followed directly after the Apple Home
+   hardware-testing/debugging session documented below — deliberately
+   built using esp-matter's own complete `endpoint::occupancy_sensor::
+   create()` top-level helper rather than hand-assembling clusters, to
+   confirm that path really does sidestep the missing-Descriptor-cluster
+   bug class that session just found and fixed on color-light/
+   addressable-light (it does — see that device type's own repository-
+   layout entry above for the full technical detail). Build-verified in
+   Docker and validated end to end on real hardware the same session:
+   commissioned via Apple Home with zero errors, then real PIR motion
+   correctly flipped the Home app's tile live, confirmed against a live
+   serial log throughout.
+2. Implement Matter **OTA** — partially done. All fifteen firmware types
    ship `CONFIG_ENABLE_OTA_REQUESTOR=y`, which adds the OTA Requestor
    cluster to the root node endpoint entirely via Kconfig — esp-matter's
    own core startup (`esp_matter_core.cpp`) calls
@@ -2310,7 +2435,7 @@ SECURITY.md               flash encryption / secure boot / signed OTA guidance
    later in `app_main()`, after `esp_matter::start()` has completed.
 
    Quick-power-cycle factory reset is Docker build-verified across all
-   fourteen device types — not yet hardware-tested. The wizard
+   fifteen device types — not yet hardware-tested. The wizard
    (`tools/product-wizard/`) has a static "Factory reset" info box
    rendered directly under the Configuration summary sidebar on every
    device type (wrapped together in a `.config-sidebar-stack` flex

@@ -403,9 +403,21 @@ build-verified across all 3 sensor configs (MQ2+MQ7, MQ2-only,
 MQ7-only); not yet hardware-tested (no MQ-2/MQ-7 module was physically
 available when written).
 
-To add another (simpler) type, copy any of the other thirteen folders and
-swap the endpoint type in `app_main.cpp` — esp-matter provides ready-made
-types like `occupancy_sensor`, `air_quality`, and many more.
+`firmware/occupancy-sensor/` (Matter Occupancy Sensor) is this repo's
+fifteenth device type — a PIR motion module reporting occupied/unoccupied
+via the OccupancySensing cluster. Built using esp-matter's own complete
+`endpoint::occupancy_sensor::create()` top-level helper rather than
+hand-assembling clusters — deliberately, since that's exactly what
+sidesteps the missing-Descriptor-cluster bug `firmware/color-light/` and
+`firmware/addressable-light/` were found to have during this repo's own
+Apple Home hardware testing (see CLAUDE.md's "Open next steps" for the
+full story). Docker build-verified and validated end to end on real
+hardware: commissioned via Apple Home with zero errors, then real PIR
+motion correctly flipped the Home app's tile live.
+
+To add another (simpler) type, copy any of the other fourteen folders and
+swap the endpoint type in `app_main.cpp` — esp-matter provides many more
+ready-made types, e.g. `air_quality`.
 
 ## Updates
 
@@ -414,7 +426,7 @@ but the multi-GB Docker image stalled out on GitHub-hosted runners, so it
 was reverted rather than left flaky). Build + flash a new version yourself
 following the Quick Start steps above whenever you change `app_main.cpp`.
 
-All fourteen device types also ship with Matter's **OTA Requestor** cluster
+All fifteen device types also ship with Matter's **OTA Requestor** cluster
 enabled (`CONFIG_ENABLE_OTA_REQUESTOR=y`), so once a device is bound to an
 OTA Provider node on the same fabric, it can fetch and install updates over
 the air using the existing `ota_0`/`ota_1` A/B partition slots — no app
@@ -427,7 +439,7 @@ errors); the provider side and a full transfer are open, tracked in
 CLAUDE.md's next steps alongside the binding test, which hits the same
 "needs a second commissioned device + tooling" wall.
 
-All fourteen device types also have a quick-power-cycle factory reset
+All fifteen device types also have a quick-power-cycle factory reset
 (see CLAUDE.md's "Open next steps" for the full sourcing/verification
 detail): power the device off and on 3 times in a row (about 2 seconds
 each way) and it factory-resets and re-enters setup mode, no button or
@@ -435,7 +447,7 @@ extra pin needed. Built on esp-matter's own `esp_matter::factory_reset()`,
 called only after Matter has started (confirmed against its own
 implementation and reference `app_reset` component).
 
-Docker build-verified across all fourteen device types, not yet
+Docker build-verified across all fifteen device types, not yet
 hardware-tested. The product wizard (`tools/product-wizard/`) shows the
 factory-reset procedure as a standalone info box under Configuration
 Summary. (An earlier optional RGB status LED feature was built and

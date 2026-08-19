@@ -1855,6 +1855,37 @@ const DEVICE_TYPES = [
       defaultsByModule: { esp32: 2, esp32c2: 2, esp32c3: 2, esp32c5: 2, esp32c6: 2, esp32c61: 2, esp32s3: 2, esp32h2: 2 },
     },
   },
+  {
+    id: "occupancy",
+    name: "Occupancy Sensor",
+    desc: "Matter occupancy sensor: a PIR (Passive InfraRed) motion module reports occupied/unoccupied via the Occupancy Sensing cluster (PassiveInfrared feature). The module's own onboard hold-time potentiometer decides how long it reports \"occupied\" after the last detected motion — this firmware just reports whatever the module's OUT pin is currently doing, it doesn't add its own hold timer on top. Reference device in firmware/occupancy-sensor/.",
+    shortDesc: "PIR motion, reports occupied/unoccupied.",
+    // Matches project(matter_occupancy_sensor) in
+    // firmware/occupancy-sensor/CMakeLists.txt.
+    binName: "matter_occupancy_sensor.bin",
+    driver: {
+      summary: "GPIO (digital input, active-high)",
+      fieldLabel: "PIR OUT GPIO pin",
+      blockTitle: "PIR OUT · digital GPIO input",
+      filePath: "firmware/occupancy-sensor/main/app_main.cpp",
+      defineName: "OCCUPANCY_GPIO",
+      // The literal value app_main.cpp ships with today — this is the sed
+      // baseline. Reference wiring: PIR module OUT -> GPIO directly, no
+      // pull-up needed (the module actively drives its own output, unlike
+      // firmware/contact-sensor/'s passive reed switch).
+      currentGpio: 4,
+      defaultsByModule: { esp32: 4, esp32c2: 4, esp32c3: 4, esp32c5: 4, esp32c6: 4, esp32c61: 4, esp32s3: 4, esp32h2: 4 },
+    },
+    identify: {
+      summary: "GPIO (digital output)",
+      fieldLabel: "Identify LED GPIO pin",
+      blockTitle: "Identify LED · digital output",
+      filePath: "firmware/occupancy-sensor/main/app_main.cpp",
+      defineName: "IDENTIFY_LED_GPIO",
+      currentGpio: 2,
+      defaultsByModule: { esp32: 2, esp32c2: 2, esp32c3: 2, esp32c5: 2, esp32c6: 2, esp32c61: 2, esp32s3: 2, esp32h2: 2 },
+    },
+  },
 ];
 
 function findDeviceType(id) {
@@ -2163,6 +2194,16 @@ const DEVICE_TYPE_ICONS = {
     <circle cx="24" cy="22" r="15"/>
     <circle cx="24" cy="22" r="9"/>
     <circle cx="24" cy="22" r="2" fill="currentColor" stroke="none"/>
+  </svg>`,
+  // A small sensor dot with two outward "detected motion" rings — same
+  // basic circles-and-dot vocabulary as smoke-co-alarm's icon above, kept
+  // visually distinct with a smaller dot-to-ring ratio and only two rings
+  // (vs. that icon's alarm-body proportions) so it reads as "sensing
+  // waves" rather than a repeat of the alarm-dome motif.
+  occupancy: `<svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+    <circle cx="24" cy="24" r="2.5" fill="currentColor" stroke="none"/>
+    <circle cx="24" cy="24" r="9"/>
+    <circle cx="24" cy="24" r="16"/>
   </svg>`,
 };
 
