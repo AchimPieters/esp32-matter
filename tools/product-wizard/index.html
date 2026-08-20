@@ -2056,6 +2056,34 @@ const DEVICE_TYPES = [
       defaultsByModule: { esp32: 4, esp32c2: 4, esp32c3: 4, esp32c5: 4, esp32c6: 4, esp32c61: 4, esp32s3: 4, esp32h2: 4 },
     },
   },
+  {
+    id: "valve",
+    name: "Water Valve",
+    desc: "Matter water valve: a relay-driven solenoid valve responds to Open/Close commands via the Valve Configuration and Control cluster — including an optional timed auto-close (e.g. for an irrigation zone), handled entirely by the cluster's own built-in countdown timer, not this firmware. On/off only (no partial-open Level feature). Reference device in firmware/valve/.",
+    shortDesc: "Relay-driven solenoid valve, open/close + auto-close timer.",
+    // Matches project(matter_valve) in firmware/valve/CMakeLists.txt. Same
+    // single-GPIO-plus-identify shape as firmware/door-lock/'s own Relay
+    // output option — a plain relay driving the valve, no extra pickers.
+    binName: "matter_valve.bin",
+    driver: {
+      summary: "GPIO (relay, active-LOW)",
+      fieldLabel: "Valve relay GPIO pin",
+      blockTitle: "Valve relay · digital output",
+      filePath: "firmware/valve/main/app_main.cpp",
+      defineName: "VALVE_RELAY_GPIO",
+      currentGpio: 4,
+      defaultsByModule: { esp32: 4, esp32c2: 4, esp32c3: 4, esp32c5: 4, esp32c6: 4, esp32c61: 4, esp32s3: 4, esp32h2: 4 },
+    },
+    identify: {
+      summary: "GPIO (digital output)",
+      fieldLabel: "Identify LED GPIO pin",
+      blockTitle: "Identify LED · digital output",
+      filePath: "firmware/valve/main/app_main.cpp",
+      defineName: "IDENTIFY_LED_GPIO",
+      currentGpio: 2,
+      defaultsByModule: { esp32: 2, esp32c2: 2, esp32c3: 2, esp32c5: 2, esp32c6: 2, esp32c61: 2, esp32s3: 2, esp32h2: 2 },
+    },
+  },
 ];
 
 function findDeviceType(id) {
@@ -2417,6 +2445,18 @@ const DEVICE_TYPE_ICONS = {
     <path d="M16 36v4"/>
     <path d="M24 36v4"/>
     <path d="M32 36v4"/>
+  </svg>`,
+  // A pipe tee with a handle-and-stem valve body on the branch — the
+  // standard schematic "gate valve" symbol, distinct from water-leak's
+  // plain droplet (a sensor, not an actuator) and from every relay-driven
+  // icon so far by showing the pipe/flow-control shape itself.
+  valve: `<svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M6 24h14"/>
+    <path d="M28 24h14"/>
+    <path d="M20 24h8"/>
+    <rect x="17" y="19" width="14" height="10" rx="2"/>
+    <path d="M24 19v-7"/>
+    <path d="M19 12h10"/>
   </svg>`,
 };
 

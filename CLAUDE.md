@@ -1991,6 +1991,98 @@ firmware/air-purifier/    Air Purifier — nineteenth device type, and a
                            written).
   partitions.csv           same OTA + fctry layout as firmware/light/
   sdkconfig.defaults        same as firmware/light/
+firmware/valve/            Water Valve — twentieth device type, and this
+                           repo's third genuine Delegate-based cluster
+                           after firmware/window-covering/'s WindowCovering
+                           and firmware/fan/'s (and firmware/air-purifier/'s)
+                           FanControl — but the SDK does noticeably more of
+                           the work here than either of those.
+  main/app_main.cpp        `endpoint::water_valve::create()` (device type
+                           0x0042 — Matter's own device type name is "Water
+                           Valve") confirmed complete/ready-to-use —
+                           Identify + ValveConfigurationAndControl, auto-
+                           Descriptor via `common::create<T>()` — matches
+                           the CSA's own data_model/1.6/device_types/
+                           WaterValve.xml (Identify + Valve Configuration
+                           and Control mandatory; Flow Measurement, both
+                           server and client side, optional and not
+                           implemented — same "smallest reasonable next
+                           step" scoping as every other device type's
+                           first cut). ValveConfigurationAndControl
+                           confirmed code-driven (a real
+                           `valve_configuration_and_control/` folder
+                           exists under `data_model_provider/clusters/`),
+                           Delegate-based like FanControl/WindowCovering —
+                           but reading `ValveConfigurationAndControlCluster
+                           .cpp` directly (not just the header) shows the
+                           cluster owns substantially more internally than
+                           either of those: Open/Close command handling,
+                           OpenDuration/DefaultOpenDuration/
+                           RemainingDuration/AutoCloseTime bookkeeping, and
+                           the actual 1-second countdown timer that
+                           auto-closes the valve when RemainingDuration
+                           reaches 0 (including calling the app's own
+                           `HandleCloseValve()` when that happens) are ALL
+                           handled inside the cluster itself — this file
+                           implements none of its own timing logic, unlike
+                           WindowCovering's Delegate (which owns 100% of
+                           its own movement timing). The Delegate genuinely
+                           only needs to: actuate the relay in
+                           `HandleOpenValve()`/`HandleCloseValve()`, and
+                           optionally react to a once-a-second
+                           `HandleRemainingDurationTick()` countdown
+                           notification (logged here, not otherwise acted
+                           on). One thing the cluster does NOT do
+                           automatically, confirmed by reading
+                           `HandleOpenCommand()`/`OpenValve()`/
+                           `CloseValve()` end to end: it sets CurrentState
+                           to Transitioning before calling the Delegate but
+                           never automatically advances it to Open/Closed
+                           afterwards — that's the app's own job via the
+                           cluster's public `UpdateCurrentState()` method,
+                           the same "the app should trigger the state
+                           change" responsibility firmware/door-lock/'s own
+                           header comment already documents for DoorLock's
+                           LockState; CurrentState is set OPTIMISTICALLY
+                           here too, same reasoning as door-lock's own
+                           default (no position sensor assumed). A second
+                           real, previously-undiscovered gap was found
+                           while wiring up the Delegate itself: unlike
+                           firmware/fan/'s FanControl or firmware/
+                           air-purifier/'s ResourceMonitoring, esp-matter
+                           ships NO public header declaring a
+                           `SetDefaultDelegate()`-style free function for
+                           this cluster at all (confirmed by checking — no
+                           `integration.h` exists next to esp-matter's own
+                           `valve_configuration_and_control/integration.cpp`,
+                           unlike `resource_monitor/`'s) — worked around by
+                           going straight through the cluster's own public
+                           `SetDelegate()` method via the same registry-
+                           lookup-and-cast pattern this file already uses
+                           for `UpdateCurrentState()`, rather than assuming
+                           a free function exists just because one did for
+                           the two previous Delegate-based clusters. This
+                           device type also directly prompted finding (see
+                           "Open next steps" below) that firmware/fan/'s
+                           and firmware/air-purifier/'s own
+                           `FanControl::SetDefaultDelegate()` calls were
+                           placed BEFORE `esp_matter::start()` and had been
+                           silently no-oping the whole time — this file's
+                           own delegate registration was written correctly
+                           (after `start()`) from the start, once that
+                           timing model was understood. No Level feature
+                           (most cheap solenoid valve hardware is simple
+                           on/off, not proportional — same "smallest
+                           reasonable next step" reasoning as window-
+                           covering's Lift-only scope). Boots closed
+                           (CurrentState/TargetState = Closed), matching
+                           every other device type's boot-to-known-safe-
+                           state convention. Standard quick-power-cycle
+                           factory reset. Build-verified in Docker; not
+                           hardware-tested (no relay/solenoid-valve
+                           hardware physically available when written).
+  partitions.csv           same OTA + fctry layout as firmware/light/
+  sdkconfig.defaults        same as firmware/light/
 tools/
   dev.sh                  opens the Docker dev environment
   gen_factory.sh          local QR + factory partition generator
@@ -2931,14 +3023,41 @@ SECURITY.md               flash encryption / secure boot / signed OTA guidance
    above for the complete detail. Build-verified in Docker; not
    hardware-tested (no PWM fan/MOSFET driver board physically available
    when written).
-2. Implement Matter **OTA** — partially done. All nineteen firmware types
+
+   A twentieth device type, `firmware/valve/` (ValveConfigurationAndControl,
+   device type 0x0042 "Water Valve"), followed directly after air-purifier
+   — the user's choice from a short AskUserQuestion list (Valve /
+   Pressure Sensor / Robot Vacuum / other). This repo's third genuine
+   Delegate-based cluster, but the SDK owns noticeably more of the work
+   here than FanControl or WindowCovering: Open/Close command handling,
+   OpenDuration/RemainingDuration/AutoCloseTime bookkeeping, and the
+   actual 1-second auto-close countdown timer are ALL handled inside
+   `ValveConfigurationAndControlCluster` itself — confirmed by reading its
+   .cpp directly, not assumed from the header — so this file implements
+   none of its own timing logic, just relay actuation and reporting
+   CurrentState back optimistically (same "app should trigger the state
+   change" responsibility firmware/door-lock/'s own LockState already
+   established). A second real, previously-undiscovered gap: unlike
+   FanControl/ResourceMonitoring, esp-matter ships no public header
+   declaring a `SetDefaultDelegate()`-style free function for this
+   cluster at all — worked around with the registry-lookup-and-cast
+   pattern instead, going straight through the cluster's own public
+   `SetDelegate()` method. Researching this device type's own delegate
+   registration is also what surfaced the `SetDefaultDelegate()`-called-
+   before-`esp_matter::start()` bug in firmware/fan/ and firmware/
+   air-purifier/ (see item 6 below) — this file's own registration was
+   written correctly from the start once that timing model was
+   understood. See its own repository-layout entry above for the
+   complete detail. Build-verified in Docker; not hardware-tested (no
+   relay/solenoid-valve hardware physically available when written).
+2. Implement Matter **OTA** — partially done. All twenty firmware types
    ship `CONFIG_ENABLE_OTA_REQUESTOR=y`, which adds the OTA Requestor
    cluster to the root node endpoint entirely via Kconfig — esp-matter's
    own core startup (`esp_matter_core.cpp`) calls
    `esp_matter_ota_requestor_init()`/`_start()` automatically once that
    flag is on, so no app code was needed. Confirmed on real hardware for
    `firmware/contact-sensor/` and `firmware/switch/` (clean boot, cluster
-   registered, zero errors); the other seventeen build identically since
+   registered, zero errors); the other eighteen build identically since
    the code path is generic to every device type, not device-specific.
 
    Still open: a real OTA **transfer** needs an OTA Provider node
@@ -3008,7 +3127,7 @@ SECURITY.md               flash encryption / secure boot / signed OTA guidance
    later in `app_main()`, after `esp_matter::start()` has completed.
 
    Quick-power-cycle factory reset is Docker build-verified across all
-   nineteen device types — not yet hardware-tested. The wizard
+   twenty device types — not yet hardware-tested. The wizard
    (`tools/product-wizard/`) has a static "Factory reset" info box
    rendered directly under the Configuration summary sidebar on every
    device type (wrapped together in a `.config-sidebar-stack` flex
