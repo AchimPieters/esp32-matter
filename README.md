@@ -522,7 +522,24 @@ for the complete detail. Docker build-verified; not yet hardware-tested
 (no relay/solenoid-valve hardware was physically available when
 written).
 
-To add another (simpler) type, copy any of the other nineteen folders
+`firmware/pressure-sensor/` (Matter Pressure Sensor) is this repo's
+twenty-first device type — the simplest device type XML in this repo so
+far (just Identify + one mandatory cluster). A BMP280 I2C barometric
+sensor reports MeasuredValue (kPa, resolution 0.1 kPa — an encoding not
+spelled out in Matter's own machine-readable cluster XML, confirmed
+instead against Home Assistant's own real, open-source Matter
+integration). BMP280's protocol verified against Bosch's own official
+datasheet, fetched as a PDF and read via `pdftotext`. A real, self-caught
+mistake along the way: the compensation formula was written from memory
+(correctly, as it turned out) but its own header comment initially cited
+the wrong datasheet section — caught by re-checking against the literal
+fetched PDF text before finalizing, not assumed correct just because the
+code looked familiar. See CLAUDE.md's repository-layout entry for the
+full detail. Docker build-verified (clean first attempt); not yet
+hardware-tested (no BMP280 module was physically available when
+written).
+
+To add another (simpler) type, copy any of the other twenty folders
 and swap the endpoint type in `app_main.cpp` — esp-matter provides many
 more ready-made types, e.g. `robotic_vacuum_cleaner`.
 
@@ -533,7 +550,7 @@ but the multi-GB Docker image stalled out on GitHub-hosted runners, so it
 was reverted rather than left flaky). Build + flash a new version yourself
 following the Quick Start steps above whenever you change `app_main.cpp`.
 
-All twenty device types also ship with Matter's **OTA Requestor** cluster
+All twenty-one device types also ship with Matter's **OTA Requestor** cluster
 enabled (`CONFIG_ENABLE_OTA_REQUESTOR=y`), so once a device is bound to an
 OTA Provider node on the same fabric, it can fetch and install updates over
 the air using the existing `ota_0`/`ota_1` A/B partition slots — no app
@@ -546,7 +563,7 @@ errors); the provider side and a full transfer are open, tracked in
 CLAUDE.md's next steps alongside the binding test, which hits the same
 "needs a second commissioned device + tooling" wall.
 
-All twenty device types also have a quick-power-cycle factory reset
+All twenty-one device types also have a quick-power-cycle factory reset
 (see CLAUDE.md's "Open next steps" for the full sourcing/verification
 detail): power the device off and on 3 times in a row (about 2 seconds
 each way) and it factory-resets and re-enters setup mode, no button or
@@ -554,7 +571,7 @@ extra pin needed. Built on esp-matter's own `esp_matter::factory_reset()`,
 called only after Matter has started (confirmed against its own
 implementation and reference `app_reset` component).
 
-Docker build-verified across all twenty device types, not yet
+Docker build-verified across all twenty-one device types, not yet
 hardware-tested. The product wizard (`tools/product-wizard/`) shows the
 factory-reset procedure as a standalone info box under Configuration
 Summary. (An earlier optional RGB status LED feature was built and

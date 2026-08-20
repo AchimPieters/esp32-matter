@@ -2083,6 +2083,89 @@ firmware/valve/            Water Valve — twentieth device type, and this
                            hardware physically available when written).
   partitions.csv           same OTA + fctry layout as firmware/light/
   sdkconfig.defaults        same as firmware/light/
+firmware/pressure-sensor/  Pressure Sensor — twenty-first device type. The
+                           simplest device type XML in this repo so far —
+                           just Identify + one mandatory cluster, no
+                           options at all.
+  main/app_main.cpp        `endpoint::pressure_sensor::create()` (device
+                           type 0x0305) confirmed complete/ready-to-use —
+                           Identify + PressureMeasurement, auto-Descriptor
+                           via `common::create<T>()` — matches the CSA's
+                           own data_model/1.6/device_types/
+                           PressureSensor.xml exactly: those two clusters
+                           are the ONLY ones listed, both mandatory.
+                           PressureMeasurement confirmed to be a
+                           "code-driven" cluster class (a real
+                           `pressure_measurement/` folder exists under
+                           `data_model_provider/clusters/`), same category
+                           as firmware/temperature-sensor/'s
+                           TemperatureMeasurement — `SetMeasuredValue()`
+                           via the registry, same pattern. MeasuredValue's
+                           encoding (kPa, resolution 0.1 kPa) isn't
+                           spelled out in Matter's own machine-readable
+                           cluster XML (inherited from the Zigbee ZCL
+                           cluster, whose own spec does document it) —
+                           confirmed instead against Home Assistant's own
+                           real, open-source Matter integration
+                           (`sensor.py`'s PressureMeasurement discovery
+                           schema divides the raw value by 10 and reports
+                           kPa), rather than assumed. Conveniently 1 hPa =
+                           0.1 kPa, so MeasuredValue is numerically
+                           identical to hPa — the unit BMP280's own
+                           datasheet already reports in, needing no
+                           conversion at the call site.
+                           `PRESSURE_SENSOR_TYPE` scaffold ships with one
+                           sensor for v1 — BMP280, a real, extremely
+                           common cheap I2C barometric pressure +
+                           temperature sensor, chosen for the same "most
+                           common hobbyist part" reasoning firmware/
+                           air-quality-sensor/'s CCS811 was. Protocol
+                           (I2C address, CHIP_ID check, calibration
+                           register layout, ctrl_meas oversampling/mode
+                           bits, and the compensation formula) verified
+                           directly against Bosch's own official BMP280
+                           datasheet (BST-BMP280-DS001, revision 1.26),
+                           fetched as a PDF and read via `pdftotext` —
+                           this repo's established practice for
+                           primary-source hardware protocol detail.
+                           A real, self-caught mistake during that
+                           process worth remembering: the compensation
+                           formula was initially written from memory
+                           (recognized as the well-known 64-bit
+                           fixed-point BMP280 algorithm) with a header
+                           comment claiming it came from the datasheet's
+                           appendix section 8.2 (the 32-bit fallback
+                           variant) — re-checking the actual fetched PDF
+                           text before finalizing caught that the code
+                           and the citation didn't match; the code itself
+                           turned out to be byte-for-byte correct against
+                           the datasheet's own primary section 3.11.3
+                           (64-bit, "best possible calculation accuracy"),
+                           so only the citation needed fixing, but this is
+                           exactly the kind of citation/implementation
+                           mismatch this repo's "verify against the
+                           actual fetched source, not memory" discipline
+                           exists to catch — worth double-checking any
+                           future compensation-formula code against the
+                           literal fetched datasheet text one more time
+                           before finalizing, even when the code being
+                           written seems obviously familiar/correct from
+                           training. Forced mode with Bosch's own
+                           documented "Standard resolution" preset
+                           (osrs_t=x1, osrs_p=x4, from the datasheet's own
+                           Table 7 recommended-settings) — simpler and
+                           lower-power than Normal mode's continuous
+                           standby/IIR-filter configuration for a
+                           slowly-changing quantity like barometric
+                           pressure. Output range 300-1100 hPa (the
+                           datasheet's own full-accuracy operating range)
+                           used directly as Min/MaxMeasuredValue. Standard
+                           quick-power-cycle factory reset. Build-verified
+                           in Docker (clean first attempt); not
+                           hardware-tested (no BMP280 module physically
+                           available when written).
+  partitions.csv           same OTA + fctry layout as firmware/light/
+  sdkconfig.defaults        same as firmware/light/
 tools/
   dev.sh                  opens the Docker dev environment
   gen_factory.sh          local QR + factory partition generator
@@ -3050,14 +3133,38 @@ SECURITY.md               flash encryption / secure boot / signed OTA guidance
    understood. See its own repository-layout entry above for the
    complete detail. Build-verified in Docker; not hardware-tested (no
    relay/solenoid-valve hardware physically available when written).
-2. Implement Matter **OTA** — partially done. All twenty firmware types
-   ship `CONFIG_ENABLE_OTA_REQUESTOR=y`, which adds the OTA Requestor
+
+   A twenty-first device type, `firmware/pressure-sensor/`
+   (PressureMeasurement, device type 0x0305), followed directly after
+   valve — the user's choice from a short AskUserQuestion list (Pressure
+   Sensor / Robot Vacuum / Extractor Hood / other). The simplest device
+   type XML in this repo so far (just Identify + one mandatory cluster).
+   MeasuredValue's own unit (kPa, resolution 0.1 kPa) isn't spelled out
+   in Matter's machine-readable cluster XML — confirmed instead against
+   Home Assistant's own real, open-source Matter integration rather than
+   assumed. BMP280's protocol (register map, compensation formula)
+   verified against Bosch's own official datasheet, fetched as a PDF and
+   read via `pdftotext`. A real, self-caught mistake during that process:
+   the compensation formula was first written from memory (correctly, as
+   it turned out) but its header comment cited the wrong datasheet
+   section (the 32-bit fallback appendix instead of the actual 64-bit
+   primary formula the code matches) — caught by re-checking the code
+   against the literal fetched PDF text before finalizing, not assumed
+   correct just because the code looked familiar. Worth remembering as a
+   general discipline for any future compensation-formula code in this
+   repo: always re-verify against the actual fetched source one more
+   time before finalizing, even when it looks obviously right. See its
+   own repository-layout entry above for the complete detail.
+   Build-verified in Docker (clean first attempt); not hardware-tested
+   (no BMP280 module physically available when written).
+2. Implement Matter **OTA** — partially done. All twenty-one firmware
+   types ship `CONFIG_ENABLE_OTA_REQUESTOR=y`, which adds the OTA Requestor
    cluster to the root node endpoint entirely via Kconfig — esp-matter's
    own core startup (`esp_matter_core.cpp`) calls
    `esp_matter_ota_requestor_init()`/`_start()` automatically once that
    flag is on, so no app code was needed. Confirmed on real hardware for
    `firmware/contact-sensor/` and `firmware/switch/` (clean boot, cluster
-   registered, zero errors); the other eighteen build identically since
+   registered, zero errors); the other nineteen build identically since
    the code path is generic to every device type, not device-specific.
 
    Still open: a real OTA **transfer** needs an OTA Provider node
@@ -3127,7 +3234,7 @@ SECURITY.md               flash encryption / secure boot / signed OTA guidance
    later in `app_main()`, after `esp_matter::start()` has completed.
 
    Quick-power-cycle factory reset is Docker build-verified across all
-   twenty device types — not yet hardware-tested. The wizard
+   twenty-one device types — not yet hardware-tested. The wizard
    (`tools/product-wizard/`) has a static "Factory reset" info box
    rendered directly under the Configuration summary sidebar on every
    device type (wrapped together in a `.config-sidebar-stack` flex
