@@ -481,9 +481,29 @@ event fires unconditionally either way. See CLAUDE.md's repository-layout
 entry for the full detail. Docker build-verified; not yet hardware-tested
 (no water sensor module was physically available when written).
 
-To add another (simpler) type, copy any of the other seventeen folders
+`firmware/air-purifier/` (Matter Air Purifier) is this repo's nineteenth
+device type — a direct extension of `firmware/fan/`: same FanControl
+Delegate, PWM output, and scope reused near-verbatim, plus
+HepaFilterMonitoring and ActivatedCarbonFilterMonitoring on the same
+endpoint, the two clusters that actually make it an air purifier rather
+than a plain fan. `resource_monitoring::create()` has the same
+FeatureMap-hardcoded-to-0 gap air-quality-sensor and water-leak-detector
+both found — but here esp-matter exposes a real, public
+`feature::condition::add()` API to enable it properly, plus a ready-made
+`GetClusterInstance()` free function for updating Condition/
+ChangeIndication at runtime, a fifth genuinely distinct pattern in this
+repo for writing code-driven cluster attributes from app code. Filter
+life is a plain, adjustable time-based estimate — accumulated
+fan-running seconds against each filter's own configurable rated life in
+hours, persisted across reboots — not a real sensor reading. See
+CLAUDE.md's repository-layout entry for the full detail, including two
+real compile errors an actual Docker build caught along the way. Docker
+build-verified; not yet hardware-tested (no PWM fan/MOSFET driver board
+was physically available when written).
+
+To add another (simpler) type, copy any of the other eighteen folders
 and swap the endpoint type in `app_main.cpp` — esp-matter provides many
-more ready-made types, e.g. `air_purifier`.
+more ready-made types, e.g. `robotic_vacuum_cleaner`.
 
 ## Updates
 
@@ -492,7 +512,7 @@ but the multi-GB Docker image stalled out on GitHub-hosted runners, so it
 was reverted rather than left flaky). Build + flash a new version yourself
 following the Quick Start steps above whenever you change `app_main.cpp`.
 
-All eighteen device types also ship with Matter's **OTA Requestor** cluster
+All nineteen device types also ship with Matter's **OTA Requestor** cluster
 enabled (`CONFIG_ENABLE_OTA_REQUESTOR=y`), so once a device is bound to an
 OTA Provider node on the same fabric, it can fetch and install updates over
 the air using the existing `ota_0`/`ota_1` A/B partition slots — no app
@@ -505,7 +525,7 @@ errors); the provider side and a full transfer are open, tracked in
 CLAUDE.md's next steps alongside the binding test, which hits the same
 "needs a second commissioned device + tooling" wall.
 
-All eighteen device types also have a quick-power-cycle factory reset
+All nineteen device types also have a quick-power-cycle factory reset
 (see CLAUDE.md's "Open next steps" for the full sourcing/verification
 detail): power the device off and on 3 times in a row (about 2 seconds
 each way) and it factory-resets and re-enters setup mode, no button or
@@ -513,7 +533,7 @@ extra pin needed. Built on esp-matter's own `esp_matter::factory_reset()`,
 called only after Matter has started (confirmed against its own
 implementation and reference `app_reset` component).
 
-Docker build-verified across all eighteen device types, not yet
+Docker build-verified across all nineteen device types, not yet
 hardware-tested. The product wizard (`tools/product-wizard/`) shows the
 factory-reset procedure as a standalone info box under Configuration
 Summary. (An earlier optional RGB status LED feature was built and

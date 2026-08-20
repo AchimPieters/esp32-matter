@@ -1882,6 +1882,115 @@ firmware/water-leak-detector/  Water Leak Detector — eighteenth device
                            physically available when written).
   partitions.csv           same OTA + fctry layout as firmware/light/
   sdkconfig.defaults        same as firmware/light/
+firmware/air-purifier/    Air Purifier — nineteenth device type, and a
+                           direct extension of firmware/fan/: same
+                           FanControl cluster, same PWM output (reused
+                           close to verbatim), plus HepaFilterMonitoring
+                           and ActivatedCarbonFilterMonitoring on the same
+                           endpoint — the two clusters that actually make
+                           this an "Air Purifier" rather than a plain Fan.
+  main/app_main.cpp        `endpoint::air_purifier::create()` confirmed
+                           complete/ready-to-use (Identify + FanControl,
+                           auto-Descriptor via `common::create<T>()`) by
+                           reading esp_matter_endpoint.cpp's own
+                           `air_purifier::add()` directly — matches the
+                           CSA's own data_model/1.6/device_types/
+                           AirPurifier.xml (Identify + FanControl
+                           mandatory; Groups/On-Off/both filter-monitoring
+                           clusters all optional). Groups/On-Off
+                           deliberately not added, same scope decision
+                           firmware/fan/ already made. FanControl itself
+                           is reused near-verbatim from firmware/fan/ —
+                           same Delegate, same registry-lookup-and-cast
+                           for `SetPercentCurrent()`, same PercentSetting-
+                           only scope, same 25kHz LEDC PWM output; see
+                           that file's own header comment for the full
+                           two-Docker-build-failure story behind that
+                           pattern. HepaFilterMonitoring and
+                           ActivatedCarbonFilterMonitoring are added onto
+                           the SAME endpoint afterwards via their own
+                           `cluster::hepa_filter_monitoring::create()`/
+                           `cluster::activated_carbon_filter_monitoring::
+                           create()` free functions — same "add extra
+                           clusters onto an already-correct endpoint"
+                           pattern firmware/thermostat/'s BINDING output
+                           type and firmware/air-quality-sensor/'s
+                           concentration-measurement clusters already
+                           established. Confirmed by reading esp-matter's
+                           own source that `resource_monitoring::create()`
+                           (the shared template behind both filter
+                           clusters) hardcodes FeatureMap to 0 just like
+                           AirQuality/BooleanState's own gaps found in the
+                           two device types before this one — but UNLIKE
+                           those, esp-matter DOES expose a real, public
+                           way to enable the Condition feature afterwards:
+                           `cluster::resource_monitoring::feature::
+                           condition::add(cluster, &config)`, a documented
+                           API (not a raw FeatureMap override) that
+                           properly read-modify-writes the feature bit via
+                           `update_feature_map()` — still has to run
+                           before `esp_matter::start()`, since
+                           `ResourceMonitoringCluster` is confirmed
+                           code-driven (a real `resource_monitor/` folder
+                           exists under `data_model_provider/clusters/`)
+                           and reads FeatureMap once at its own server-init
+                           callback, same "constructor-time snapshot"
+                           pattern AirQuality already established.
+                           Warning/ReplacementProductList features and the
+                           ResetCondition command are not implemented —
+                           same "smallest reasonable next step" scoping as
+                           every other device type's first cut. Updating
+                           Condition/ChangeIndication at runtime uses a
+                           real, ready-made free function esp-matter's own
+                           `resource_monitor/integration.cpp` provides —
+                           `ResourceMonitoring::GetClusterInstance(endpointId,
+                           clusterId)` returning a `ResourceMonitoringCluster*`
+                           with public `UpdateCondition()`/
+                           `UpdateChangeIndication()` methods — rather than
+                           this repo's usual registry-lookup-and-cast
+                           pattern; worth remembering as a fifth, genuinely
+                           distinct "how do I write a code-driven cluster
+                           attribute from app code" pattern in this repo
+                           now (after the plain registry-lookup setter, the
+                           two Delegate variants, and the direct FeatureMap
+                           `attribute::update()` override firmware/
+                           water-leak-detector/ uses): a cluster-family-
+                           specific convenience free function, when
+                           esp-matter's own integration.cpp happens to
+                           provide one. Filter life itself is a plain
+                           time-based estimate, not a real sensor reading
+                           (no differential-pressure or particulate-
+                           accounting hardware assumed — same "smallest
+                           reasonable next step" reasoning firmware/
+                           window-covering/'s own time-based position
+                           estimate already applies): while the fan is
+                           actually running, elapsed operating seconds
+                           accumulate in their own NVS namespace
+                           (persisted every 60s while running, not on
+                           every tick, to avoid flash wear) and Condition
+                           is computed against each filter's own
+                           configurable rated life in operating hours —
+                           AIR_PURIFIER_HEPA_LIFE_HOURS (2000h) and
+                           AIR_PURIFIER_CARBON_LIFE_HOURS (1000h),
+                           commonly-cited commercial air-purifier figures
+                           (carbon media saturates faster than HEPA media
+                           in real products), both explicitly adjustable,
+                           not calibrated measurements — same "adjustable
+                           threshold, not a calibrated reading" precedent
+                           firmware/smoke-co-alarm/'s own MQ classifier
+                           already established. Standard quick-power-cycle
+                           factory reset (which also clears the filter-life
+                           counter, a reasonable side effect documented in
+                           the code). Build-verified in Docker (two
+                           real, sequential compile errors along the way —
+                           a wrong `feature` namespace nesting order and a
+                           missing `GetClusterInstance()` header include,
+                           both fixed and confirmed by the actual build,
+                           not guessed); not hardware-tested (no PWM fan/
+                           MOSFET driver board physically available when
+                           written).
+  partitions.csv           same OTA + fctry layout as firmware/light/
+  sdkconfig.defaults        same as firmware/light/
 tools/
   dev.sh                  opens the Docker dev environment
   gen_factory.sh          local QR + factory partition generator
@@ -2791,14 +2900,45 @@ SECURITY.md               flash encryption / secure boot / signed OTA guidance
    layout entry above for the complete detail. Build-verified in Docker;
    not hardware-tested (no water sensor module physically available when
    written).
-2. Implement Matter **OTA** — partially done. All eighteen firmware types
+
+   A nineteenth device type, `firmware/air-purifier/` (FanControl +
+   HepaFilterMonitoring + ActivatedCarbonFilterMonitoring), followed
+   directly after water-leak-detector — the user's choice from a short
+   AskUserQuestion list (Air Purifier / Valve / Pressure Sensor / other).
+   A direct extension of firmware/fan/: same FanControl Delegate, PWM
+   output, and scope reused near-verbatim, plus the two filter-monitoring
+   clusters that actually distinguish this device type from a plain Fan.
+   Confirmed the same FeatureMap-hardcoded-to-0 gap air-quality-sensor and
+   water-leak-detector both found also affects `resource_monitoring::
+   create()` — but this time esp-matter DOES expose a real, public,
+   documented way to enable the Condition feature afterwards
+   (`cluster::resource_monitoring::feature::condition::add()`, a proper
+   read-modify-write via `update_feature_map()`, not a raw attribute
+   override), and a real, ready-made `GetClusterInstance()` free function
+   for updating Condition/ChangeIndication at runtime — a fifth genuinely
+   distinct pattern for writing code-driven cluster attributes from app
+   code in this repo now. Filter life is a plain, adjustable time-based
+   estimate (accumulated fan-running seconds against each filter's own
+   configurable rated life in hours), persisted across reboots in its own
+   NVS namespace, not a real sensor reading — same "smallest reasonable
+   next step" reasoning firmware/window-covering/'s own time-based
+   position estimate already applies. Two real, sequential compile errors
+   were caught by an actual Docker build, not guessed: a wrong `feature`
+   namespace nesting order, and a missing header for esp-matter's own
+   `ResourceMonitoring::GetClusterInstance()` free function (declared in
+   `data_model_provider/clusters/resource_monitor/integration.h`, not a
+   connectedhomeip public header). See its own repository-layout entry
+   above for the complete detail. Build-verified in Docker; not
+   hardware-tested (no PWM fan/MOSFET driver board physically available
+   when written).
+2. Implement Matter **OTA** — partially done. All nineteen firmware types
    ship `CONFIG_ENABLE_OTA_REQUESTOR=y`, which adds the OTA Requestor
    cluster to the root node endpoint entirely via Kconfig — esp-matter's
    own core startup (`esp_matter_core.cpp`) calls
    `esp_matter_ota_requestor_init()`/`_start()` automatically once that
    flag is on, so no app code was needed. Confirmed on real hardware for
    `firmware/contact-sensor/` and `firmware/switch/` (clean boot, cluster
-   registered, zero errors); the other sixteen build identically since
+   registered, zero errors); the other seventeen build identically since
    the code path is generic to every device type, not device-specific.
 
    Still open: a real OTA **transfer** needs an OTA Provider node
@@ -2868,7 +3008,7 @@ SECURITY.md               flash encryption / secure boot / signed OTA guidance
    later in `app_main()`, after `esp_matter::start()` has completed.
 
    Quick-power-cycle factory reset is Docker build-verified across all
-   eighteen device types — not yet hardware-tested. The wizard
+   nineteen device types — not yet hardware-tested. The wizard
    (`tools/product-wizard/`) has a static "Factory reset" info box
    rendered directly under the Configuration summary sidebar on every
    device type (wrapped together in a `.config-sidebar-stack` flex

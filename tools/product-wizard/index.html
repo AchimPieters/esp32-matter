@@ -2025,6 +2025,37 @@ const DEVICE_TYPES = [
       defaultsByModule: { esp32: 2, esp32c2: 2, esp32c3: 2, esp32c5: 2, esp32c6: 2, esp32c61: 2, esp32s3: 2, esp32h2: 2 },
     },
   },
+  {
+    id: "air-purifier",
+    name: "Air Purifier",
+    desc: "Matter air purifier: same PWM fan speed control as firmware/fan/, plus HEPA and Activated Carbon Filter Monitoring clusters — a time-based percent-remaining estimate (not a real sensor reading) computed from accumulated running time, persisted across reboots. Reference device in firmware/air-purifier/.",
+    shortDesc: "Variable-speed fan (PWM) + HEPA/carbon filter life.",
+    // Matches project(matter_air_purifier) in
+    // firmware/air-purifier/CMakeLists.txt. Same single-GPIO-plus-identify
+    // shape as firmware/fan/'s own entry — the filter-monitoring clusters
+    // this device type adds have no GPIOs of their own (a time-based
+    // software estimate, not a physical sensor), so no extra fields are
+    // needed beyond fan's own PWM + identify pins.
+    binName: "matter_air_purifier.bin",
+    driver: {
+      summary: "GPIO (PWM output, LEDC)",
+      fieldLabel: "Fan PWM GPIO pin",
+      blockTitle: "Fan PWM · MOSFET/speed-controller output (LEDC)",
+      filePath: "firmware/air-purifier/main/app_main.cpp",
+      defineName: "FAN_PWM_GPIO",
+      currentGpio: 2,
+      defaultsByModule: { esp32: 2, esp32c2: 2, esp32c3: 8, esp32c5: 2, esp32c6: 8, esp32c61: 2, esp32s3: 2, esp32h2: 8 },
+    },
+    identify: {
+      summary: "GPIO (digital output)",
+      fieldLabel: "Identify LED GPIO pin",
+      blockTitle: "Identify LED · digital output",
+      filePath: "firmware/air-purifier/main/app_main.cpp",
+      defineName: "IDENTIFY_LED_GPIO",
+      currentGpio: 4,
+      defaultsByModule: { esp32: 4, esp32c2: 4, esp32c3: 4, esp32c5: 4, esp32c6: 4, esp32c61: 4, esp32s3: 4, esp32h2: 4 },
+    },
+  },
 ];
 
 function findDeviceType(id) {
@@ -2371,6 +2402,21 @@ const DEVICE_TYPE_ICONS = {
   // set uses a teardrop silhouette).
   "water-leak": `<svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
     <path d="M24 6c7 10 12 17.5 12 24a12 12 0 0 1-24 0c0-6.5 5-14 12-24Z"/>
+  </svg>`,
+  // A rounded body (the purifier's own housing, distinct from fan's bare
+  // blade icon) with the same three-blade motif inside, plus short
+  // vertical strokes below standing in for a filter grille — the one
+  // visual difference from a plain fan, matching this device type's own
+  // "same fan, plus filter monitoring" relationship to firmware/fan/.
+  "air-purifier": `<svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+    <rect x="9" y="6" width="30" height="24" rx="8"/>
+    <g transform="rotate(0 24 18)"><path d="M24 18 Q29 15 24 7 Q20 12 24 18 Z"/></g>
+    <g transform="rotate(120 24 18)"><path d="M24 18 Q29 15 24 7 Q20 12 24 18 Z"/></g>
+    <g transform="rotate(240 24 18)"><path d="M24 18 Q29 15 24 7 Q20 12 24 18 Z"/></g>
+    <circle cx="24" cy="18" r="1.8" fill="currentColor" stroke="none"/>
+    <path d="M16 36v4"/>
+    <path d="M24 36v4"/>
+    <path d="M32 36v4"/>
   </svg>`,
 };
 
