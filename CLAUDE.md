@@ -1811,6 +1811,77 @@ firmware/air-quality-sensor/  Air Quality Sensor — seventeenth device type,
                            available when written).
   partitions.csv           same OTA + fctry layout as firmware/light/
   sdkconfig.defaults        same as firmware/light/
+firmware/water-leak-detector/  Water Leak Detector — eighteenth device
+                           type, and the closest sibling to firmware/
+                           contact-sensor/ in this repo: same BooleanState
+                           cluster, same debounced-GPIO-input shape, but a
+                           different device type (0x0043 vs. Contact
+                           Sensor's 0x0015) and — critically — the
+                           OPPOSITE semantic meaning of StateValue.
+  main/app_main.cpp        `endpoint::water_leak_detector::create()`
+                           confirmed structurally identical to
+                           `contact_sensor::create()` by reading both
+                           `add()` implementations side by side in
+                           esp_matter_endpoint.cpp: Identify + BooleanState
+                           + StateChange event, both via `common::
+                           create<T>()` (auto-Descriptor) — matches the
+                           CSA's own data_model/1.6/device_types/
+                           WaterLeakDetector.xml exactly (Identify +
+                           BooleanState mandatory, BooleanState's
+                           ChangeEvent feature mandatory as of the device
+                           type's own revision 2, BooleanStateConfiguration
+                           optional and not implemented here — same
+                           "smallest reasonable next step" scoping as
+                           every other device type's first cut).
+                           StateValue=true means "leak detected" here —
+                           the OPPOSITE direction from contact-sensor's
+                           true=closed — confirmed against real Matter
+                           tooling rather than assumed: Espressif's own
+                           `MatterWaterLeakDetector` Arduino-ESP32 class
+                           exposes `setLeak(bool)` documented as
+                           "leak detected" when true, matching Apple's own
+                           HomeKit Leak Sensor characteristic direction
+                           (0=No Leak, 1=Leak Detected) that Matter-to-
+                           HomeKit bridges map this cluster onto. Sensor is
+                           a cheap LM393-comparator "water sensor" probe
+                           module (sold as FC-37/YL-83/generic "water
+                           sensor module" — no single canonical datasheet,
+                           a widely cloned design, same "best available,
+                           cross-checked" sourcing standard as contact-
+                           sensor's reed switch or occupancy-sensor's PIR
+                           module) — confirmed via multiple independent
+                           sources that its DO pin goes LOW when wet and
+                           HIGH when dry, but unlike a passive reed switch
+                           the module's own comparator actively drives DO
+                           both ways, so no internal GPIO pull-up is used.
+                           A real, previously undocumented esp-matter gap
+                           was found (the same class as firmware/
+                           air-quality-sensor/'s AirQuality FeatureMap
+                           gap): `boolean_state::create()` also hardcodes
+                           FeatureMap to 0 with no config field to
+                           override it, so esp-matter's own
+                           `water_leak_detector::add()` never actually
+                           sets the ChangeEvent feature bit its own spec
+                           (revision 2) requires. Unlike AirQuality's gap,
+                           this one was judged safe to fix rather than
+                           just document: confirmed by reading
+                           `boolean_state::event::create_state_change()`
+                           directly that the StateChange event fires
+                           unconditionally with no feature-flag gate at
+                           all, so the FeatureMap bit here is pure
+                           advertised-conformance metadata, not something
+                           gating real runtime behavior the way
+                           `AirQualityCluster`'s constructor-time
+                           `BitFlags<Feature>` snapshot does — fixed with a
+                           direct `attribute::update()` on the
+                           BooleanState cluster's FeatureMap attribute
+                           between endpoint creation and
+                           `esp_matter::start()`. Standard quick-power-
+                           cycle factory reset. Build-verified in Docker;
+                           not hardware-tested (no water sensor module
+                           physically available when written).
+  partitions.csv           same OTA + fctry layout as firmware/light/
+  sdkconfig.defaults        same as firmware/light/
 tools/
   dev.sh                  opens the Docker dev environment
   gen_factory.sh          local QR + factory partition generator
@@ -2691,14 +2762,43 @@ SECURITY.md               flash encryption / secure boot / signed OTA guidance
    repository-layout entry above for the complete detail. Build-verified
    in Docker; not hardware-tested (no CCS811 module physically available
    when written).
-2. Implement Matter **OTA** — partially done. All seventeen firmware types
+
+   An eighteenth device type, `firmware/water-leak-detector/` (BooleanState,
+   device type 0x0043), followed directly after air-quality-sensor — the
+   user's choice from a short AskUserQuestion list (Water Leak Detector /
+   Air Purifier / Valve / other). The closest sibling to firmware/
+   contact-sensor/ in this repo: esp-matter's own `water_leak_detector::
+   add()` and `contact_sensor::add()` are structurally identical (Identify +
+   BooleanState + StateChange event, both via `common::create<T>()`) —
+   confirmed by reading both side by side rather than assumed from the
+   device type's name alone. The one thing that genuinely differs, and
+   the one thing most worth getting right, is StateValue's own direction:
+   true means "leak detected" here, the OPPOSITE of contact-sensor's
+   true=closed — confirmed against Espressif's own `MatterWaterLeakDetector`
+   Arduino-ESP32 API and Apple's own HomeKit Leak Sensor characteristic
+   direction before writing any code, not assumed from contact-sensor's
+   own (opposite) convention. Also surfaced the same class of esp-matter
+   FeatureMap gap air-quality-sensor found in AirQuality — here in
+   `boolean_state::create()`, which never sets the ChangeEvent feature bit
+   its own spec (WaterLeakDetector revision 2) requires — but unlike
+   AirQuality's gap, this one was judged safe to fix directly (a plain
+   `attribute::update()` on FeatureMap before `esp_matter::start()`)
+   rather than just documented, since the underlying StateChange event
+   fires unconditionally either way — confirmed by reading `boolean_state::
+   event::create_state_change()` directly, this FeatureMap bit is pure
+   advertised-conformance metadata here, not something gating real
+   behavior the way AirQuality's Feature bits do. See its own repository-
+   layout entry above for the complete detail. Build-verified in Docker;
+   not hardware-tested (no water sensor module physically available when
+   written).
+2. Implement Matter **OTA** — partially done. All eighteen firmware types
    ship `CONFIG_ENABLE_OTA_REQUESTOR=y`, which adds the OTA Requestor
    cluster to the root node endpoint entirely via Kconfig — esp-matter's
    own core startup (`esp_matter_core.cpp`) calls
    `esp_matter_ota_requestor_init()`/`_start()` automatically once that
    flag is on, so no app code was needed. Confirmed on real hardware for
    `firmware/contact-sensor/` and `firmware/switch/` (clean boot, cluster
-   registered, zero errors); the other fifteen build identically since
+   registered, zero errors); the other sixteen build identically since
    the code path is generic to every device type, not device-specific.
 
    Still open: a real OTA **transfer** needs an OTA Provider node
@@ -2768,7 +2868,7 @@ SECURITY.md               flash encryption / secure boot / signed OTA guidance
    later in `app_main()`, after `esp_matter::start()` has completed.
 
    Quick-power-cycle factory reset is Docker build-verified across all
-   seventeen device types — not yet hardware-tested. The wizard
+   eighteen device types — not yet hardware-tested. The wizard
    (`tools/product-wizard/`) has a static "Factory reset" info box
    rendered directly under the Configuration summary sidebar on every
    device type (wrapped together in a `.config-sidebar-stack` flex

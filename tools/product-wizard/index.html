@@ -1990,6 +1990,41 @@ const DEVICE_TYPES = [
       defaultsByModule: { esp32: 4, esp32c2: 4, esp32c3: 4, esp32c5: 4, esp32c6: 4, esp32c61: 4, esp32s3: 4, esp32h2: 4 },
     },
   },
+  {
+    id: "water-leak",
+    name: "Water Leak Detector",
+    desc: "Matter water leak detector: a probe-style water sensor module (e.g. an FC-37/YL-83-style LM393 board) reports leak/dry via the Boolean State cluster — StateValue=true means a leak IS detected, the opposite direction from Contact Sensor's true=closed. Reference device in firmware/water-leak-detector/.",
+    shortDesc: "Water sensor probe, leak/dry.",
+    // Matches project(matter_water_leak_detector) in
+    // firmware/water-leak-detector/CMakeLists.txt. Same single-GPIO-plus-
+    // identify shape as firmware/contact-sensor/'s ORIGINAL entry (before
+    // that one later grew a purely-cosmetic componentOptions list) — no
+    // componentOptions here either, since this device type has exactly one
+    // sensor style documented so far.
+    binName: "matter_water_leak_detector.bin",
+    driver: {
+      summary: "GPIO (digital input, active-low = wet)",
+      fieldLabel: "Water sensor DO GPIO pin",
+      blockTitle: "Water sensor DO · digital GPIO input",
+      filePath: "firmware/water-leak-detector/main/app_main.cpp",
+      defineName: "WATER_LEAK_GPIO",
+      // The literal value app_main.cpp ships with today — this is the sed
+      // baseline. Reference wiring: module VCC -> 3.3V, GND -> GND,
+      // DO -> this GPIO (the module actively drives DO itself — no
+      // internal pull-up needed, unlike a passive reed switch).
+      currentGpio: 4,
+      defaultsByModule: { esp32: 4, esp32c2: 4, esp32c3: 4, esp32c5: 4, esp32c6: 4, esp32c61: 4, esp32s3: 4, esp32h2: 4 },
+    },
+    identify: {
+      summary: "GPIO (digital output)",
+      fieldLabel: "Identify LED GPIO pin",
+      blockTitle: "Identify LED · digital output",
+      filePath: "firmware/water-leak-detector/main/app_main.cpp",
+      defineName: "IDENTIFY_LED_GPIO",
+      currentGpio: 2,
+      defaultsByModule: { esp32: 2, esp32c2: 2, esp32c3: 2, esp32c5: 2, esp32c6: 2, esp32c61: 2, esp32s3: 2, esp32h2: 2 },
+    },
+  },
 ];
 
 function findDeviceType(id) {
@@ -2330,6 +2365,12 @@ const DEVICE_TYPE_ICONS = {
     <rect x="8" y="8" width="32" height="32" rx="10"/>
     <path d="M14 20c3-4 6 4 9 0s6 4 9 0"/>
     <path d="M14 28c3-4 6 4 9 0s6 4 9 0"/>
+  </svg>`,
+  // A plain single droplet — the near-universal "water/leak" pictogram,
+  // unmistakably distinct from every other icon here (nothing else in this
+  // set uses a teardrop silhouette).
+  "water-leak": `<svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M24 6c7 10 12 17.5 12 24a12 12 0 0 1-24 0c0-6.5 5-14 12-24Z"/>
   </svg>`,
 };
 
