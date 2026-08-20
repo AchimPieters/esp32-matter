@@ -75,3 +75,10 @@ tools/test-credentials/
 
 # tools/product-wizard/server.py's own generated "update bin" packages
 tools/product-wizard/_packages/
+
+# Node.js dependencies (e.g. an ad-hoc puppeteer-core install for
+# screenshot-testing wizard changes) — never part of this static,
+# no-build web UI itself
+node_modules/
+package.json
+package-lock.json

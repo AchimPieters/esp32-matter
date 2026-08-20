@@ -1575,6 +1575,127 @@ firmware/occupancy-sensor/  Occupancy Sensor — fifteenth device type. First
                            `ReportData` sent to the controller.
   partitions.csv           same OTA + fctry layout as firmware/light/
   sdkconfig.defaults        same as firmware/light/
+firmware/fan/              Fan — sixteenth device type, and this repo's
+                           second genuine Delegate-based cluster after
+                           firmware/window-covering/'s WindowCovering (see
+                           below for how FanControl's own Delegate differs
+                           in practice).
+  main/app_main.cpp        `endpoint::fan::create()` (device type 0x002B)
+                           confirmed complete/ready-to-use — Identify +
+                           Groups + FanControl are the only
+                           `<mandatoryConform/>` clusters per the CSA's own
+                           data_model/1.6/device_types/Fan.xml (On/Off is
+                           listed too but only `<optionalConform/>`,
+                           deliberately not added — On/Off is folded into
+                           PercentSetting instead, 0% = off, the same
+                           "smallest reasonable next step" scoping this
+                           repo applies to every other device type's first
+                           cut) — and, like firmware/occupancy-sensor/'s
+                           own top-level helper, confirmed to create the
+                           endpoint's Descriptor cluster automatically via
+                           `common::create<T>()`'s shared internal path,
+                           sidestepping the class of bug firmware/
+                           color-light/'s and firmware/addressable-light/'s
+                           original hand-assembled endpoints hit (see
+                           "Open next steps" below). FanControl confirmed
+                           to be a "code-driven" cluster class (a real
+                           `fan_control/` folder exists under
+                           `data_model_provider/clusters/`) but, unlike
+                           firmware/occupancy-sensor/'s OccupancySensing (a
+                           plain registry-lookup setter is enough there),
+                           FanControl is genuinely Delegate-based —
+                           confirmed by reading `fan-control-delegate.h`,
+                           which declares a real `FanControl::Delegate`
+                           interface an app must subclass and register via
+                           `SetDefaultDelegate()`, the same Delegate
+                           pattern firmware/window-covering/'s
+                           WindowCovering already established in this repo
+                           (`HandleStep()` is pure virtual and must be
+                           implemented even though the Step feature isn't
+                           enabled — it just returns UnsupportedCommand;
+                           `OnFanDriveStateChanged()` is where the real PWM
+                           output actually gets driven). Confirmed directly
+                           in FanControlCluster.cpp that writing FanMode
+                           always cascades into PercentSetting too (Off->
+                           0%, Low->33%, Medium->66%, High->100%), so this
+                           file only ever needs to react to PercentSetting,
+                           never FanMode separately. Two real, sequential
+                           build failures were needed to land on the
+                           correct integration pattern — not guessed from
+                           reading headers alone: first a *compile* error
+                           (fixed by switching from `fan-control-delegate.h`
+                           to connectedhomeip's own
+                           `app/clusters/fan-control-server/
+                           CodegenIntegration.h`, which declares
+                           `SetDefaultDelegate()` and a full
+                           `Attributes::X::Get()/Set()` namespace); then,
+                           even after that compiled cleanly, a genuine
+                           *link* error
+                           (`undefined reference to ...PercentCurrent::
+                           Set`) — root-caused by actually reading
+                           esp-matter's own
+                           `data_model_provider/clusters/fan_control/
+                           integration.cpp` (which is what esp-matter's
+                           build substitutes for connectedhomeip's generic
+                           `CodegenIntegration.cpp`, same "esp-matter has
+                           its own integration file per code-driven
+                           cluster" pattern occupancy-sensor's
+                           OccupancySensing already established) and
+                           confirming it only implements
+                           `SetDefaultDelegate()` — not any of the
+                           `Attributes::X::Set()` free functions the header
+                           declares. Fixed with the same registry-lookup-
+                           and-cast pattern firmware/contact-sensor/'s and
+                           firmware/occupancy-sensor/'s own setters already
+                           use instead (`SetPercentCurrent()` on the live
+                           `FanControlCluster` instance, looked up via the
+                           data model provider's registry) — worth
+                           remembering as a fourth, genuinely distinct
+                           "how do I write a code-driven cluster attribute
+                           from app code" pattern in this repo now: (1)
+                           plain registry-lookup setter (BooleanState/
+                           OccupancySensing), (2) a Delegate whose own
+                           reporting call happens to be a working generic
+                           free-function proxy (WindowCovering's
+                           `report_position()`), (3) a Delegate whose
+                           reporting call needs the registry-lookup
+                           fallback instead because esp-matter's own
+                           integration.cpp is incomplete relative to what
+                           connectedhomeip's generic header declares
+                           (FanControl, here) — esp-matter's own per-
+                           cluster integration.cpp must be read directly
+                           each time, never assumed complete from
+                           connectedhomeip's generic header alone. Every
+                           one of FanControl's six optional features
+                           (MultiSpeed/Auto/Rocking/Wind/Step/
+                           AirflowDirection) is independently
+                           `<optionalConform/>` — none implemented, driving
+                           the fan purely through the cluster's own base-
+                           mandatory PercentSetting/PercentCurrent (0-100%,
+                           the natural fit for a PWM-driven DC fan with no
+                           discrete speed taps to model). FanModeSequence
+                           set to OffLowMedHigh (the only listed
+                           FanModeSequenceEnum value offering three real
+                           speed steps without requiring the Auto feature)
+                           so a controller's own FanMode picker still
+                           offers Low/Medium/High shortcuts alongside the
+                           continuous percent slider PercentSetting always
+                           provides. Output is real PWM via ESP-IDF's
+                           `driver/ledc.h` — same LEDC peripheral/settings
+                           firmware/dimmable-light/ already uses for LED
+                           brightness, just driving a MOSFET or fan-speed-
+                           controller board's PWM input instead, at 25kHz
+                           (above the audible range, and the common PWM
+                           frequency most 4-wire PC/DC fan speed inputs
+                           expect) — PercentSetting's own 0-100 range is
+                           used directly as the duty percentage, no
+                           remapping needed. Standard quick-power-cycle
+                           factory reset. Build-verified in Docker; not
+                           hardware-tested (no PWM fan/MOSFET driver board
+                           for this device type physically available when
+                           written).
+  partitions.csv           same OTA + fctry layout as firmware/light/
+  sdkconfig.defaults        same as firmware/light/
 tools/
   dev.sh                  opens the Docker dev environment
   gen_factory.sh          local QR + factory partition generator
@@ -2402,15 +2523,38 @@ SECURITY.md               flash encryption / secure boot / signed OTA guidance
    commissioned via Apple Home with zero errors, then real PIR motion
    correctly flipped the Home app's tile live, confirmed against a live
    serial log throughout.
-2. Implement Matter **OTA** — partially done. All fifteen firmware types
+
+   A sixteenth device type, `firmware/fan/` (FanControl, PercentSetting/
+   PercentCurrent only), followed directly after occupancy-sensor —
+   continuing the same "use the complete top-level helper" precedent
+   (`endpoint::fan::create()`), and this repo's second genuine Delegate-
+   based cluster after firmware/window-covering/'s WindowCovering.
+   Landing the right integration pattern took two real, sequential Docker
+   build failures (a compile error, then — even after that was fixed — a
+   link error), root-caused by actually reading esp-matter's own
+   `data_model_provider/clusters/fan_control/integration.cpp` rather than
+   trusting connectedhomeip's generic `CodegenIntegration.h` declarations
+   at face value: that header declares `Attributes::PercentCurrent::Set()`
+   as if it were freely callable, but esp-matter's build substitutes its
+   own integration.cpp for connectedhomeip's generic one, and esp-matter's
+   version only implements `SetDefaultDelegate()` — not that free
+   function — so the symbol was genuinely absent from the link. Fixed
+   with the same registry-lookup-and-cast pattern firmware/
+   contact-sensor/'s and firmware/occupancy-sensor/'s own setters already
+   use. See its own repository-layout entry above for the complete
+   detail, including why this is now a fourth genuinely distinct pattern
+   for writing "code-driven" cluster attributes from app code in this
+   repo. Build-verified in Docker; not hardware-tested (no PWM fan/MOSFET
+   driver board physically available when written).
+2. Implement Matter **OTA** — partially done. All sixteen firmware types
    ship `CONFIG_ENABLE_OTA_REQUESTOR=y`, which adds the OTA Requestor
    cluster to the root node endpoint entirely via Kconfig — esp-matter's
    own core startup (`esp_matter_core.cpp`) calls
    `esp_matter_ota_requestor_init()`/`_start()` automatically once that
    flag is on, so no app code was needed. Confirmed on real hardware for
    `firmware/contact-sensor/` and `firmware/switch/` (clean boot, cluster
-   registered, zero errors); the other twelve build identically since the
-   code path is generic to every device type, not device-specific.
+   registered, zero errors); the other fourteen build identically since
+   the code path is generic to every device type, not device-specific.
 
    Still open: a real OTA **transfer** needs an OTA Provider node
    commissioned onto the same fabric, actually serving a `.bin` (e.g.
@@ -2479,7 +2623,7 @@ SECURITY.md               flash encryption / secure boot / signed OTA guidance
    later in `app_main()`, after `esp_matter::start()` has completed.
 
    Quick-power-cycle factory reset is Docker build-verified across all
-   fifteen device types — not yet hardware-tested. The wizard
+   sixteen device types — not yet hardware-tested. The wizard
    (`tools/product-wizard/`) has a static "Factory reset" info box
    rendered directly under the Configuration summary sidebar on every
    device type (wrapped together in a `.config-sidebar-stack` flex

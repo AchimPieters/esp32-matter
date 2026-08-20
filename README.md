@@ -420,7 +420,29 @@ full story). Docker build-verified for all three sensor types; only PIR
 is hardware-verified end to end: commissioned via Apple Home with zero
 errors, then real PIR motion correctly flipped the Home app's tile live.
 
-To add another (simpler) type, copy any of the other fourteen folders and
+`firmware/fan/` (Matter Fan) is this repo's sixteenth device type and its
+second genuine Delegate-based cluster after Window Covering's
+WindowCovering — real PWM speed control (0-100%, PercentSetting/
+PercentCurrent only, no MultiSpeed/Auto/Rocking/Wind/Step/
+AirflowDirection) driving a MOSFET or fan-speed-controller board via the
+same LEDC peripheral `firmware/dimmable-light/` uses for brightness.
+Built with esp-matter's own complete `endpoint::fan::create()` top-level
+helper, same "avoid the missing-Descriptor-cluster bug class" precedent
+as `firmware/occupancy-sensor/`. Landing the right way to report
+PercentCurrent back to the cluster took two real, sequential Docker build
+failures — a compile error, then a link error — root-caused by reading
+esp-matter's own `fan_control/integration.cpp` directly rather than
+trusting connectedhomeip's generic header alone: esp-matter's build
+substitutes its own integration.cpp, which only implements
+`SetDefaultDelegate()`, not the `Attributes::PercentCurrent::Set()` free
+function the generic header declares — fixed with the same registry-
+lookup-and-cast pattern `firmware/contact-sensor/` and
+`firmware/occupancy-sensor/` already use. See CLAUDE.md's repository-
+layout entry for the full detail. Docker build-verified; not yet
+hardware-tested (no PWM fan/MOSFET driver board was physically available
+when written).
+
+To add another (simpler) type, copy any of the other fifteen folders and
 swap the endpoint type in `app_main.cpp` — esp-matter provides many more
 ready-made types, e.g. `air_quality`.
 
@@ -431,7 +453,7 @@ but the multi-GB Docker image stalled out on GitHub-hosted runners, so it
 was reverted rather than left flaky). Build + flash a new version yourself
 following the Quick Start steps above whenever you change `app_main.cpp`.
 
-All fifteen device types also ship with Matter's **OTA Requestor** cluster
+All sixteen device types also ship with Matter's **OTA Requestor** cluster
 enabled (`CONFIG_ENABLE_OTA_REQUESTOR=y`), so once a device is bound to an
 OTA Provider node on the same fabric, it can fetch and install updates over
 the air using the existing `ota_0`/`ota_1` A/B partition slots — no app
@@ -444,7 +466,7 @@ errors); the provider side and a full transfer are open, tracked in
 CLAUDE.md's next steps alongside the binding test, which hits the same
 "needs a second commissioned device + tooling" wall.
 
-All fifteen device types also have a quick-power-cycle factory reset
+All sixteen device types also have a quick-power-cycle factory reset
 (see CLAUDE.md's "Open next steps" for the full sourcing/verification
 detail): power the device off and on 3 times in a row (about 2 seconds
 each way) and it factory-resets and re-enters setup mode, no button or
@@ -452,7 +474,7 @@ extra pin needed. Built on esp-matter's own `esp_matter::factory_reset()`,
 called only after Matter has started (confirmed against its own
 implementation and reference `app_reset` component).
 
-Docker build-verified across all fifteen device types, not yet
+Docker build-verified across all sixteen device types, not yet
 hardware-tested. The product wizard (`tools/product-wizard/`) shows the
 factory-reset procedure as a standalone info box under Configuration
 Summary. (An earlier optional RGB status LED feature was built and
