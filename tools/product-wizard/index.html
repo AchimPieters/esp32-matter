@@ -872,6 +872,11 @@ const COMPONENT_LIBRARY = {
   // Configure Device looks and behaves consistently across every sensor-
   // style device type — see contact's `componentsPurelyVisual` flag below
   // for where that's made explicit to the person using the wizard too.
+  // Air Quality Sensor's sensor picker — one entry today (CCS811), same
+  // "scaffold ready to grow" shape firmware/temperature-sensor/'s original
+  // SHT3x-only and firmware/light-sensor/'s original LDR-only launches
+  // already used, before either grew more chips later on request.
+  AQ_CCS811: { name: "CCS811", category: "air-quality", bus: "I2C", pin1Label: "SDA", pin2Label: "SCL", usesPin2: true, verified: false, defineValue: "AIR_QUALITY_SENSOR_CCS811", note: "Real calibrated eCO2 (ppm) + eTVOC (ppb) digital gas sensor. Protocol (boot sequence, register map, output ranges) confirmed directly against ams's own CCS811 datasheet — see firmware/air-quality-sensor/main/app_main.cpp's header comment for the full detail. nWAKE must be tied to GND on the module — the datasheet's own recommended simplest wiring when the host doesn't need the sensor's lowest-power idle state, which this firmware doesn't." },
   REED_SWITCH: { name: "Reed Switch (magnetic)", category: "contact", bus: "GPIO", pin1Label: "Contact", pin2Label: null, usesPin2: false, verified: true },
   HALL_SENSOR: { name: "Hall-Effect Sensor (e.g. A3144, US5881)", category: "contact", bus: "GPIO", pin1Label: "Contact", pin2Label: null, usesPin2: false, verified: false },
   MICROSWITCH: { name: "Microswitch / mechanical contact", category: "contact", bus: "GPIO", pin1Label: "Contact", pin2Label: null, usesPin2: false, verified: false },
@@ -1944,6 +1949,47 @@ const DEVICE_TYPES = [
       defaultsByModule: { esp32: 4, esp32c2: 4, esp32c3: 4, esp32c5: 4, esp32c6: 4, esp32c61: 4, esp32s3: 4, esp32h2: 4 },
     },
   },
+  {
+    id: "air-quality",
+    name: "Air Quality Sensor",
+    desc: "Matter air quality sensor: a CCS811 I2C gas sensor reports real calibrated eCO2 (ppm) and eTVOC (ppb) via CarbonDioxideConcentrationMeasurement/TotalVolatileOrganicCompoundsConcentrationMeasurement, plus a plain Good/Poor headline via the AirQuality cluster (a documented esp-matter gap means the finer Fair/Moderate/VeryPoor/ExtremelyPoor states aren't reachable yet — see app_main.cpp's header comment). Reference device in firmware/air-quality-sensor/.",
+    shortDesc: "eCO2 + eTVOC (CCS811), Good/Poor headline.",
+    // Matches project(matter_air_quality_sensor) in
+    // firmware/air-quality-sensor/CMakeLists.txt. Same componentOptions +
+    // driver/secondary I2C shape as firmware/temperature-sensor/'s and
+    // firmware/light-sensor/'s own sensor pickers — zero new wizard
+    // mechanism needed, only one new COMPONENT_LIBRARY entry (AQ_CCS811).
+    componentOptions: ["AQ_CCS811"],
+    componentDefineName: "AIR_QUALITY_SENSOR_TYPE",
+    driver: {
+      summary: "Sensor pin 1 (SDA)",
+      fieldLabel: "Sensor pin 1 (SDA) GPIO",
+      blockTitle: "Sensor · pin 1",
+      filePath: "firmware/air-quality-sensor/main/app_main.cpp",
+      defineName: "SENSOR_PIN_1",
+      currentGpio: 21,
+      defaultsByModule: { esp32: 21, esp32c2: 21, esp32c3: 21, esp32c5: 21, esp32c6: 21, esp32c61: 21, esp32s3: 21, esp32h2: 21 },
+    },
+    secondary: {
+      label: "Pin 2",
+      summary: "Sensor pin 2 (SCL)",
+      fieldLabel: "Sensor pin 2 (SCL) GPIO",
+      blockTitle: "Sensor · pin 2",
+      filePath: "firmware/air-quality-sensor/main/app_main.cpp",
+      defineName: "SENSOR_PIN_2",
+      currentGpio: 22,
+      defaultsByModule: { esp32: 22, esp32c2: 22, esp32c3: 22, esp32c5: 22, esp32c6: 22, esp32c61: 22, esp32s3: 22, esp32h2: 22 },
+    },
+    identify: {
+      summary: "GPIO (digital output)",
+      fieldLabel: "Identify LED GPIO pin",
+      blockTitle: "Identify LED · digital output",
+      filePath: "firmware/air-quality-sensor/main/app_main.cpp",
+      defineName: "IDENTIFY_LED_GPIO",
+      currentGpio: 4,
+      defaultsByModule: { esp32: 4, esp32c2: 4, esp32c3: 4, esp32c5: 4, esp32c6: 4, esp32c61: 4, esp32s3: 4, esp32h2: 4 },
+    },
+  },
 ];
 
 function findDeviceType(id) {
@@ -2275,6 +2321,15 @@ const DEVICE_TYPE_ICONS = {
     <g transform="rotate(120 24 24)"><path d="M24 24 Q32 20 24 7 Q18 14 24 24 Z"/></g>
     <g transform="rotate(240 24 24)"><path d="M24 24 Q32 20 24 7 Q18 14 24 24 Z"/></g>
     <circle cx="24" cy="24" r="2.5" fill="currentColor" stroke="none"/>
+  </svg>`,
+  // A wavy "leaf/air" swirl inside a rounded diamond badge — distinct from
+  // every other sensor icon here (concentric circles/rings already taken
+  // by occupancy and smoke-co-alarm), reads as "air/gas" rather than
+  // "sound wave" or "signal" thanks to the enclosing badge shape.
+  "air-quality": `<svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+    <rect x="8" y="8" width="32" height="32" rx="10"/>
+    <path d="M14 20c3-4 6 4 9 0s6 4 9 0"/>
+    <path d="M14 28c3-4 6 4 9 0s6 4 9 0"/>
   </svg>`,
 };
 

@@ -1696,6 +1696,121 @@ firmware/fan/              Fan — sixteenth device type, and this repo's
                            written).
   partitions.csv           same OTA + fctry layout as firmware/light/
   sdkconfig.defaults        same as firmware/light/
+firmware/air-quality-sensor/  Air Quality Sensor — seventeenth device type,
+                           and the first to combine a qualitative headline
+                           state (AirQuality's own Good/Fair/.../
+                           ExtremelyPoor enum) with real numeric readings
+                           (concentration-measurement clusters) on the SAME
+                           endpoint, confirmed as a legitimate spec
+                           combination by reading the CSA's own
+                           data_model/1.6/device_types/AirQualitySensor.xml
+                           directly: Identify + AirQuality are the only
+                           `<mandatoryConform/>` clusters, and every one of
+                           ten concentration-measurement clusters (CO/CO2/
+                           NO2/Ozone/PM1/PM2.5/PM10/Radon/Formaldehyde/
+                           TVOC — even Temperature/Humidity) is
+                           `<optionalConform/>` on that same endpoint, not a
+                           separate one.
+  main/app_main.cpp        `endpoint::air_quality_sensor::create()` (device
+                           type 0x002C) confirmed complete/ready-to-use —
+                           Identify + AirQuality, no Groups (correctly
+                           matches the CSA XML, which lists none) — and,
+                           like firmware/occupancy-sensor/'s and
+                           firmware/fan/'s own top-level helpers, confirmed
+                           to create the endpoint's Descriptor cluster
+                           automatically via `common::create<T>()`.
+                           CarbonDioxideConcentrationMeasurement and
+                           TotalVolatileOrganicCompoundsConcentrationMeasurement
+                           are then added onto that SAME endpoint afterwards
+                           via their own `cluster::xxx_concentration_
+                           measurement::create()` free functions — this
+                           does NOT reintroduce the missing-Descriptor bug
+                           (the complete helper already built the endpoint
+                           correctly; more clusters are simply added onto
+                           it afterwards), same "add extra clusters onto an
+                           already-correct endpoint" pattern
+                           firmware/thermostat/'s BINDING output type
+                           already established. AirQuality confirmed to be
+                           a "code-driven" cluster (a real `air_quality/`
+                           folder exists under
+                           `data_model_provider/clusters/`) — `SetAirQuality()`
+                           is a plain method (not a Delegate), so this uses
+                           the same registry-lookup-and-cast pattern
+                           firmware/contact-sensor/'s and firmware/
+                           occupancy-sensor/'s own setters already
+                           establish. A real, documented esp-matter gap was
+                           found and worked around by scoping down, not
+                           patching around it: `air_quality::create()`
+                           hardcodes `global::attribute::
+                           create_feature_map(cluster, 0)` — unlike every
+                           comparable "optional feature" cluster in this
+                           repo (occupancy_sensing/smoke_co_alarm/
+                           fan_control/concentration_measurement, all of
+                           which thread a real `config->feature_flags`
+                           through) `air_quality::config_t` doesn't even
+                           declare a `feature_flags` field, so only the
+                           base 3-state Good/Poor/Unknown scale is reachable
+                           through this helper today — the finer Fair/
+                           Moderate/VeryPoor/ExtremelyPoor states would need
+                           an unverified FeatureMap override race against
+                           `AirQualityCluster`'s own constructor-time
+                           `BitFlags<Feature>` snapshot, judged worse than a
+                           clean, correct 3-state scale for v1 (same
+                           "smallest reasonable next step" scoping this
+                           repo applies to every other device type's first
+                           cut). Concentration-measurement clusters
+                           confirmed NOT code-driven (no
+                           `concentration_measurement/` folder under
+                           `data_model_provider/clusters/`) — plain ember
+                           attributes, written the same way as firmware/
+                           door-lock/'s LockState (`esp_matter_nullable_float()`
+                           + `attribute::update()`, no registry lookup
+                           needed). `SENSOR_TYPE`-style
+                           `AIR_QUALITY_SENSOR_TYPE` scaffold ships with one
+                           sensor for v1 — CCS811, a real calibrated I2C
+                           eCO2 (ppm)/eTVOC (ppb) gas sensor (not a raw-
+                           analog MQ-series sensor the way firmware/
+                           smoke-co-alarm/ uses) — chosen as the best fit
+                           for Matter's numeric concentration clusters,
+                           which need real calibrated units. Protocol
+                           verified directly against ams's own "CCS811
+                           Datasheet" (v1-06, 2019-Feb-07) and its
+                           companion Programming Guide — both fetched as
+                           PDFs and read via `pdftotext`, this repo's
+                           established practice for primary-source
+                           hardware protocol detail — not assumed from a
+                           community library: I2C address 0x5A (ADDR pin
+                           low) or 0x5B (high); nWAKE tied to GND per the
+                           datasheet's own "simplest hardware" wiring
+                           recommendation (no extra GPIO needed); boot
+                           sequence (HW_ID=0x81 check, APP_VALID check,
+                           APP_START write-with-no-data, MEAS_MODE=0x10 for
+                           1 sample/sec — DRIVE_MODE bit position [6:4]
+                           confirmed directly from the register's own bit
+                           table); polling STATUS's DATA_READY/ERROR bits
+                           and reading ALG_RESULT_DATA as a 5-byte
+                           transaction, the datasheet's own documented
+                           technique for polling without the nINT
+                           interrupt pin; output ranges (eCO2 400-29206ppm,
+                           eTVOC 0-32768ppb, both confirmed in-text) used
+                           directly as Min/MaxMeasuredValue. The
+                           datasheet's documented 20-minute conditioning/
+                           run-in period is not implemented as a startup
+                           delay — same "not a substitute for the real
+                           hardware warm-up time" framing firmware/
+                           smoke-co-alarm/ already uses for its own
+                           MQ-series sensors' burn-in. AirQuality's
+                           Good/Poor classification is a plain, adjustable
+                           per-gas millivolt-style threshold (CO2 >=1000ppm
+                           or TVOC >=660ppb -> Poor), not a spec-defined or
+                           chip-calibrated mapping — same "adjustable
+                           threshold, not a calibrated reading" precedent
+                           firmware/smoke-co-alarm/'s own MQ classifier
+                           already uses. Build-verified in Docker; not
+                           hardware-tested (no CCS811 module physically
+                           available when written).
+  partitions.csv           same OTA + fctry layout as firmware/light/
+  sdkconfig.defaults        same as firmware/light/
 tools/
   dev.sh                  opens the Docker dev environment
   gen_factory.sh          local QR + factory partition generator
@@ -2546,14 +2661,44 @@ SECURITY.md               flash encryption / secure boot / signed OTA guidance
    for writing "code-driven" cluster attributes from app code in this
    repo. Build-verified in Docker; not hardware-tested (no PWM fan/MOSFET
    driver board physically available when written).
-2. Implement Matter **OTA** — partially done. All sixteen firmware types
+
+   A seventeenth device type, `firmware/air-quality-sensor/` (AirQuality +
+   CarbonDioxideConcentrationMeasurement +
+   TotalVolatileOrganicCompoundsConcentrationMeasurement, all on one
+   endpoint), followed directly after fan — the user's choice from a
+   short AskUserQuestion list (Air Quality Sensor / Water Leak Detector /
+   Air Purifier / other). First device type combining a code-driven
+   cluster's qualitative headline state with plain-ember-attribute
+   numeric readings on the very same endpoint; confirmed as spec-
+   legitimate directly against the CSA's own AirQualitySensor.xml before
+   writing any code. A real, previously undocumented esp-matter gap was
+   found and deliberately scoped around rather than patched: `air_quality
+   ::create()` hardcodes FeatureMap to 0 and `air_quality::config_t` has
+   no `feature_flags` field at all — unlike occupancy_sensing/
+   smoke_co_alarm/fan_control/concentration_measurement, all of which
+   properly thread a config-supplied feature bitmap through — so only
+   AirQuality's base 3-state Good/Poor/Unknown scale is reachable through
+   this helper today; the finer Fair/Moderate/VeryPoor/ExtremelyPoor
+   states were left as a documented future step rather than risking an
+   unverified FeatureMap override race against `AirQualityCluster`'s own
+   constructor-time feature snapshot. CCS811's protocol (I2C address,
+   nWAKE-to-GND wiring, boot sequence, register map, output ranges) was
+   verified directly against ams's own datasheet and Programming Guide,
+   fetched as PDFs and read via `pdftotext` — this repo's established
+   practice for primary-source hardware protocol detail — catching the
+   exact DRIVE_MODE bit position and both eCO2/eTVOC output ranges
+   in-text rather than assumed from a community library. See its own
+   repository-layout entry above for the complete detail. Build-verified
+   in Docker; not hardware-tested (no CCS811 module physically available
+   when written).
+2. Implement Matter **OTA** — partially done. All seventeen firmware types
    ship `CONFIG_ENABLE_OTA_REQUESTOR=y`, which adds the OTA Requestor
    cluster to the root node endpoint entirely via Kconfig — esp-matter's
    own core startup (`esp_matter_core.cpp`) calls
    `esp_matter_ota_requestor_init()`/`_start()` automatically once that
    flag is on, so no app code was needed. Confirmed on real hardware for
    `firmware/contact-sensor/` and `firmware/switch/` (clean boot, cluster
-   registered, zero errors); the other fourteen build identically since
+   registered, zero errors); the other fifteen build identically since
    the code path is generic to every device type, not device-specific.
 
    Still open: a real OTA **transfer** needs an OTA Provider node
@@ -2623,7 +2768,7 @@ SECURITY.md               flash encryption / secure boot / signed OTA guidance
    later in `app_main()`, after `esp_matter::start()` has completed.
 
    Quick-power-cycle factory reset is Docker build-verified across all
-   sixteen device types — not yet hardware-tested. The wizard
+   seventeen device types — not yet hardware-tested. The wizard
    (`tools/product-wizard/`) has a static "Factory reset" info box
    rendered directly under the Configuration summary sidebar on every
    device type (wrapped together in a `.config-sidebar-stack` flex

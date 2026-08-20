@@ -442,9 +442,30 @@ layout entry for the full detail. Docker build-verified; not yet
 hardware-tested (no PWM fan/MOSFET driver board was physically available
 when written).
 
-To add another (simpler) type, copy any of the other fifteen folders and
+`firmware/air-quality-sensor/` (Matter Air Quality Sensor) is this repo's
+seventeenth device type — a CCS811 I2C gas sensor reporting real
+calibrated eCO2 (ppm) and eTVOC (ppb) via
+CarbonDioxideConcentrationMeasurement/
+TotalVolatileOrganicCompoundsConcentrationMeasurement, plus a Good/Poor
+headline via the AirQuality cluster, all on one endpoint — confirmed as a
+legitimate combination directly against the CSA's own
+AirQualitySensor.xml before writing any code. A real esp-matter gap was
+found and deliberately scoped around: `air_quality::create()` hardcodes
+FeatureMap to 0 with no `config->feature_flags` field at all (unlike
+every comparable optional-feature cluster in this repo), so only
+AirQuality's base Good/Poor/Unknown scale is reachable through the
+helper today — the finer Fair/Moderate/VeryPoor/ExtremelyPoor states are
+a documented future step rather than an unverified workaround. CCS811's
+protocol (I2C address, nWAKE-to-GND wiring, boot sequence, register map,
+output ranges) was verified directly against ams's own datasheet and
+Programming Guide, fetched as PDFs and read via `pdftotext`. See
+CLAUDE.md's repository-layout entry for the full detail. Docker
+build-verified; not yet hardware-tested (no CCS811 module was physically
+available when written).
+
+To add another (simpler) type, copy any of the other sixteen folders and
 swap the endpoint type in `app_main.cpp` — esp-matter provides many more
-ready-made types, e.g. `air_quality`.
+ready-made types, e.g. `air_purifier`.
 
 ## Updates
 
@@ -453,7 +474,7 @@ but the multi-GB Docker image stalled out on GitHub-hosted runners, so it
 was reverted rather than left flaky). Build + flash a new version yourself
 following the Quick Start steps above whenever you change `app_main.cpp`.
 
-All sixteen device types also ship with Matter's **OTA Requestor** cluster
+All seventeen device types also ship with Matter's **OTA Requestor** cluster
 enabled (`CONFIG_ENABLE_OTA_REQUESTOR=y`), so once a device is bound to an
 OTA Provider node on the same fabric, it can fetch and install updates over
 the air using the existing `ota_0`/`ota_1` A/B partition slots — no app
@@ -466,7 +487,7 @@ errors); the provider side and a full transfer are open, tracked in
 CLAUDE.md's next steps alongside the binding test, which hits the same
 "needs a second commissioned device + tooling" wall.
 
-All sixteen device types also have a quick-power-cycle factory reset
+All seventeen device types also have a quick-power-cycle factory reset
 (see CLAUDE.md's "Open next steps" for the full sourcing/verification
 detail): power the device off and on 3 times in a row (about 2 seconds
 each way) and it factory-resets and re-enters setup mode, no button or
@@ -474,7 +495,7 @@ extra pin needed. Built on esp-matter's own `esp_matter::factory_reset()`,
 called only after Matter has started (confirmed against its own
 implementation and reference `app_reset` component).
 
-Docker build-verified across all sixteen device types, not yet
+Docker build-verified across all seventeen device types, not yet
 hardware-tested. The product wizard (`tools/product-wizard/`) shows the
 factory-reset procedure as a standalone info box under Configuration
 Summary. (An earlier optional RGB status LED feature was built and
