@@ -3195,6 +3195,47 @@ SECURITY.md               flash encryption / secure boot / signed OTA guidance
    firmware issue, by reading the live serial log directly (the firmware
    correctly processed every command it was actually sent; no `On`
    command reached the device at all until the app was restarted).
+6. A real, previously-undetected bug in `firmware/fan/` and `firmware/
+   air-purifier/`: both called `FanControl::SetDefaultDelegate()` BEFORE
+   `esp_matter::start()`, and it was a silent no-op the whole time. Found
+   while researching a new device type (`firmware/valve/`, whose
+   `ValveConfigurationAndControl` cluster uses the exact same
+   `SetDefaultDelegate()`-free-function pattern as FanControl) and reading
+   esp-matter's own `fan_control/integration.cpp` closely enough to notice
+   `SetDefaultDelegate()`'s own guard clause:
+   `VerifyOrReturn(it != gServers.end() && it->second.server.IsConstructed())`.
+   That map entry is only populated inside
+   `ESPMatterFanControlClusterServerInitCallback()`, which fires as part
+   of `chip::Server::GetInstance().Init()` — called from
+   `esp_matter::start()` itself (confirmed directly in
+   `esp_matter_core.cpp`), not from `endpoint::fan::create()` earlier in
+   `app_main()`. So every call to `SetDefaultDelegate()` before `start()`
+   found no map entry at all and returned immediately, meaning the real
+   `FanDelegate` was never actually attached in either file: FanControl
+   still accepted and stored `PercentSetting` writes internally (via its
+   own wrapper, which tolerates a null wrapped delegate, so a controller
+   saw no error), but `OnFanDriveStateChanged()` never fired — the
+   physical PWM output never moved, and `PercentCurrent` never updated to
+   reflect it. This went undetected because neither device type has been
+   hardware-tested yet; Docker build-verification only confirms
+   compilation, not this kind of runtime wiring order. Fixed in both
+   files by moving `SetDefaultDelegate()` to after the
+   `esp_matter::start()` call succeeds — confirmed by rebuilding both in
+   Docker (clean compiles) — with an inline comment at the new call site
+   in each file explaining the ordering requirement, matching the same
+   "code-driven cluster's real construction happens inside
+   `esp_matter::start()`, not at creation time" lesson this session
+   already learned three times over for FeatureMap specifically
+   (AirQuality, BooleanState, ResourceMonitoring) — this is the same
+   underlying timing model applied to a `SetDefaultDelegate()`-style free
+   function instead of a raw attribute write. Worth remembering as a
+   general rule for any future Delegate registered via a similar
+   esp-matter-provided free function: always call it after
+   `esp_matter::start()`, never before, unless that specific function is
+   confirmed (by reading its own implementation, not assumed) to handle
+   the not-yet-constructed case some other way. `firmware/valve/` (added
+   immediately after this fix, see below) got the correct ordering from
+   the start.
 
 ## Note on hardware/USB
 

@@ -493,8 +493,6 @@ extern "C" void app_main(void)
     air_purifier_endpoint_id = endpoint::get_id(endpoint);
     ESP_LOGI(TAG, "Air purifier endpoint id: %u", air_purifier_endpoint_id);
 
-    FanControl::SetDefaultDelegate(air_purifier_endpoint_id, &fan_delegate);
-
     /* 3b. HEPA filter monitoring, with the Condition feature (percent
      * remaining + DegradationDirection=Down) enabled via esp-matter's own
      * public feature::condition::add() API — see the header comment above
@@ -532,6 +530,17 @@ extern "C" void app_main(void)
         ESP_LOGE(TAG, "Failed to start Matter: %d", err);
         return;
     }
+
+    /* Register the real FanControl Delegate — MUST happen after
+     * esp_matter::start(), not before (a real, previously-wrong ordering
+     * found in firmware/fan/ and fixed there at the same time as here —
+     * see that file's own header/inline comment for the full explanation:
+     * FanControl::SetDefaultDelegate() looks the cluster instance up in a
+     * map keyed by endpoint ID and silently no-ops if it isn't
+     * constructed yet, which only happens inside esp_matter::start()'s
+     * own chip::Server::GetInstance().Init() call, not at endpoint/cluster
+     * creation time earlier in this function). */
+    FanControl::SetDefaultDelegate(air_purifier_endpoint_id, &fan_delegate);
 
     /* If step 1b detected 3 quick power cycles in a row, factory-reset
      * now that Matter has actually started. */

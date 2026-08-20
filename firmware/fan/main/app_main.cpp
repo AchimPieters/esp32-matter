@@ -429,20 +429,38 @@ extern "C" void app_main(void)
     fan_endpoint_id = endpoint::get_id(endpoint);
     ESP_LOGI(TAG, "Fan endpoint id: %u", fan_endpoint_id);
 
-    /* Register the real Delegate — without this, FanControlCluster still
-     * accepts writes internally (via its own IntegrationDelegateWrapper,
-     * which tolerates a null application delegate), but this file would
-     * never be notified of them, so the physical PWM output would never
-     * actually move. Confirmed by reading CodegenIntegration.cpp's own
-     * SetDefaultDelegate() directly. */
-    FanControl::SetDefaultDelegate(fan_endpoint_id, &fan_delegate);
-
     /* 4. Start Matter — begins BLE advertising so a controller can commission it. */
     err = esp_matter::start(app_event_cb);
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "Failed to start Matter: %d", err);
         return;
     }
+
+    /* Register the real Delegate — MUST happen after esp_matter::start(),
+     * not before. A real, previously-wrong assumption in this file was
+     * caught by re-reading esp-matter's own fan_control/integration.cpp
+     * closely while researching firmware/valve/'s own, structurally
+     * identical SetDefaultDelegate() pattern: esp-matter's own
+     * `FanControl::SetDefaultDelegate()` looks up this endpoint's cluster
+     * instance in a map keyed by endpoint ID and silently no-ops
+     * (`VerifyOrReturn(it != gServers.end() && ...)`) if that instance
+     * doesn't exist yet — and it's only actually constructed inside
+     * `ESPMatterFanControlClusterServerInitCallback()`, which fires as
+     * part of `chip::Server::GetInstance().Init()`, called from
+     * `esp_matter::start()` itself, not from `endpoint::fan::create()`
+     * earlier in this function. Calling `SetDefaultDelegate()` before
+     * `start()` (this file's original ordering) was therefore a silent
+     * no-op the whole time: the Delegate was never actually attached, so
+     * `OnFanDriveStateChanged()` never fired and the physical PWM output
+     * never moved in response to a controller's FanMode/PercentSetting
+     * commands — undetected until now because this device type has only
+     * ever been Docker build-verified, not hardware-tested (compiling
+     * cleanly says nothing about this ordering bug). Without this fix,
+     * FanControlCluster still accepts and stores writes internally (via
+     * its own wrapper, which tolerates a null wrapped delegate), so a
+     * controller would see PercentSetting change with no error — just no
+     * physical effect and a PercentCurrent that never updates. */
+    FanControl::SetDefaultDelegate(fan_endpoint_id, &fan_delegate);
 
     /* If step 1b detected 3 quick power cycles in a row, factory-reset
      * now that Matter has actually started — see
