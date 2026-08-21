@@ -2388,22 +2388,49 @@ firmware/robot-vacuum/     Robotic Vacuum Cleaner (RVC) — twenty-second
                            other `chip::`/`chip::app::` name instead); not
                            hardware-tested (no robot chassis/motor-driver
                            hardware physically available when written).
-                           NOT yet integrated into `tools/product-wizard/`
-                           — deliberately deferred (unlike every device
-                           type before it except firmware/camera/, which
-                           was deferred for a structural reason): this
-                           device type needs 6 required GPIO fields (4
-                           drive-motor + vacuum + mop) plus 1 optional
-                           (dock sensor), more than any device type the
-                           wizard currently supports has needed from its
-                           existing `driver`/`secondary`/`extraButtons`/
-                           `extraPickers` field shapes at once, and doing
-                           it justice (including the "actually render +
-                           screenshot the result" verification this repo's
-                           own wizard-change practice expects) was judged
-                           worth its own dedicated pass rather than
-                           squeezing in under this session's effort
-                           budget — see "Open next steps" below.
+                           Integrated into `tools/product-wizard/` in a
+                           follow-up pass (initially deferred — see "Open
+                           next steps" below for why): 6 required GPIO
+                           fields (`driver` + a fixed 5-entry
+                           `extraButtons` array, reusing firmware/
+                           color-light/'s "fixed set, not a variable
+                           count" mode of that mechanism unchanged, zero
+                           new code) plus 1 optional field, a new
+                           `dockSensor` — a deliberate third parallel copy
+                           of `statusLed`/`positionSensor`'s identical
+                           single-GPIO checkbox-gated shape (not a reuse
+                           of either literal field, since both carry
+                           hardcoded, device-type-specific copy that would
+                           misdescribe a charging-dock contact), touching
+                           every site `positionSensor` itself needed when
+                           it was added for door-lock: the enable-check
+                           helper, the render block, validation, the sed
+                           command, three separate summary-row renderers,
+                           device-type-switch reset, and DOM event
+                           listeners. Verified with the same Node.js
+                           sandboxed regression-check pattern this
+                           wizard's own history already establishes
+                           (device-type lookup; `renderConfigureDevice`
+                           output containing every field's own label/
+                           checkbox; `isProductComplete` before any prior
+                           render — the same regression class
+                           `hasVariableButtonCount` and `positionSensor`
+                           were each checked against when added — and
+                           after, with the dock sensor both off and on;
+                           the exact generated sed commands for all 7
+                           `#define`s) — then run for real: the generated
+                           sed commands were executed against a copy of
+                           the actual `app_main.cpp` and diffed against
+                           the original, confirming a byte-for-byte match
+                           except the one line deliberately changed.
+                           No headless-Chromium screenshot pass this time
+                           (none was available in this environment) —
+                           the sandboxed HTML-content assertions plus the
+                           real sed-and-diff check were judged sufficient
+                           given the change reuses two already-screenshot-
+                           verified mechanisms (`extraButtons`,
+                           `statusLed`/`positionSensor`) rather than
+                           introducing a new visual shape.
   partitions.csv           same OTA + fctry layout as firmware/light/
   sdkconfig.defaults        same as firmware/light/
 tools/
@@ -3431,12 +3458,43 @@ SECURITY.md               flash encryption / secure boot / signed OTA guidance
    including the real namespace-ambiguity compile error an actual Docker
    build caught and fixed. Build-verified in Docker; not hardware-tested
    (no robot chassis/motor-driver hardware physically available when
-   written). Deliberately NOT yet integrated into `tools/product-wizard/`
-   — see its own repository-layout entry above for exactly why (6 required
-   + 1 optional GPIO field is more than the wizard's existing field shapes
-   have needed to cover at once for any device type so far except
-   firmware/camera/, which is excluded from the wizard entirely for a
-   different, structural reason) — worth a dedicated follow-up pass.
+   written).
+
+   Wizard integration for `firmware/robot-vacuum/` followed as a
+   dedicated pass right after — initially deferred at the time it
+   shipped (6 required + 1 optional GPIO field was more than the
+   wizard's existing field shapes had needed to cover at once for any
+   device type so far except firmware/camera/, which is excluded for a
+   different, structural reason), then completed once its own effort
+   budget: `driver` + a fixed 5-entry `extraButtons` array covers the 4
+   drive-motor pins + vacuum + mop with zero new mechanism (the exact
+   same "fixed set, not a variable count" mode firmware/color-light/'s
+   Green/Blue channels already established), and the optional dock-
+   contact sensor became a new `dockSensor` field — this repo's third
+   parallel copy of the `statusLed`/`positionSensor` single-GPIO
+   checkbox-gated shape, touching every site `positionSensor` itself
+   needed when door-lock added it (enable-check helper, render block,
+   validation, sed command, three summary-row renderers, device-type-
+   switch reset, DOM event listeners) rather than reusing either literal
+   field, since both carry hardcoded, device-type-specific copy that
+   would misdescribe a charging-dock contact. Verified with the same
+   Node.js sandboxed regression-check pattern this wizard's own history
+   already establishes (device-type lookup; `renderConfigureDevice`
+   output containing every field's own label/checkbox; `isProductComplete`
+   both before any prior render — the same regression class
+   `hasVariableButtonCount`'s and `positionSensor`'s own fixes were each
+   checked against — and after, with the dock sensor off and on; the
+   exact generated sed commands for all 7 `#define`s), then confirmed for
+   real: those exact sed commands were run against a copy of the actual
+   `firmware/robot-vacuum/main/app_main.cpp` and diffed against the
+   original, a byte-for-byte match except the one line deliberately
+   changed. No headless-Chromium screenshot pass this time (none was
+   available in this environment) — judged acceptable since this change
+   only reuses two mechanisms (`extraButtons`, `statusLed`/
+   `positionSensor`) already screenshot-verified when they were first
+   built, rather than introducing a new visual shape of its own. See
+   `tools/product-wizard/README.md`'s own updated device-type list and
+   its new paragraph on this addition for the user-facing detail.
 2. Implement Matter **OTA** — partially done. All twenty-two firmware
    types ship `CONFIG_ENABLE_OTA_REQUESTOR=y`, which adds the OTA Requestor
    cluster to the root node endpoint entirely via Kconfig — esp-matter's

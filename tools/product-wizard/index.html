@@ -2129,6 +2129,112 @@ const DEVICE_TYPES = [
       defaultsByModule: { esp32: 4, esp32c2: 4, esp32c3: 4, esp32c5: 4, esp32c6: 4, esp32c61: 4, esp32s3: 4, esp32h2: 4 },
     },
   },
+  {
+    id: "robot-vacuum",
+    name: "Robot Vacuum",
+    desc: "Matter Robotic Vacuum Cleaner: RvcRunMode (Idle/Cleaning/Mapping) drives two independent drive motors for differential steering, RvcCleanMode (Vacuum/Mop/Vacuum & Mop) switches a vacuum motor and a mop pump, and RvcOperationalState handles Pause/Resume/GoHome. No real navigation is implemented — Cleaning/Mapping both just drive forward at a fixed speed, an explicit, documented limitation (there's no camera/LIDAR/bump/cliff sensor assumed to steer with). An optional dock-contact sensor lets GoHome report a real Charging state instead of an optimistic guess. Reference device in firmware/robot-vacuum/.",
+    shortDesc: "2 drive motors + vacuum + mop, no real navigation.",
+    // Matches project(matter_robot_vacuum) in
+    // firmware/robot-vacuum/CMakeLists.txt. Six fixed GPIO fields (driver
+    // + 5 extraButtons) is more than any device type before this one has
+    // needed from the driver/extraButtons shape at once — reuses it
+    // unchanged anyway (same "fixed set, not a variable count" mode
+    // firmware/color-light/'s Green/Blue channels already established:
+    // no buttonCountDefineName on this entry, so all 5 always render and
+    // are always required, no "how many" picker). The optional dock-
+    // contact sensor is a NEW `dockSensor` field — a deliberate parallel
+    // duplicate of `statusLed`/`positionSensor`'s identical single-GPIO
+    // checkbox-gated shape, not a reuse of either literal field, since
+    // both of those carry hardcoded, device-type-specific explanatory
+    // copy (outlet's on/off-mirroring LED text; door-lock's bolt-
+    // position/LockState text) that would misdescribe a dock-charging
+    // contact — same reasoning CLAUDE.md already documents for why
+    // positionSensor itself was a new field rather than a reuse of
+    // statusLed.
+    binName: "matter_robot_vacuum.bin",
+    driverLabel: "Left Motor · Forward",
+    driver: {
+      summary: "Left motor forward · GPIO (digital output)",
+      fieldLabel: "Left motor forward GPIO pin",
+      blockTitle: "Left motor · forward",
+      filePath: "firmware/robot-vacuum/main/app_main.cpp",
+      defineName: "RVC_LEFT_MOTOR_FWD_GPIO",
+      currentGpio: 13,
+      defaultsByModule: { esp32: 13, esp32c2: 13, esp32c3: 13, esp32c5: 13, esp32c6: 13, esp32c61: 13, esp32s3: 13, esp32h2: 13 },
+    },
+    extraButtons: [
+      {
+        label: "Left Motor · Reverse",
+        fieldLabel: "Left motor reverse GPIO pin",
+        blockTitle: "Left motor · reverse",
+        filePath: "firmware/robot-vacuum/main/app_main.cpp",
+        defineName: "RVC_LEFT_MOTOR_REV_GPIO",
+        currentGpio: 14,
+        defaultsByModule: { esp32: 14, esp32c2: 14, esp32c3: 14, esp32c5: 14, esp32c6: 14, esp32c61: 14, esp32s3: 14, esp32h2: 14 },
+      },
+      {
+        label: "Right Motor · Forward",
+        fieldLabel: "Right motor forward GPIO pin",
+        blockTitle: "Right motor · forward",
+        filePath: "firmware/robot-vacuum/main/app_main.cpp",
+        defineName: "RVC_RIGHT_MOTOR_FWD_GPIO",
+        currentGpio: 27,
+        defaultsByModule: { esp32: 27, esp32c2: 27, esp32c3: 27, esp32c5: 27, esp32c6: 27, esp32c61: 27, esp32s3: 27, esp32h2: 27 },
+      },
+      {
+        label: "Right Motor · Reverse",
+        fieldLabel: "Right motor reverse GPIO pin",
+        blockTitle: "Right motor · reverse",
+        filePath: "firmware/robot-vacuum/main/app_main.cpp",
+        defineName: "RVC_RIGHT_MOTOR_REV_GPIO",
+        currentGpio: 26,
+        defaultsByModule: { esp32: 26, esp32c2: 26, esp32c3: 26, esp32c5: 26, esp32c6: 26, esp32c61: 26, esp32s3: 26, esp32h2: 26 },
+      },
+      {
+        label: "Vacuum Motor",
+        fieldLabel: "Vacuum motor GPIO pin",
+        blockTitle: "Vacuum motor · digital output",
+        filePath: "firmware/robot-vacuum/main/app_main.cpp",
+        defineName: "RVC_VACUUM_MOTOR_GPIO",
+        currentGpio: 25,
+        defaultsByModule: { esp32: 25, esp32c2: 25, esp32c3: 25, esp32c5: 25, esp32c6: 25, esp32c61: 25, esp32s3: 25, esp32h2: 25 },
+      },
+      {
+        label: "Mop Pump",
+        fieldLabel: "Mop pump GPIO pin",
+        blockTitle: "Mop pump · digital output (active-LOW relay)",
+        filePath: "firmware/robot-vacuum/main/app_main.cpp",
+        defineName: "RVC_MOP_PUMP_GPIO",
+        currentGpio: 33,
+        defaultsByModule: { esp32: 33, esp32c2: 33, esp32c3: 33, esp32c5: 33, esp32c6: 33, esp32c61: 33, esp32s3: 33, esp32h2: 33 },
+      },
+    ],
+    // Optional — off by default (RVC_DOCK_CONTACT_GPIO ships as
+    // GPIO_NUM_NC). Without it, GoHome reports Docked optimistically as
+    // soon as it stops the drive motors; with it wired, GoHome instead
+    // reports SeekingCharger and waits for the contact to actually be
+    // made before reporting Charging. See dockSensorIsEnabled()'s own
+    // comment above for why this is a new field, not a reuse of
+    // statusLed/positionSensor.
+    dockSensor: {
+      summary: "GPIO (digital input)",
+      fieldLabel: "Dock-contact sensor GPIO pin",
+      blockTitle: "Dock-contact sensor · digital input",
+      filePath: "firmware/robot-vacuum/main/app_main.cpp",
+      defineName: "RVC_DOCK_CONTACT_GPIO",
+      currentGpio: 32,
+      defaultsByModule: { esp32: 32, esp32c2: 32, esp32c3: 32, esp32c5: 32, esp32c6: 32, esp32c61: 32, esp32s3: 32, esp32h2: 32 },
+    },
+    identify: {
+      summary: "GPIO (digital output)",
+      fieldLabel: "Identify LED GPIO pin",
+      blockTitle: "Identify LED · digital output",
+      filePath: "firmware/robot-vacuum/main/app_main.cpp",
+      defineName: "IDENTIFY_LED_GPIO",
+      currentGpio: 2,
+      defaultsByModule: { esp32: 2, esp32c2: 2, esp32c3: 2, esp32c5: 2, esp32c6: 2, esp32c61: 2, esp32s3: 2, esp32h2: 2 },
+    },
+  },
 ];
 
 function findDeviceType(id) {
@@ -2513,6 +2619,15 @@ const DEVICE_TYPE_ICONS = {
     <path d="M37 24h-2.5"/>
     <path d="M11 24h2.5"/>
   </svg>`,
+  // Top-down robot-vacuum silhouette — a round body with a small center
+  // sensor turret (the common real-product look), plus a curved sweep
+  // arc underneath standing in for its own back-and-forth motion —
+  // distinct from every relay/sensor icon above by showing movement.
+  "robot-vacuum": `<svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+    <circle cx="24" cy="21" r="14"/>
+    <circle cx="24" cy="21" r="3"/>
+    <path d="M13 37q11 7 22 0"/>
+  </svg>`,
 };
 
 // `title` becomes each badge's hover tooltip. `zigbee`'s tooltip carries
@@ -2640,10 +2755,20 @@ function positionSensorIsEnabled(p) {
   return p.positionSensorEnabled === true;
 }
 
+// Robot vacuum's optional dock-contact sensor (firmware/robot-vacuum/
+// only) — same single-GPIO, off-by-default, checkbox-gated shape as
+// statusLed/positionSensor above, deliberately duplicated for the same
+// reason positionSensor itself was: its own checkbox/description text
+// (a charging-dock contact, not an on/off-mirroring LED or a bolt-
+// position sensor) is genuinely different wording from either.
+function dockSensorIsEnabled(p) {
+  return p.dockSensorEnabled === true;
+}
+
 // Rotary encoder (firmware/thermostat/ only, so far) — same off-by-default
-// shape as statusLed/positionSensor above, deliberately parallel rather
-// than sharing its render code (see makeRotaryEncoder()'s own comment for
-// why).
+// shape as statusLed/positionSensor/dockSensor above, deliberately
+// parallel rather than sharing its render code (see makeRotaryEncoder()'s
+// own comment for why).
 function rotaryEncoderIsEnabled(p) {
   return p.rotaryEncoderEnabled === true;
 }
@@ -2655,6 +2780,7 @@ function renderConfigureDevice(p) {
   const identify = deviceType ? deviceType.identify : null;
   const statusLed = deviceType ? deviceType.statusLed : null;
   const positionSensor = deviceType ? deviceType.positionSensor : null;
+  const dockSensor = deviceType ? deviceType.dockSensor : null;
   const rotaryEncoder = deviceType ? deviceType.rotaryEncoder : null;
   const componentOptions = deviceType ? deviceType.componentOptions : null;
   const extraButtons = deviceType ? deviceType.extraButtons : null;
@@ -2668,6 +2794,8 @@ function renderConfigureDevice(p) {
   const statusLedOn = statusLed ? statusLedIsEnabled(p) : false;
   const defaultPositionSensorGpio = positionSensor ? (positionSensor.defaultsByModule[p.target] != null ? positionSensor.defaultsByModule[p.target] : 16) : 16;
   const positionSensorOn = positionSensor ? positionSensorIsEnabled(p) : false;
+  const defaultDockSensorGpio = dockSensor ? (dockSensor.defaultsByModule[p.target] != null ? dockSensor.defaultsByModule[p.target] : 32) : 32;
+  const dockSensorOn = dockSensor ? dockSensorIsEnabled(p) : false;
   const rotaryEncoderOn = rotaryEncoder ? rotaryEncoderIsEnabled(p) : false;
   if (rotaryEncoder) {
     if (typeof p.rotaryEncoderPins !== "object" || p.rotaryEncoderPins == null) p.rotaryEncoderPins = {};
@@ -2770,13 +2898,15 @@ function renderConfigureDevice(p) {
   const statusLedGpioValid = !statusLedOn || (Number.isInteger(p.statusLedGpioPin) && p.statusLedGpioPin >= 0);
   if (positionSensor && p.positionSensorGpioPin == null) p.positionSensorGpioPin = defaultPositionSensorGpio;
   const positionSensorGpioValid = !positionSensorOn || (Number.isInteger(p.positionSensorGpioPin) && p.positionSensorGpioPin >= 0);
+  if (dockSensor && p.dockSensorGpioPin == null) p.dockSensorGpioPin = defaultDockSensorGpio;
+  const dockSensorGpioValid = !dockSensorOn || (Number.isInteger(p.dockSensorGpioPin) && p.dockSensorGpioPin >= 0);
   // numberField (currently just the addressable light's pixel count): a
   // plain integer #define, not a GPIO — validated against its own
   // min/max rather than the GPIO fields' "0 or higher" rule.
   if (numberField && p[numberField.key] == null) p[numberField.key] = numberField.defaultValue;
   const numberFieldValid = !numberField ||
     (Number.isInteger(p[numberField.key]) && p[numberField.key] >= numberField.min && p[numberField.key] <= numberField.max);
-  const allValid = gpioValid && secondaryGpioValid && identifyGpioValid && extraButtonsValid && statusLedGpioValid && positionSensorGpioValid && pickerPinsValid && numberFieldValid && rotaryEncoderValid;
+  const allValid = gpioValid && secondaryGpioValid && identifyGpioValid && extraButtonsValid && statusLedGpioValid && positionSensorGpioValid && dockSensorGpioValid && pickerPinsValid && numberFieldValid && rotaryEncoderValid;
 
   // Component-aware field labels: falls back to the device type's own
   // static text when there's no componentOptions list (every device type
@@ -3005,6 +3135,36 @@ function renderConfigureDevice(p) {
           </div>
         ` : ""}
 
+        ${dockSensor ? `
+          <div class="driver-block">
+            <label class="checkbox-label" for="dock-sensor-enabled">
+              <input type="checkbox" id="dock-sensor-enabled" ${dockSensorOn ? "checked" : ""}>
+              <h3 style="display:inline; margin:0;">Add a Dock-Contact Sensor</h3>
+            </label>
+            <p class="field-note" style="margin-top:4px;">
+              An optional pair of charging contacts confirming the robot
+              actually reached its dock, instead of the firmware just
+              assuming so. Off by default — without it, a GoHome command
+              stops the drive motors and optimistically reports Docked
+              right away; with it wired, GoHome instead reports
+              SeekingCharger and waits for the contact to actually be made
+              before reporting Charging. The firmware ships this pin
+              disabled (<code>GPIO_NUM_NC</code>) until you tick this and
+              set a real pin.
+            </p>
+
+            ${dockSensorOn ? `
+              <label class="field-label" for="dock-sensor-gpio-pin" style="margin-top:12px;">${escapeHtml(dockSensor.fieldLabel)}</label>
+              <input type="number" id="dock-sensor-gpio-pin" min="0" max="48" value="${p.dockSensorGpioPin}">
+              <div class="field-error">${dockSensorGpioValid ? "" : "Enter a valid GPIO number (0 or higher)."}</div>
+              <p class="field-note">
+                Adjust to match your board — GPIO ${defaultDockSensorGpio}
+                is a common default for ${escapeHtml(moduleName(p.target))} devkits, not a guarantee for yours.
+              </p>
+            ` : ""}
+          </div>
+        ` : ""}
+
         ${rotaryEncoder ? `
           <div class="driver-block">
             <label class="checkbox-label" for="rotary-encoder-enabled">
@@ -3076,7 +3236,8 @@ function renderConfigureDevice(p) {
           <code>${escapeHtml(secondary.defineName)}</code>${secondaryFieldNeeded ? "" : " (kept at its default — unused by this sensor)"}` : ""}${numberField ? `,
           <code>${escapeHtml(numberField.defineName)}</code>` : ""}${statusLedOn ? `,
           <code>${escapeHtml(statusLed.defineName)}</code>` : ""}${positionSensorOn ? `,
-          <code>${escapeHtml(positionSensor.defineName)}</code>` : ""}${rotaryEncoderOn ? rotaryEncoder.pins.map((pin) => `,
+          <code>${escapeHtml(positionSensor.defineName)}</code>` : ""}${dockSensorOn ? `,
+          <code>${escapeHtml(dockSensor.defineName)}</code>` : ""}${rotaryEncoderOn ? rotaryEncoder.pins.map((pin) => `,
           <code>${escapeHtml(pin.defineName)}</code>`).join("") : ""}${identifyOn ? `,
           <code>${escapeHtml(identify ? identify.defineName : "IDENTIFY_LED_GPIO")}</code>` : ""}${activePickerPins.map(({ pin }) => `,
           <code>${escapeHtml(pin.defineName)}</code>`).join("")}) happens
@@ -3137,6 +3298,12 @@ function renderConfigureDevice(p) {
           <div class="summary-row">
             <div class="summary-label">POSITION SENSOR</div>
             <div class="summary-detail">${positionSensorOn ? `IO pin: GPIO ${positionSensorGpioValid ? p.positionSensorGpioPin : "?"}` : "Not added"}</div>
+          </div>
+        ` : ""}
+        ${dockSensor ? `
+          <div class="summary-row">
+            <div class="summary-label">DOCK SENSOR</div>
+            <div class="summary-detail">${dockSensorOn ? `IO pin: GPIO ${dockSensorGpioValid ? p.dockSensorGpioPin : "?"}` : "Not added"}</div>
           </div>
         ` : ""}
         ${rotaryEncoder ? `
@@ -3315,6 +3482,8 @@ function isProductComplete(p) {
     (Number.isInteger(p.statusLedGpioPin) && p.statusLedGpioPin >= 0);
   const positionSensorOk = !(deviceType && deviceType.positionSensor) || !positionSensorIsEnabled(p) ||
     (Number.isInteger(p.positionSensorGpioPin) && p.positionSensorGpioPin >= 0);
+  const dockSensorOk = !(deviceType && deviceType.dockSensor) || !dockSensorIsEnabled(p) ||
+    (Number.isInteger(p.dockSensorGpioPin) && p.dockSensorGpioPin >= 0);
   const rotaryEncoder = deviceType ? deviceType.rotaryEncoder : null;
   const rotaryEncoderOk = !rotaryEncoder || !rotaryEncoderIsEnabled(p) ||
     rotaryEncoder.pins.every((pin) =>
@@ -3344,7 +3513,7 @@ function isProductComplete(p) {
     (Number.isInteger(p[numberField.key]) && p[numberField.key] >= numberField.min && p[numberField.key] <= numberField.max);
   return !!p.deviceType && !!p.target &&
     Number.isInteger(p.gpioPin) && p.gpioPin >= 0 &&
-    secondaryOk && identifyOk && buttonsOk && statusLedOk && positionSensorOk && rotaryEncoderOk && pickerPinsOk && numberFieldOk;
+    secondaryOk && identifyOk && buttonsOk && statusLedOk && positionSensorOk && dockSensorOk && rotaryEncoderOk && pickerPinsOk && numberFieldOk;
 }
 
 function buildConfigPreview(p) {
@@ -3506,6 +3675,15 @@ function renderCustomiseReview(p) {
             <button class="link" data-goto-step="2">Edit</button>
           </div>
         ` : ""}
+        ${findDeviceType(p.deviceType) && findDeviceType(p.deviceType).dockSensor ? `
+          <div class="review-row">
+            <div>
+              <div class="summary-label">DOCK SENSOR</div>
+              <div class="summary-value">${dockSensorIsEnabled(p) ? `GPIO ${p.dockSensorGpioPin != null ? p.dockSensorGpioPin : "?"}` : "Not added"}</div>
+            </div>
+            <button class="link" data-goto-step="2">Edit</button>
+          </div>
+        ` : ""}
         ${(() => {
           const dt = findDeviceType(p.deviceType);
           if (!dt || !dt.rotaryEncoder) return "";
@@ -3613,7 +3791,7 @@ function renderGenerateFirmware(p) {
       <p class="step-hint">
         For "${escapeHtml(p.name)}" —
         <strong>${escapeHtml(deviceTypeName(p.deviceType))}</strong>${selectedSensor ? ` (<strong>${escapeHtml(selectedSensor.name)}</strong>)` : ""} on
-        <strong>${escapeHtml(moduleName(p.target))}</strong>, GPIO ${p.gpioPin}${extraButtonGpios.length ? ` (+ ${extraButtonNoun}${extraButtonGpios.length === 1 ? "" : "s"} on GPIO ${extraButtonGpios.join(", ")})` : ""}${deviceType && deviceType.secondary ? ` (${escapeHtml((deviceType.secondary.label || "secondary").toLowerCase())} on GPIO ${p.secondaryGpioPin})` : ""}${deviceType && deviceType.statusLed && statusLedIsEnabled(p) ? ` (status LED on GPIO ${p.statusLedGpioPin})` : ""}${deviceType && deviceType.positionSensor && positionSensorIsEnabled(p) ? ` (position sensor on GPIO ${p.positionSensorGpioPin})` : ""}${identifyIsEnabled(p) ? ` (identify LED on GPIO ${p.identifyGpioPin})` : ""}.
+        <strong>${escapeHtml(moduleName(p.target))}</strong>, GPIO ${p.gpioPin}${extraButtonGpios.length ? ` (+ ${extraButtonNoun}${extraButtonGpios.length === 1 ? "" : "s"} on GPIO ${extraButtonGpios.join(", ")})` : ""}${deviceType && deviceType.secondary ? ` (${escapeHtml((deviceType.secondary.label || "secondary").toLowerCase())} on GPIO ${p.secondaryGpioPin})` : ""}${deviceType && deviceType.statusLed && statusLedIsEnabled(p) ? ` (status LED on GPIO ${p.statusLedGpioPin})` : ""}${deviceType && deviceType.positionSensor && positionSensorIsEnabled(p) ? ` (position sensor on GPIO ${p.positionSensorGpioPin})` : ""}${deviceType && deviceType.dockSensor && dockSensorIsEnabled(p) ? ` (dock sensor on GPIO ${p.dockSensorGpioPin})` : ""}${identifyIsEnabled(p) ? ` (identify LED on GPIO ${p.identifyGpioPin})` : ""}.
         This is the exact two-step flow validated end to end on real
         hardware for this device type: build, then flash. Nothing runs
         automatically — you paste and run each command yourself.
@@ -3796,6 +3974,7 @@ function buildSedCommands(p) {
   const extraPickers = deviceType ? deviceType.extraPickers : null;
   const statusLed = deviceType ? deviceType.statusLed : null;
   const positionSensor = deviceType ? deviceType.positionSensor : null;
+  const dockSensor = deviceType ? deviceType.dockSensor : null;
   const filePath = driver ? driver.filePath.split("/").slice(2).join("/") : "main/app_main.cpp"; // relative to firmwareDir
   const cmds = [];
   if (componentOptions && deviceType.componentDefineName) {
@@ -3878,9 +4057,14 @@ function buildSedCommands(p) {
     // GPIO_NUM_NC by default, not a numeric value.
     cmds.push(`sed -i 's/^#define ${positionSensor.defineName} .*/#define ${positionSensor.defineName} GPIO_NUM_${p.positionSensorGpioPin}/' ${filePath}`);
   }
+  if (dockSensor && dockSensorIsEnabled(p)) {
+    // Same broad `.*` match as statusLed/positionSensor above — this one
+    // also ships as GPIO_NUM_NC by default, not a numeric value.
+    cmds.push(`sed -i 's/^#define ${dockSensor.defineName} .*/#define ${dockSensor.defineName} GPIO_NUM_${p.dockSensorGpioPin}/' ${filePath}`);
+  }
   if (deviceType && deviceType.rotaryEncoder && rotaryEncoderIsEnabled(p)) {
-    // Same broad `.*` match as statusLed/positionSensor above — all three
-    // pins ship as GPIO_NUM_NC by default.
+    // Same broad `.*` match as statusLed/positionSensor/dockSensor above —
+    // all pins ship as GPIO_NUM_NC by default.
     deviceType.rotaryEncoder.pins.forEach((pin) => {
       const gpio = p.rotaryEncoderPins && p.rotaryEncoderPins[pin.defineName] != null
         ? p.rotaryEncoderPins[pin.defineName]
@@ -4115,6 +4299,10 @@ function bindEvents() {
         // statusLed above.
         state.currentProduct.positionSensorGpioPin = null;
         state.currentProduct.positionSensorEnabled = null;
+        // dockSensor (robot-vacuum only): same stale-GPIO risk as
+        // statusLed/positionSensor above.
+        state.currentProduct.dockSensorGpioPin = null;
+        state.currentProduct.dockSensorEnabled = null;
         // rotaryEncoder (thermostat only, so far): same stale-value risk.
         state.currentProduct.rotaryEncoderPins = null;
         state.currentProduct.rotaryEncoderEnabled = null;
@@ -4254,6 +4442,26 @@ function bindEvents() {
   if (positionSensorEnabledInput) {
     positionSensorEnabledInput.addEventListener("change", () => {
       state.currentProduct.positionSensorEnabled = positionSensorEnabledInput.checked;
+      saveProducts();
+      render();
+    });
+  }
+
+  const dockSensorGpioPinInput = document.getElementById("dock-sensor-gpio-pin");
+  if (dockSensorGpioPinInput) {
+    dockSensorGpioPinInput.addEventListener("input", () => {
+      const raw = dockSensorGpioPinInput.value;
+      state.currentProduct.dockSensorGpioPin = raw === "" ? null : parseInt(raw, 10);
+      saveProducts();
+      render();
+      document.getElementById("dock-sensor-gpio-pin").focus();
+    });
+  }
+
+  const dockSensorEnabledInput = document.getElementById("dock-sensor-enabled");
+  if (dockSensorEnabledInput) {
+    dockSensorEnabledInput.addEventListener("change", () => {
+      state.currentProduct.dockSensorEnabled = dockSensorEnabledInput.checked;
       saveProducts();
       render();
     });

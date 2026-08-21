@@ -31,11 +31,19 @@ open tools/product-wizard/index.html
   (`firmware/window-covering/`), "Color Light"
   (`firmware/color-light/`), "Addressable LED Strip"
   (`firmware/addressable-light/`), "Thermostat"
-  (`firmware/thermostat/`), or "Door Lock" (`firmware/door-lock/`). All
-  twelve are real, buildable firmware, not just UI placeholders
-  (`firmware/camera/`, this repo's thirteenth device type, is
-  deliberately NOT offered here — see its own section further down for
-  why). Each card has its own hand-drawn
+  (`firmware/thermostat/`), "Door Lock" (`firmware/door-lock/`),
+  "Smoke/CO Alarm" (`firmware/smoke-co-alarm/`), "Occupancy Sensor"
+  (`firmware/occupancy-sensor/`), "Fan" (`firmware/fan/`), "Air Quality
+  Sensor" (`firmware/air-quality-sensor/`), "Water Leak Detector"
+  (`firmware/water-leak-detector/`), "Air Purifier"
+  (`firmware/air-purifier/`), "Water Valve" (`firmware/valve/`),
+  "Pressure Sensor" (`firmware/pressure-sensor/`), or "Robot Vacuum"
+  (`firmware/robot-vacuum/`). All twenty-one are real, buildable
+  firmware, not just UI placeholders (`firmware/camera/`, this repo's
+  twelfth device type, is deliberately NOT offered here — see its own
+  section further down for why: its two-chip/two-firmware/external-SDK
+  shape doesn't fit this wizard's one-device-type/one-chip/one-firmware
+  data model at all). Each card has its own hand-drawn
   line-art icon (`DEVICE_TYPE_ICONS` in `index.html`), in the spirit of
   Apple's own SF Symbols/HomeKit accessory icons — not the actual Apple
   assets (those are proprietary), but drawn to read the same way: light
@@ -729,6 +737,38 @@ build-verified across all 3 sensor configs (MQ2+MQ7, MQ2-only, MQ7-only);
 not yet hardware-tested — no MQ-2/MQ-7 module was physically available
 when this was built.
 
+(`firmware/occupancy-sensor/`, `firmware/fan/`, `firmware/air-quality-sensor/`,
+`firmware/water-leak-detector/`, `firmware/air-purifier/`, `firmware/valve/`,
+and `firmware/pressure-sensor/` all followed smoke-co-alarm and are fully
+wizard-integrated too — each reused an existing mechanism from a device
+type already documented above with no new wizard architecture, so none
+got its own paragraph here; see CLAUDE.md's own "Open next steps" for
+each one's individual detail.)
+
+The wizard's most recent addition, `firmware/robot-vacuum/` (Matter
+Robotic Vacuum Cleaner), needed real new wizard surface for the first
+time since door-lock's `positionSensor`: six required GPIO fields (the
+main `driver` plus a fixed 5-entry `extraButtons` array — reusing
+firmware/color-light/'s "fixed set, not a variable count" mode of that
+same mechanism unchanged, no new code) plus one optional field, a new
+`dockSensor`, for the dock-contact sensor. `dockSensor` is a deliberate
+third parallel copy of `statusLed`/`positionSensor`'s identical single-
+GPIO checkbox-gated shape (helper function, render block, validation,
+sed command, summary rows, reset-on-device-type-switch, event listeners
+— all touched, matching the same sites `positionSensor` itself needed
+when it was added), not a reuse of either literal field, since both
+carry hardcoded, device-type-specific copy that would misdescribe a
+charging-dock contact. Verified with the same Node.js sandboxed
+regression-check pattern used throughout this file — device-type lookup,
+`renderConfigureDevice` output containing every field's own label/
+checkbox, `isProductComplete` before any render (the same regression
+class `hasVariableButtonCount` and `positionSensor` were each checked
+against when added) and after, with the dock sensor both off and on, and
+the exact generated sed commands for all 6 required `#define`s plus
+`RVC_DOCK_CONTACT_GPIO` — then run for real: the exact sed commands were
+executed against a copy of the actual `firmware/robot-vacuum/main/
+app_main.cpp` and diffed against the original, confirming a byte-for-byte
+match except the one line deliberately changed. All checks passed.
 
 ## Known limitations
 
