@@ -37,8 +37,9 @@ open tools/product-wizard/index.html
   Sensor" (`firmware/air-quality-sensor/`), "Water Leak Detector"
   (`firmware/water-leak-detector/`), "Air Purifier"
   (`firmware/air-purifier/`), "Water Valve" (`firmware/valve/`),
-  "Pressure Sensor" (`firmware/pressure-sensor/`), or "Robot Vacuum"
-  (`firmware/robot-vacuum/`). All twenty-one are real, buildable
+  "Pressure Sensor" (`firmware/pressure-sensor/`), "Robot Vacuum"
+  (`firmware/robot-vacuum/`), or "Extractor Hood"
+  (`firmware/extractor-hood/`). All twenty-two are real, buildable
   firmware, not just UI placeholders (`firmware/camera/`, this repo's
   twelfth device type, is deliberately NOT offered here — see its own
   section further down for why: its two-chip/two-firmware/external-SDK
@@ -769,6 +770,19 @@ the exact generated sed commands for all 6 required `#define`s plus
 executed against a copy of the actual `firmware/robot-vacuum/main/
 app_main.cpp` and diffed against the original, confirming a byte-for-byte
 match except the one line deliberately changed. All checks passed.
+
+`firmware/extractor-hood/` followed as a much smaller addition — the
+closest sibling to `firmware/air-purifier/` in the firmware itself, and
+needing zero new wizard mechanism at all: a single `driver` (fan PWM)
+GPIO plus `identify`, the exact same shape `firmware/fan/`'s and
+`firmware/air-purifier/`'s own entries already use. Verified the same
+way: `findDeviceType` lookup, `renderConfigureDevice` output containing
+both field labels, `isProductComplete` before and after render, the
+exact generated sed commands for `HOOD_FAN_PWM_GPIO`/`IDENTIFY_LED_GPIO`
+— then those exact commands run for real against a copy of the actual
+`app_main.cpp` and diffed against the original, a byte-for-byte match
+(both GPIOs already shipped at their wizard defaults, so this run
+confirmed a correct no-op rather than a rewrite). All checks passed.
 
 ## Known limitations
 

@@ -2251,6 +2251,39 @@ const DEVICE_TYPES = [
       defaultsByModule: { esp32: 2, esp32c2: 2, esp32c3: 2, esp32c5: 2, esp32c6: 2, esp32c61: 2, esp32s3: 2, esp32h2: 2 },
     },
   },
+  {
+    id: "extractor-hood",
+    name: "Extractor Hood",
+    desc: "Matter extractor hood: the same PWM fan speed control as firmware/fan/ and firmware/air-purifier/, plus HEPA and Activated Carbon Filter Monitoring clusters — the HEPA cluster is knowingly repurposed here to represent the hood's actual grease filter, since Matter has no dedicated grease-filter cluster. A time-based percent-remaining estimate (not a real sensor reading), same technique as the air purifier's own filter life. Reference device in firmware/extractor-hood/.",
+    shortDesc: "Variable-speed fan (PWM) + grease/carbon filter life.",
+    // Matches project(matter_extractor_hood) in
+    // firmware/extractor-hood/CMakeLists.txt. Same single-GPIO-plus-
+    // identify shape as firmware/fan/'s and firmware/air-purifier/'s own
+    // entries — the filter-monitoring clusters have no GPIOs of their
+    // own (a time-based software estimate), so no extra fields are
+    // needed. Unlike those two files, this one's own #define is
+    // HOOD_FAN_PWM_GPIO, not FAN_PWM_GPIO — renamed in app_main.cpp for
+    // clarity now that this repo has three PWM-fan device types.
+    binName: "matter_extractor_hood.bin",
+    driver: {
+      summary: "GPIO (PWM output, LEDC)",
+      fieldLabel: "Fan PWM GPIO pin",
+      blockTitle: "Fan PWM · MOSFET/speed-controller output (LEDC)",
+      filePath: "firmware/extractor-hood/main/app_main.cpp",
+      defineName: "HOOD_FAN_PWM_GPIO",
+      currentGpio: 2,
+      defaultsByModule: { esp32: 2, esp32c2: 2, esp32c3: 8, esp32c5: 2, esp32c6: 8, esp32c61: 2, esp32s3: 2, esp32h2: 8 },
+    },
+    identify: {
+      summary: "GPIO (digital output)",
+      fieldLabel: "Identify LED GPIO pin",
+      blockTitle: "Identify LED · digital output",
+      filePath: "firmware/extractor-hood/main/app_main.cpp",
+      defineName: "IDENTIFY_LED_GPIO",
+      currentGpio: 4,
+      defaultsByModule: { esp32: 4, esp32c2: 4, esp32c3: 4, esp32c5: 4, esp32c6: 4, esp32c61: 4, esp32s3: 4, esp32h2: 4 },
+    },
+  },
 ];
 
 function findDeviceType(id) {
@@ -2643,6 +2676,18 @@ const DEVICE_TYPE_ICONS = {
     <circle cx="24" cy="21" r="14"/>
     <circle cx="24" cy="21" r="3"/>
     <path d="M13 37q11 7 22 0"/>
+  </svg>`,
+  // A canopy range-hood silhouette (trapezoid, wide at the stovetop end,
+  // narrow into a short duct stub above) with wavy steam/smoke lines
+  // rising up into it from below — distinct from fan/air-purifier's own
+  // circular blade motifs by showing what's actually being extracted,
+  // the one visual idea unique to this device type.
+  "extractor-hood": `<svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M8 20 L18 7 H30 L40 20 Z"/>
+    <path d="M21 7V3H27V7"/>
+    <path d="M16 38c3-4-3-8 0-12"/>
+    <path d="M24 38c3-4-3-8 0-12"/>
+    <path d="M32 38c3-4-3-8 0-12"/>
   </svg>`,
 };
 

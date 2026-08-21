@@ -3583,11 +3583,25 @@ SECURITY.md               flash encryption / secure boot / signed OTA guidance
    type XML directly, which offers no alternative. See its own
    repository-layout entry above for the complete detail. Build-verified
    in Docker (clean first attempt); not hardware-tested (no PWM fan/
-   MOSFET driver board physically available when written). Not yet
-   integrated into `tools/product-wizard/` — planned as an immediate
-   follow-up (unlike firmware/robot-vacuum/'s, this one needs no new
-   wizard mechanism at all: a single `driver` GPIO + `identify`, the
-   exact same shape firmware/fan/'s own entry already uses).
+   MOSFET driver board physically available when written).
+
+   Integrated into `tools/product-wizard/` immediately afterward — as
+   expected, this one needed zero new wizard mechanism (unlike firmware/
+   robot-vacuum/'s own new `dockSensor` field): a single `driver` (fan
+   PWM) GPIO plus `identify`, the exact same shape firmware/fan/'s and
+   firmware/air-purifier/'s own entries already use, plus a new hand-
+   drawn icon (a canopy hood silhouette with steam/smoke rising into it
+   — the one visual idea unique to this device type, distinct from fan/
+   air-purifier's own circular blade motifs). Verified the same way as
+   every wizard change this session: device-type lookup,
+   `renderConfigureDevice` output containing both field labels,
+   `isProductComplete` before and after render, and the exact generated
+   sed commands for `HOOD_FAN_PWM_GPIO`/`IDENTIFY_LED_GPIO` — then those
+   exact commands run for real against a copy of the actual `app_main.cpp`
+   and diffed against the original, a byte-for-byte match (both GPIOs
+   already shipped at their wizard defaults, confirming a correct no-op
+   rather than a rewrite). See `tools/product-wizard/README.md`'s own
+   updated device-type list and its new paragraph on this addition.
 2. Implement Matter **OTA** — partially done. All twenty-three firmware
    types ship `CONFIG_ENABLE_OTA_REQUESTOR=y`, which adds the OTA Requestor
    cluster to the root node endpoint entirely via Kconfig — esp-matter's
