@@ -2433,6 +2433,72 @@ firmware/robot-vacuum/     Robotic Vacuum Cleaner (RVC) — twenty-second
                            introducing a new visual shape.
   partitions.csv           same OTA + fctry layout as firmware/light/
   sdkconfig.defaults        same as firmware/light/
+firmware/extractor-hood/  Extractor Hood — twenty-third device type, and the
+                           closest sibling to firmware/air-purifier/ in this
+                           repo: the same FanControl Delegate +
+                           HepaFilterMonitoring/
+                           ActivatedCarbonFilterMonitoring integration,
+                           reused almost verbatim, for a kitchen range hood
+                           instead of a room air purifier.
+  main/app_main.cpp        `endpoint::extractor_hood::create()` (device
+                           type 0x007A) confirmed complete/ready-to-use —
+                           FanControl only, via `common::create<T>()`
+                           (auto-Descriptor) — matches the CSA's own
+                           data_model/1.6/device_types/ExtractorHood.xml
+                           exactly: FanControl is the ONLY
+                           `<mandatoryConform/>` cluster — Identify, HEPA
+                           Filter Monitoring, and Activated Carbon Filter
+                           Monitoring are all `<optionalConform/>`. First
+                           device type in this repo where Identify itself
+                           is optional per spec rather than mandatory
+                           (confirmed directly in the XML) —
+                           `extractor_hood::add()` correspondingly does
+                           NOT call `identify::create()` at all, unlike
+                           every other top-level helper used so far. Added
+                           anyway, via `cluster::identify::create()` on the
+                           endpoint afterwards — every other device type
+                           here ships an Identify LED, and nothing in the
+                           spec disallows one here. The XML also
+                           explicitly `<disallowConform/>`s three
+                           FanControl features on this device type —
+                           Rocking (RCK), Wind (WND), and AirflowDirection
+                           (DIR) — zero code impact (neither firmware/fan/
+                           nor firmware/air-purifier/ implement any of
+                           those three anyway), but a real, checked spec
+                           constraint worth recording rather than a
+                           coincidence. FanControl itself, the Delegate-
+                           registration-after-`start()` pattern, the LEDC
+                           PWM output, and the filter-monitoring clusters'
+                           `feature::condition::add()` + `ResourceMonitoring
+                           ::GetClusterInstance()` integration are all
+                           reused near-verbatim from firmware/air-purifier/
+                           — see that file's own header comment for the
+                           full detail on every one of those, including
+                           the real Docker build failures and ordering
+                           bugs that established each pattern in the first
+                           place. The one real, deliberate difference:
+                           "HEPA Filter Monitoring" (cluster 0x0071) is
+                           repurposed here to represent the hood's actual
+                           grease filter (typically a washable metal mesh/
+                           baffle filter, not literally HEPA media) since
+                           Matter has no dedicated grease-filter cluster —
+                           confirmed by reading the device type XML
+                           directly, which offers no alternative. Both
+                           filter clusters' default life figures were
+                           adjusted for what a range hood's own filters
+                           actually are rather than reused from air-
+                           purifier's air-purifier-specific figures:
+                           EXTRACTOR_HOOD_GREASE_FILTER_LIFE_HOURS (100h)
+                           and EXTRACTOR_HOOD_CARBON_FILTER_LIFE_HOURS
+                           (200h) — same "adjustable threshold, not a
+                           calibrated reading" precedent firmware/
+                           smoke-co-alarm/'s and firmware/air-purifier/'s
+                           own filter-life figures already establish.
+                           Build-verified in Docker (clean first attempt);
+                           not hardware-tested (no PWM fan/MOSFET driver
+                           board physically available when written).
+  partitions.csv           same OTA + fctry layout as firmware/light/
+  sdkconfig.defaults        same as firmware/light/
 tools/
   dev.sh                  opens the Docker dev environment
   gen_factory.sh          local QR + factory partition generator
@@ -3495,7 +3561,34 @@ SECURITY.md               flash encryption / secure boot / signed OTA guidance
    built, rather than introducing a new visual shape of its own. See
    `tools/product-wizard/README.md`'s own updated device-type list and
    its new paragraph on this addition for the user-facing detail.
-2. Implement Matter **OTA** — partially done. All twenty-two firmware
+
+   A twenty-third device type, `firmware/extractor-hood/` (Matter
+   Extractor Hood), followed — the user's choice from a short
+   AskUserQuestion list (this device type had already come up twice
+   before as an unchosen option, alongside firmware/pressure-sensor/'s
+   and firmware/robot-vacuum/'s own AskUserQuestion lists). The closest
+   sibling to firmware/air-purifier/ in this repo: same FanControl
+   Delegate, same LEDC PWM output, same HepaFilterMonitoring/
+   ActivatedCarbonFilterMonitoring integration via `feature::
+   condition::add()` + `ResourceMonitoring::GetClusterInstance()`, all
+   reused near-verbatim. Confirmed directly against the CSA's own
+   ExtractorHood.xml that FanControl is this device type's ONLY
+   mandatory cluster — Identify itself is merely optional here (the
+   first device type in this repo where that's true), so
+   `endpoint::extractor_hood::create()` doesn't wire it in automatically;
+   added onto the endpoint afterward anyway, same as every other device
+   type here ships one. "HEPA Filter Monitoring" is knowingly repurposed
+   to represent the hood's actual grease filter, since Matter has no
+   dedicated grease-filter cluster — confirmed by reading the device
+   type XML directly, which offers no alternative. See its own
+   repository-layout entry above for the complete detail. Build-verified
+   in Docker (clean first attempt); not hardware-tested (no PWM fan/
+   MOSFET driver board physically available when written). Not yet
+   integrated into `tools/product-wizard/` — planned as an immediate
+   follow-up (unlike firmware/robot-vacuum/'s, this one needs no new
+   wizard mechanism at all: a single `driver` GPIO + `identify`, the
+   exact same shape firmware/fan/'s own entry already uses).
+2. Implement Matter **OTA** — partially done. All twenty-three firmware
    types ship `CONFIG_ENABLE_OTA_REQUESTOR=y`, which adds the OTA Requestor
    cluster to the root node endpoint entirely via Kconfig — esp-matter's
    own core startup (`esp_matter_core.cpp`) calls
@@ -3572,7 +3665,7 @@ SECURITY.md               flash encryption / secure boot / signed OTA guidance
    later in `app_main()`, after `esp_matter::start()` has completed.
 
    Quick-power-cycle factory reset is Docker build-verified across all
-   twenty-two device types — not yet hardware-tested. The wizard
+   twenty-three device types — not yet hardware-tested. The wizard
    (`tools/product-wizard/`) has a static "Factory reset" info box
    rendered directly under the Configuration summary sidebar on every
    device type (wrapped together in a `.config-sidebar-stack` flex
