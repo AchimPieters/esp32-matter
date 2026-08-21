@@ -4,6 +4,12 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>esp32-matter — Product Wizard</title>
+<!-- StudioPieters brand mark, base64'd inline so this stays a single
+     self-contained file with no external asset to lose track of — same
+     "no build step" philosophy as the rest of this wizard. Also reused
+     as the header brand mark below (raw <svg>, not this data URI, so it
+     can be styled/colored via CSS in one place). -->
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml;base64,PD94bWwgdmVyc2lvbj0iMS4wIiBlbmNvZGluZz0iVVRGLTgiPz4KPHN2ZyBpZD0iTGF5ZXJfMSIgZGF0YS1uYW1lPSJMYXllciAxIiB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxOS4xNCAzOC4yOSI+CiAgPGRlZnM+CiAgICA8c3R5bGU+CiAgICAgIC5jbHMtMSB7CiAgICAgICAgZmlsbDogI2NlYmI4ODsKICAgICAgfQogICAgPC9zdHlsZT4KICA8L2RlZnM+CiAgPHBhdGggY2xhc3M9ImNscy0xIiBkPSJNMTkuMTQsMHYzOC4yOUgwdi04LjEzYzYuMDgsMCwxMS4wMS00LjkzLDExLjAxLTExLjAyUzYuMDgsOC4xMywwLDguMTNWMGgxOS4xNFoiLz4KPC9zdmc+">
 <style>
   :root {
     --blue: #2563eb;
@@ -32,6 +38,13 @@
     display: flex;
     align-items: center;
     gap: 10px;
+  }
+
+  header.topbar .brand-mark {
+    height: 26px;
+    width: auto;
+    flex-shrink: 0;
+    fill: #cebb88;
   }
 
   header.topbar .logo {
@@ -778,6 +791,9 @@
 <body>
 
 <header class="topbar">
+  <svg class="brand-mark" viewBox="0 0 19.14 38.29" role="img" aria-label="StudioPieters">
+    <path d="M19.14,0v38.29H0v-8.13c6.08,0,11.01-4.93,11.01-11.02S6.08,8.13,0,8.13V0h19.14Z"/>
+  </svg>
   <div class="logo">esp32-<span>matter</span></div>
   <div class="tagline">Product Wizard — local, offline, no cloud</div>
 </header>
