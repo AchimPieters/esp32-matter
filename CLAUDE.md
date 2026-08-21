@@ -2166,6 +2166,246 @@ firmware/pressure-sensor/  Pressure Sensor — twenty-first device type. The
                            available when written).
   partitions.csv           same OTA + fctry layout as firmware/light/
   sdkconfig.defaults        same as firmware/light/
+firmware/robot-vacuum/     Robotic Vacuum Cleaner (RVC) — twenty-second
+                           device type, and this repo's biggest cluster-
+                           integration surface so far: three separate
+                           command-handling clusters on one endpoint
+                           (RvcRunMode, RvcCleanMode, RvcOperationalState),
+                           two different SDK integration mechanisms for
+                           them, and a genuine (if intentionally simple)
+                           mobile actuator — two independent drive motors —
+                           instead of a single relay/PWM output.
+  main/app_main.cpp        `endpoint::robotic_vacuum_cleaner::create()`
+                           (device type 0x0074) confirmed complete/ready-
+                           to-use — Identify + RvcRunMode + RvcOperational
+                           State (with the mandatory OperationCompletion
+                           event pre-registered), auto-Descriptor via
+                           `common::create<T>()` — matches the CSA's own
+                           data_model/1.6/device_types/
+                           RoboticVacuumCleaner.xml exactly (those two
+                           clusters plus Identify are the only
+                           `<mandatoryConform/>` ones; RVC Clean Mode and
+                           Service Area are both `<optionalConform/>`).
+                           RvcCleanMode is added anyway, via
+                           `cluster::rvc_clean_mode::create()` on the
+                           already-correct endpoint afterwards — same "add
+                           an extra cluster onto an endpoint the top-level
+                           helper already built correctly" pattern
+                           firmware/thermostat/'s BINDING output type and
+                           firmware/air-quality-sensor/'s concentration-
+                           measurement clusters already established —
+                           since choosing vacuum vs. mop vs. both is core
+                           to what makes a modern robot vacuum useful and
+                           the integration work is identical to
+                           RvcRunMode's. Service Area (per-room/per-zone
+                           cleaning, its own supported-areas list/current-
+                           area tracking/storage delegate) is NOT
+                           implemented — a genuinely large feature needing
+                           real room/map data this simple GPIO-level
+                           firmware has no way to generate, same "smallest
+                           reasonable next step" scoping every other
+                           device type's first cut in this repo uses.
+
+                           RvcRunMode/RvcCleanMode are both ModeBase-
+                           derived and wired through esp-matter's own
+                           `config->delegate` field, confirmed by reading
+                           `esp_matter_cluster.cpp`'s own
+                           `rvc_run_mode::create()`/`rvc_clean_mode::
+                           create()`: they store the delegate pointer via
+                           `set_delegate_and_init_callback()`, and the
+                           actual `ModeBase::Instance` construction +
+                           `Init()` happens later, automatically, during
+                           `esp_matter::start()`'s own cluster-init pass
+                           (`InitModeDelegate()` in
+                           `esp_matter_delegate_callbacks.cpp`) — unlike
+                           firmware/fan/'s `FanControl::
+                           SetDefaultDelegate()`, there is no separate
+                           call the app must remember to place after
+                           `start()`; the delegate is simply part of
+                           `config_t`, supplied once before
+                           `endpoint::robotic_vacuum_cleaner::create()`.
+                           Confirmed by reading `ModeBaseCluster.cpp`'s
+                           own `Instance::HandleChangeToMode()` that the
+                           SDK updates `CurrentMode` itself after a
+                           successful delegate callback — neither
+                           delegate here writes it directly, same "the SDK
+                           does more of the work than the header alone
+                           suggests" lesson firmware/valve/'s
+                           ValveConfigurationAndControl already taught
+                           this repo. Since esp-matter constructs each
+                           `ModeBase::Instance` internally and never hands
+                           this file a pointer to either one (and the data
+                           model provider's registry lookup pattern used
+                           elsewhere in this repo doesn't apply here — no
+                           `mode_base/` folder exists under
+                           `data_model_provider/clusters/`, confirmed by
+                           checking), this file keeps two small `static`
+                           globals (`g_current_run_mode`/
+                           `g_current_clean_mode`) as its own single
+                           source of truth for cross-delegate coordination
+                           (RunMode needs to know CleanMode's current
+                           selection when starting a clean; Resume needs
+                           to know RunMode's own selection) — simple and
+                           correct since these two delegates are the only
+                           writers. Real mode/tag values (`RvcRunMode::
+                           ModeTag::kIdle/kCleaning/kMapping`,
+                           `RvcCleanMode::ModeTag::
+                           kVacuum/kMop/kVacuumThenMop`) were confirmed
+                           directly against connectedhomeip's own
+                           generated `zzz_generated/app-common/clusters/
+                           RvcRunMode(Clean)Mode/Enums.h`, and the mode-
+                           option-list construction pattern is ported from
+                           connectedhomeip's own real, working reference —
+                           `examples/chef/common/chef-rvc-mode-
+                           delegate.cpp` — same "port a real reference
+                           rather than guess the integration shape"
+                           precedent already used in this repo for
+                           SM2335EGH/APA102/OpenTherm. This file's own
+                           "only allowed to enter Mapping from Idle" and
+                           "reject a clean-mode change while actively
+                           cleaning" business rules are the same two rules
+                           chef's own reference delegate encodes — reused
+                           deliberately, since they reflect real
+                           constraints, not an implementation detail.
+
+                           RvcOperationalState is a different, deeper
+                           case: esp-matter's own `config_t` for it is a
+                           literally empty struct (`common::config_t`,
+                           documented in-source as "Empty config for API
+                           consistency") — confirmed by reading
+                           `rvc_operational_state::create()` directly that
+                           it only creates the base ember attributes, with
+                           no delegate handling and no `Instance`
+                           construction at all. A level deeper than
+                           firmware/valve/'s own ValveConfigurationAndControl
+                           gap (which was still registered with the data
+                           model provider's registry automatically, just
+                           missing a convenience free function):
+                           RvcOperationalState is never registered
+                           anywhere as a working command handler unless
+                           this file builds one itself. Fixed the same way
+                           connectedhomeip's own real reference app does
+                           it (`examples/rvc-app/rvc-common/`, read
+                           directly): construct a real, raw
+                           `chip::app::Clusters::RvcOperationalState::
+                           Instance` (declared in `app/clusters/
+                           operational-state-server/
+                           CodegenIntegration.h` — pre-wired with
+                           `RvcOperationalState::Id` and the two RVC-
+                           specific pause/resume-compatibility overrides
+                           already implemented by connectedhomeip itself:
+                           only `SeekingCharger` is pause-compatible, only
+                           `Charging`/`Docked` are resume-compatible,
+                           confirmed by reading `CodegenIntegration.cpp`
+                           directly) with an app-supplied
+                           `RvcOperationalState::Delegate` (declared in
+                           `OperationalStateDelegate.h` — already gives
+                           `HandleStartStateCallback`/
+                           `HandleStopStateCallback` working dummy bodies,
+                           since Start/Stop aren't part of RVC's own
+                           command set). Constructed as a file-scope
+                           `static` and `.Init()`'d in `app_main()`,
+                           deliberately after `esp_matter::start()` — same
+                           "register real command handling only once the
+                           Matter server itself is actually running"
+                           discipline this repo has now hit for FanControl
+                           (firmware/fan/, firmware/air-purifier/) and
+                           ValveConfigurationAndControl (firmware/valve/).
+                           A second real SDK behavior confirmed by reading
+                           `CodegenIntegration.cpp`'s own
+                           `HandlePauseState()`/`HandleResumeState()`/
+                           `HandleGoHomeCommand()` directly and worth
+                           remembering for any future OperationalState-
+                           derived cluster: unlike ModeBase, NONE of them
+                           update the `OperationalState` attribute
+                           automatically after a successful delegate
+                           callback — every callback in this file calls
+                           the Instance's own `SetOperationalState()`
+                           itself, exactly matching the real reference
+                           app's own `rvc-device.cpp`. The mandatory
+                           `OperationCompletion` event fires via the
+                           Instance's own real `OnOperationCompletionDetected()`
+                           method whenever RvcRunMode transitions from
+                           Cleaning/Mapping back to Idle — confirmed by
+                           reading that method directly that it only
+                           calls connectedhomeip's own `LogEvent()`,
+                           independent of the ember-attribute-store event
+                           descriptor `endpoint::robotic_vacuum_cleaner::
+                           add()` sets up for spec-conformance metadata —
+                           a real, working event, not a placeholder.
+
+                           Hardware scope is deliberately simple and
+                           explicitly honest about what it doesn't do: two
+                           independent drive motors (left/right wheel) via
+                           a dual H-bridge driver module (L298N/
+                           TB6612FNG-class), FWD/REV GPIO pair per motor
+                           (mutually exclusive by construction, same
+                           pattern firmware/window-covering/'s single UP/
+                           DOWN motor uses, doubled here), fixed speed
+                           only (no PWM enable line). A vacuum-motor
+                           output (MOSFET/relay, active-HIGH) and a mop-
+                           pump output (active-LOW relay, matching
+                           firmware/valve/'s own relay-polarity
+                           convention) are switched together according to
+                           whichever RvcCleanMode is selected. An optional
+                           dock-contact sensor input (default
+                           `GPIO_NUM_NC`, off — same opt-in-GPIO
+                           convention firmware/door-lock/'s position
+                           sensor uses) reads a simple digital HIGH-when-
+                           docked signal. Explicitly, deliberately NOT
+                           implemented: any actual navigation, obstacle
+                           avoidance, or return-to-dock path-finding —
+                           "Cleaning"/"Mapping" both just drive both
+                           wheels forward at a fixed speed, since there is
+                           no camera/LIDAR/bump/cliff sensor assumed and
+                           therefore nothing to steer with. This is the
+                           same category of honest scope cut as firmware/
+                           window-covering/'s own documented position-
+                           drift limitation, just larger in scope, since
+                           full autonomous navigation is an entire
+                           separate engineering discipline (SLAM, sensor
+                           fusion, path planning) rather than a hardware-
+                           driver detail. `GoHome` reflects this honestly:
+                           it stops the drive motors and reports
+                           `SeekingCharger` rather than pretending to
+                           navigate; with a dock-contact sensor wired,
+                           reaching the dock (by whatever means) is
+                           detected and reported as `Charging`; without
+                           one, `GoHome` optimistically reports `Docked`
+                           directly — the same "no feedback sensor =
+                           optimistic best-effort report" precedent
+                           firmware/door-lock/'s LockState and firmware/
+                           valve/'s CurrentState already establish.
+                           Standard quick-power-cycle factory reset.
+                           Build-verified in Docker (two real, sequential
+                           compile errors were caught and fixed along the
+                           way, not guessed: a `chip::app::Clusters::
+                           detail` vs. `chip::detail` namespace ambiguity
+                           from an initial blanket `using namespace
+                           chip;`, fixed by narrowing to `using namespace
+                           chip::literals;` for just the `_span` string-
+                           literal operator and fully qualifying every
+                           other `chip::`/`chip::app::` name instead); not
+                           hardware-tested (no robot chassis/motor-driver
+                           hardware physically available when written).
+                           NOT yet integrated into `tools/product-wizard/`
+                           — deliberately deferred (unlike every device
+                           type before it except firmware/camera/, which
+                           was deferred for a structural reason): this
+                           device type needs 6 required GPIO fields (4
+                           drive-motor + vacuum + mop) plus 1 optional
+                           (dock sensor), more than any device type the
+                           wizard currently supports has needed from its
+                           existing `driver`/`secondary`/`extraButtons`/
+                           `extraPickers` field shapes at once, and doing
+                           it justice (including the "actually render +
+                           screenshot the result" verification this repo's
+                           own wizard-change practice expects) was judged
+                           worth its own dedicated pass rather than
+                           squeezing in under this session's effort
+                           budget — see "Open next steps" below.
+  partitions.csv           same OTA + fctry layout as firmware/light/
+  sdkconfig.defaults        same as firmware/light/
 tools/
   dev.sh                  opens the Docker dev environment
   gen_factory.sh          local QR + factory partition generator
@@ -3157,7 +3397,47 @@ SECURITY.md               flash encryption / secure boot / signed OTA guidance
    own repository-layout entry above for the complete detail.
    Build-verified in Docker (clean first attempt); not hardware-tested
    (no BMP280 module physically available when written).
-2. Implement Matter **OTA** — partially done. All twenty-one firmware
+
+   A twenty-second device type, `firmware/robot-vacuum/` (RvcRunMode +
+   RvcCleanMode + RvcOperationalState), followed directly after pressure-
+   sensor — the user's choice from the same short AskUserQuestion list
+   (Robot Vacuum was offered alongside Pressure Sensor/Extractor Hood).
+   This repo's biggest cluster-integration surface in one device type so
+   far: three separate command-handling clusters on one endpoint, two
+   genuinely different SDK integration mechanisms for them (RvcRunMode/
+   RvcCleanMode wired through esp-matter's own `config->delegate` field,
+   auto-constructed internally by `esp_matter::start()`; RvcOperationalState
+   needing a raw connectedhomeip `Instance`+`Delegate` pair built and
+   `Init()`'d entirely by hand, since esp-matter's own `config_t` for that
+   cluster is a literally empty struct with no delegate hook at all — a
+   level deeper than firmware/valve/'s own ValveConfigurationAndControl
+   gap), and this repo's first genuinely mobile actuator (two independent
+   drive motors) rather than a single relay/PWM output. Both Mode
+   clusters' integration shape, and RvcOperationalState's Instance/Delegate
+   pair, were ported from connectedhomeip's own real, working reference
+   code (`examples/chef/common/chef-rvc-mode-delegate.cpp` and
+   `examples/rvc-app/rvc-common/`, both read directly) rather than guessed
+   — same "port a real reference rather than guess the integration shape"
+   precedent already used in this repo for SM2335EGH/APA102/OpenTherm.
+   Explicitly, deliberately scoped out: any real navigation, obstacle
+   avoidance, or return-to-dock path-finding (this firmware only ever
+   drives both wheels forward at a fixed speed — there is no camera/
+   LIDAR/bump/cliff sensor assumed) and the optional Service Area cluster
+   (per-room/per-zone cleaning needs real room/map data this simple
+   GPIO-level firmware has no way to generate) — both are the same
+   category of honest, documented scope cut firmware/window-covering/'s
+   own position-drift limitation already established, just larger here.
+   See its own repository-layout entry above for the complete detail,
+   including the real namespace-ambiguity compile error an actual Docker
+   build caught and fixed. Build-verified in Docker; not hardware-tested
+   (no robot chassis/motor-driver hardware physically available when
+   written). Deliberately NOT yet integrated into `tools/product-wizard/`
+   — see its own repository-layout entry above for exactly why (6 required
+   + 1 optional GPIO field is more than the wizard's existing field shapes
+   have needed to cover at once for any device type so far except
+   firmware/camera/, which is excluded from the wizard entirely for a
+   different, structural reason) — worth a dedicated follow-up pass.
+2. Implement Matter **OTA** — partially done. All twenty-two firmware
    types ship `CONFIG_ENABLE_OTA_REQUESTOR=y`, which adds the OTA Requestor
    cluster to the root node endpoint entirely via Kconfig — esp-matter's
    own core startup (`esp_matter_core.cpp`) calls
@@ -3234,7 +3514,7 @@ SECURITY.md               flash encryption / secure boot / signed OTA guidance
    later in `app_main()`, after `esp_matter::start()` has completed.
 
    Quick-power-cycle factory reset is Docker build-verified across all
-   twenty-one device types — not yet hardware-tested. The wizard
+   twenty-two device types — not yet hardware-tested. The wizard
    (`tools/product-wizard/`) has a static "Factory reset" info box
    rendered directly under the Configuration summary sidebar on every
    device type (wrapped together in a `.config-sidebar-stack` flex
