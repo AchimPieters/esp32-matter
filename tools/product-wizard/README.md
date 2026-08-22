@@ -38,8 +38,9 @@ open tools/product-wizard/index.html
   (`firmware/water-leak-detector/`), "Air Purifier"
   (`firmware/air-purifier/`), "Water Valve" (`firmware/valve/`),
   "Pressure Sensor" (`firmware/pressure-sensor/`), "Robot Vacuum"
-  (`firmware/robot-vacuum/`), or "Extractor Hood"
-  (`firmware/extractor-hood/`). All twenty-two are real, buildable
+  (`firmware/robot-vacuum/`), "Extractor Hood"
+  (`firmware/extractor-hood/`), or "Water Heater"
+  (`firmware/water-heater/`). All twenty-three are real, buildable
   firmware, not just UI placeholders (`firmware/camera/`, this repo's
   twelfth device type, is deliberately NOT offered here — see its own
   section further down for why: its two-chip/two-firmware/external-SDK
@@ -783,6 +784,24 @@ exact generated sed commands for `HOOD_FAN_PWM_GPIO`/`IDENTIFY_LED_GPIO`
 `app_main.cpp` and diffed against the original, a byte-for-byte match
 (both GPIOs already shipped at their wizard defaults, so this run
 confirmed a correct no-op rather than a rewrite). All checks passed.
+
+`firmware/water-heater/` followed — needing one small reuse decision
+rather than any new mechanism: `driver` (a relay output) plus `secondary`
+(a DS18B20 temperature probe input) reuses the exact same two-independent-
+GPIO shape `firmware/pressure-sensor/`'s own I2C entry already
+established, confirmed safe to repurpose by reading the render code
+directly — `secondary`'s own copy (label/fieldLabel/blockTitle) is fully
+data-driven, with no I2C-specific text hardcoded into the mechanism
+itself, and with no `componentOptions` on this entry `secondaryFieldNeeded`
+always evaluates true, so the field renders unconditionally as intended.
+Verified the same way as `firmware/extractor-hood/`: `findDeviceType`
+lookup, `renderConfigureDevice` output containing all three field labels,
+`isProductComplete` before and after render, the exact generated sed
+commands for `WATER_HEATER_RELAY_GPIO`/`WATER_HEATER_SENSOR_GPIO`/
+`IDENTIFY_LED_GPIO` — then those exact commands run for real against a
+copy of the actual `app_main.cpp` and diffed against the original, a
+byte-for-byte match (all three GPIOs already shipped at their wizard
+defaults, confirming a correct no-op). All checks passed.
 
 ## Known limitations
 

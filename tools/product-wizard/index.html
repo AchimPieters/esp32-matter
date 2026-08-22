@@ -2284,6 +2284,54 @@ const DEVICE_TYPES = [
       defaultsByModule: { esp32: 4, esp32c2: 4, esp32c3: 4, esp32c5: 4, esp32c6: 4, esp32c61: 4, esp32s3: 4, esp32h2: 4 },
     },
   },
+  {
+    id: "water-heater",
+    name: "Water Heater",
+    desc: "Matter water heater: Thermostat (Heat-only) + WaterHeaterManagement (real Boost/CancelBoost commands, with BoostStarted/BoostEnded events) + WaterHeaterMode (Off/Manual/Timed). A single relay drives an immersion heating element's own contactor — the classic DIY smart-electric-water-heater retrofit — while a waterproof DS18B20 probe reads the tank temperature. Reference device in firmware/water-heater/.",
+    shortDesc: "Relay + DS18B20 probe, real Boost command.",
+    // Matches project(matter_water_heater) in
+    // firmware/water-heater/CMakeLists.txt. Reuses the exact driver+
+    // secondary two-independent-GPIO shape firmware/pressure-sensor/'s
+    // own I2C entry already established — here repurposed for a relay
+    // output (driver) plus a 1-Wire sensor input (secondary) instead of
+    // two I2C pins, since `secondary`'s own render copy is fully data-
+    // driven from its own label/fieldLabel/blockTitle (confirmed by
+    // reading the render code directly — no I2C-specific text is
+    // hardcoded into the mechanism itself, only into the device types
+    // that happen to use it for SDA/SCL). No componentOptions on this
+    // entry, so `secondary` always renders unconditionally (confirmed:
+    // the `secondaryFieldNeeded` check only gates on a selected
+    // component's own `usesPin2`, which is simply absent here).
+    binName: "matter_water_heater.bin",
+    driver: {
+      summary: "GPIO (relay, active-LOW)",
+      fieldLabel: "Relay GPIO pin",
+      blockTitle: "Relay · digital output",
+      filePath: "firmware/water-heater/main/app_main.cpp",
+      defineName: "WATER_HEATER_RELAY_GPIO",
+      currentGpio: 4,
+      defaultsByModule: { esp32: 4, esp32c2: 4, esp32c3: 4, esp32c5: 4, esp32c6: 4, esp32c61: 4, esp32s3: 4, esp32h2: 4 },
+    },
+    secondary: {
+      label: "Temperature Probe",
+      summary: "DS18B20 · 1-Wire input",
+      fieldLabel: "Temperature probe GPIO pin",
+      blockTitle: "Temperature probe (DS18B20) · 1-Wire input",
+      filePath: "firmware/water-heater/main/app_main.cpp",
+      defineName: "WATER_HEATER_SENSOR_GPIO",
+      currentGpio: 21,
+      defaultsByModule: { esp32: 21, esp32c2: 21, esp32c3: 21, esp32c5: 21, esp32c6: 21, esp32c61: 21, esp32s3: 21, esp32h2: 21 },
+    },
+    identify: {
+      summary: "GPIO (digital output)",
+      fieldLabel: "Identify LED GPIO pin",
+      blockTitle: "Identify LED · digital output",
+      filePath: "firmware/water-heater/main/app_main.cpp",
+      defineName: "IDENTIFY_LED_GPIO",
+      currentGpio: 2,
+      defaultsByModule: { esp32: 2, esp32c2: 2, esp32c3: 2, esp32c5: 2, esp32c6: 2, esp32c61: 2, esp32s3: 2, esp32h2: 2 },
+    },
+  },
 ];
 
 function findDeviceType(id) {
@@ -2688,6 +2736,15 @@ const DEVICE_TYPE_ICONS = {
     <path d="M16 38c3-4-3-8 0-12"/>
     <path d="M24 38c3-4-3-8 0-12"/>
     <path d="M32 38c3-4-3-8 0-12"/>
+  </svg>`,
+  // A tall rounded tank silhouette (the immersion-heater cylinder) with a
+  // filled flame glyph near its base standing in for the heating element
+  // — distinct from pressure's gauge dial, water-leak's plain droplet,
+  // and valve's pipe-tee by showing the tank shape itself plus heat,
+  // rather than flow or a reading.
+  "water-heater": `<svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+    <rect x="12" y="6" width="24" height="34" rx="12"/>
+    <path d="M24 32c-3.5-3-3.5-7 0-11c1 2.5 2.3 3.5 3.3 2.3c0.3 3.7-1 6.7-3.3 8.7Z" fill="currentColor" stroke="none"/>
   </svg>`,
 };
 

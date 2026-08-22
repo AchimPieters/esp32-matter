@@ -3781,12 +3781,26 @@ SECURITY.md               flash encryption / secure boot / signed OTA guidance
    compiler's own error output rather than assumed correct on the first
    attempt. See its own repository-layout entry above for the complete
    detail. Build-verified in Docker; not hardware-tested (no relay/
-   DS18B20 probe hardware physically available when written). Not yet
-   integrated into `tools/product-wizard/` — worth a follow-up pass;
-   unlike firmware/extractor-hood/'s simple single-GPIO shape, this
-   device type has a real relay output plus a temperature-sensor pin,
-   closer in shape to firmware/valve/'s or firmware/pressure-sensor/'s
-   own entries than to firmware/fan/'s.
+   DS18B20 probe hardware physically available when written).
+
+   Integrated into `tools/product-wizard/` immediately afterward — needed
+   one small reuse decision rather than any new mechanism: `driver` (the
+   relay) plus `secondary` (the DS18B20 probe) reuses the exact two-
+   independent-GPIO shape firmware/pressure-sensor/'s own I2C entry
+   already established, confirmed safe to repurpose by reading the render
+   code directly (`secondary`'s own copy is fully data-driven, no I2C-
+   specific text hardcoded into the mechanism itself). Plus a new hand-
+   drawn icon (a tank silhouette with a filled flame glyph near its base).
+   Verified the same way as every wizard change this session: device-type
+   lookup, `renderConfigureDevice` output containing all three field
+   labels, `isProductComplete` before and after render, and the exact
+   generated sed commands for `WATER_HEATER_RELAY_GPIO`/
+   `WATER_HEATER_SENSOR_GPIO`/`IDENTIFY_LED_GPIO` — then those exact
+   commands run for real against a copy of the actual `app_main.cpp` and
+   diffed against the original, a byte-for-byte match (all three GPIOs
+   already shipped at their wizard defaults, confirming a correct no-op).
+   See `tools/product-wizard/README.md`'s own updated device-type list
+   and its new paragraph on this addition.
 2. Implement Matter **OTA** — partially done. All twenty-four firmware
    types ship `CONFIG_ENABLE_OTA_REQUESTOR=y`, which adds the OTA Requestor
    cluster to the root node endpoint entirely via Kconfig — esp-matter's
