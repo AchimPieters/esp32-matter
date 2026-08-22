@@ -3330,6 +3330,171 @@ firmware/dishwasher/      Dishwasher — twenty-eighth device type, and this
                            device type physically available when written).
   partitions.csv           same OTA + fctry layout as firmware/light/
   sdkconfig.defaults        same as firmware/light/
+firmware/laundry-washer/  Laundry Washer — twenty-ninth device type, and the
+                           closest sibling to firmware/dishwasher/ in this
+                           repo: the same generic OperationalState cluster
+                           (0x0060), the same TemperatureControl (TN-only)
+                           pattern, and a fourth ModeBase-derived Mode
+                           cluster — plus one genuinely new cluster,
+                           LaundryWasherControls, whose SpinSpeed/
+                           NumberOfRinses settings this file actually gives
+                           real physical meaning to.
+  main/app_main.cpp        Confirmed directly against the CSA's own
+                           data_model/1.6/device_types/LaundryWasher.xml:
+                           only OperationalState is `<mandatoryConform/>`
+                           (with OperationCompletion also mandatory, per
+                           this device type's own revision 2) — Identify,
+                           On/Off (DeadFrontOnOff feature only, skipped for
+                           the same reason firmware/dishwasher/'s own
+                           header comment documents), LaundryWasherMode,
+                           LaundryWasherControls, and TemperatureControl
+                           are all `<optionalConform/>`. Confirmed by
+                           reading `esp_matter_endpoint.cpp`'s own
+                           `laundry_washer::add()` directly: structurally
+                           identical to `dish_washer::add()` (both share
+                           `config_t = app_with_operational_state_config`
+                           and only create OperationalState) — Identify +
+                           TemperatureControl + LaundryWasherMode +
+                           LaundryWasherControls are all added manually
+                           afterward, same pattern. Unlike firmware/
+                           dishwasher/'s own `dish_washer`/`dish_washer_
+                           mode`/`dish_washer_alarm` naming gotcha,
+                           esp-matter's own wrapper names here
+                           (`laundry_washer`, `laundry_washer_mode`,
+                           `laundry_washer_controls`) DO match the CSA's
+                           own naming (standard snake_case) — confirmed by
+                           reading the legacy header directly before
+                           assuming either way held generally.
+
+                           OperationalState itself is an identical pattern
+                           to firmware/dishwasher/'s own — same automatic
+                           `config->delegate` wiring, same
+                           `get_delegate_managed_instance()` lookup for the
+                           two places this file touches the cluster from
+                           outside the delegate's own callbacks (the door
+                           sensor's async safety-pause, and the wash cycle
+                           finishing on its own — the sixth "reach a live
+                           cluster instance from app code" pattern
+                           firmware/dishwasher/'s own repository-layout
+                           entry catalogues in full).
+                           `HandleStartStateCallback()`/
+                           `HandleResumeStateCallback()` reject with
+                           `ErrorStateEnum::kUnableToStartOrResume` if the
+                           door is open; opening the door mid-cycle PAUSES
+                           rather than errors the OperationalState (real
+                           front-loader behavior) — but unlike Dishwasher,
+                           LaundryWasher's own device type XML lists no
+                           Alarm cluster at all, so there's no DoorError-
+                           style bit to raise here; the Pause itself is the
+                           only signal a controller gets.
+
+                           TemperatureControl (TN-only, wash-temperature
+                           target: 20.00-60.00 degC, default 40.00 degC)
+                           reuses firmware/dishwasher/'s and firmware/
+                           refrigerator/'s exact pattern, including the
+                           same documented legacy-vs-generated
+                           `feature_flags`/`temp_setpoint` handling.
+                           LaundryWasherMode is a fourth ModeBase-derived
+                           cluster in this repo (same automatic wiring as
+                           every prior one), offering four real mode tags
+                           confirmed directly against connectedhomeip's own
+                           generated `LaundryWasherMode/Enums.h` — "Normal"
+                           (`kNormal`), "Delicate" (`kDelicate`), "Heavy"
+                           (`kHeavy`), "Whites" (`kWhites`) — a genuinely
+                           different, larger tag set than Dishwasher's own
+                           three. Same `kInvalidInMode`-while-Running
+                           rejection rule as firmware/dishwasher/'s own
+                           DishwasherMode.
+
+                           LaundryWasherControls is a genuinely new cluster
+                           for this repo, and the one setting here that
+                           actually changes physical behavior. Confirmed by
+                           reading `esp_matter_cluster.cpp`'s own
+                           `laundry_washer_controls::create()` directly:
+                           unlike RefrigeratorAlarm/AirQuality's own
+                           documented FeatureMap-hardcoded-to-0 gap, this
+                           cluster's FeatureMap is set TWICE — once
+                           hardcoded to 0, then immediately overwritten
+                           with `config->feature_flags` — so there's no
+                           real gap here, `feature_flags` just needs to be
+                           set explicitly (both Spin and Rinse features are
+                           enabled; the cluster's own
+                           `VALIDATE_FEATURES_AT_LEAST_ONE("Spin,Rinse",
+                           ...)` check confirms at least one is required).
+                           `SpinSpeedCurrent`/`NumberOfRinses` are plain
+                           ember attributes (confirmed: the cluster
+                           registers a `MatterLaundryWasherControlsCluster
+                           ServerPreAttributeChangedCallback`, the same
+                           PRE_ATTRIBUTE_CHANGED-hook shape OnOff/
+                           LevelControl already use, not a code-driven
+                           `DefaultServerCluster`) — a controller can write
+                           either directly, no command needed. This cluster
+                           ALSO has a real Delegate
+                           (`GetSpinSpeedAtIndex()`/
+                           `GetSupportedRinseAtIndex()`, confirmed by
+                           reading `laundry-washer-controls-delegate.h`
+                           directly) supplying the *supported-value lists*
+                           (`SpinSpeeds`/`SupportedRinses`) — the same
+                           "feature-flag-gated attributes plus a separate
+                           Delegate for the supported-list" shape
+                           TemperatureControl's own TL feature uses,
+                           confirmed as a real, distinct pattern rather
+                           than assumed identical to any single-mechanism
+                           cluster elsewhere in this repo. `SpinSpeeds`
+                           offers four real options ("Off"/"Low"/"Medium"/
+                           "High") — purely informational (no real
+                           variable-speed motor control, same "smallest
+                           reasonable next step" scope cut as firmware/
+                           robot-vacuum/'s fixed-speed drive motors).
+                           `SupportedRinses` offers all four real
+                           `NumberOfRinsesEnum` values (`kNone`/`kNormal`/
+                           `kExtra`/`kMax`, confirmed against
+                           connectedhomeip's own generated Enums.h) — and
+                           UNLIKE SpinSpeedCurrent, `NumberOfRinses`
+                           genuinely drives this file's own wash-cycle
+                           simulation: tracked via the same
+                           `attribute::PRE_UPDATE` pattern firmware/
+                           water-heater/'s own SystemMode tracking already
+                           established, it sets how many real Rinse-then-
+                           Drain phases the cycle actually runs (0/1/2/3
+                           for None/Normal/Extra/Max respectively).
+
+                           The wash cycle itself: Washing (heater relay,
+                           hysteresis-controlled against a DS18B20 reading
+                           and TemperatureControl's own live setpoint, same
+                           0.5 degC hysteresis convention used throughout
+                           this repo's control loops, plus the motor
+                           running), then however many rinses
+                           `NumberOfRinses` currently calls for (each a
+                           real Rinsing-then-Draining phase pair), then
+                           Spinning (motor only, no heater), before calling
+                           `OnOperationCompletionDetected()` and returning
+                           to Stopped. A single motor relay drives both
+                           agitation (Washing/Rinsing) and spin (Spinning)
+                           — a deliberate, documented simplification: real
+                           washing machines use a variable-speed/reversible
+                           motor and a clutch/gearbox to switch between the
+                           two, which this hobby-scale single-relay build
+                           doesn't model, the same "smallest reasonable
+                           next step" reasoning firmware/refrigerator/'s
+                           own single-relay-per-compartment design already
+                           applies. No Filling phase is modelled at all
+                           (a real water-inlet valve + level sensor would
+                           be needed), same honest scope cut as firmware/
+                           dishwasher/'s own skipped Fill phase.
+
+                           Standard quick-power-cycle factory reset.
+                           Build-verified in Docker — clean on the first
+                           attempt, the careful upfront research into
+                           firmware/dishwasher/'s own hard-won lessons
+                           (legacy-vs-generated pitfalls, the
+                           `CodegenIntegration.h` include, the
+                           `get_delegate_managed_instance()` qualification)
+                           paying off directly; not hardware-tested (no
+                           relay/DS18B20/reed-switch hardware for this
+                           device type physically available when written).
+  partitions.csv           same OTA + fctry layout as firmware/light/
+  sdkconfig.defaults        same as firmware/light/
 tools/
   dev.sh                  opens the Docker dev environment
   gen_factory.sh          local QR + factory partition generator
@@ -4642,7 +4807,37 @@ SECURITY.md               flash encryption / secure boot / signed OTA guidance
    layout entry above for the complete detail on all four. Build-verified
    in Docker; not hardware-tested (no relay/DS18B20/reed-switch hardware
    for this device type physically available when written).
-2. Implement Matter **OTA** — partially done. All twenty-eight firmware
+
+   A twenty-ninth device type, `firmware/laundry-washer/` (OperationalState
+   + TemperatureControl + LaundryWasherMode + LaundryWasherControls),
+   followed — the user's choice from a short AskUserQuestion list
+   (Laundry Washer had already come up as a recommended-but-unchosen
+   option alongside water-heater and evse, the same way Dishwasher had).
+   The closest sibling to firmware/dishwasher/ in this repo — same
+   OperationalState/TemperatureControl patterns, a fourth ModeBase-derived
+   Mode cluster — plus one genuinely new cluster, LaundryWasherControls,
+   confirmed to need BOTH a real FeatureMap (set correctly here — this
+   cluster's own `create()` sets FeatureMap twice, once hardcoded to 0
+   then immediately overwritten with `config->feature_flags`, so unlike
+   RefrigeratorAlarm/AirQuality there's no real gap) AND a separate
+   Delegate supplying its two supported-value lists (SpinSpeeds/
+   SupportedRinses) — while its actual current-value attributes
+   (SpinSpeedCurrent/NumberOfRinses) are plain ember attributes a
+   controller writes directly, no command needed. NumberOfRinses is the
+   one setting in this file given real physical meaning: tracked via
+   `attribute::PRE_UPDATE`, it sets how many real Rinse-then-Drain phases
+   the simulated wash cycle actually runs. Unlike firmware/dishwasher/'s
+   own `dish_washer`/`dish_washer_mode` naming mismatch, esp-matter's own
+   wrapper names here match the CSA's naming (confirmed directly rather
+   than assumed to generalize from the Dishwasher case). Build-verified in
+   Docker — clean on the first attempt, the direct payoff of applying
+   firmware/dishwasher/'s own hard-won lessons (the `CodegenIntegration.h`
+   include, the `get_delegate_managed_instance()` qualification, the
+   legacy-vs-generated TemperatureControl pitfall) proactively rather than
+   rediscovering them. See its own repository-layout entry above for the
+   complete detail. Not hardware-tested (no relay/DS18B20/reed-switch
+   hardware for this device type physically available when written).
+2. Implement Matter **OTA** — partially done. All twenty-nine firmware
    types ship `CONFIG_ENABLE_OTA_REQUESTOR=y`, which adds the OTA Requestor
    cluster to the root node endpoint entirely via Kconfig — esp-matter's
    own core startup (`esp_matter_core.cpp`) calls
@@ -4719,7 +4914,7 @@ SECURITY.md               flash encryption / secure boot / signed OTA guidance
    later in `app_main()`, after `esp_matter::start()` has completed.
 
    Quick-power-cycle factory reset is Docker build-verified across all
-   twenty-eight device types — not yet hardware-tested. The wizard
+   twenty-nine device types — not yet hardware-tested. The wizard
    (`tools/product-wizard/`) has a static "Factory reset" info box
    rendered directly under the Configuration summary sidebar on every
    device type (wrapped together in a `.config-sidebar-stack` flex
