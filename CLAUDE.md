@@ -2652,6 +2652,148 @@ firmware/water-heater/    Water Heater — twenty-fourth device type, and the
                            available when written).
   partitions.csv           same OTA + fctry layout as firmware/light/
   sdkconfig.defaults        same as firmware/light/
+firmware/evse/            EVSE (electric vehicle charger controller) —
+                           twenty-fifth device type, and this repo's first
+                           over the Energy EVSE cluster family — ships with
+                           a prominent safety note (see below) since this
+                           is the first device type where getting the real-
+                           world framing wrong could be genuinely unsafe,
+                           not just inaccurate.
+  main/app_main.cpp        `endpoint::energy_evse::create()` (device type
+                           0x050C) confirmed complete/ready-to-use —
+                           EnergyEvse + EnergyEvseMode + DeviceEnergy
+                           Management, auto-Descriptor via `common::
+                           create<T>()` — by reading esp_matter_endpoint.cpp's
+                           own `energy_evse::add()` directly. A real,
+                           checked discrepancy was found doing this:
+                           the CSA's own data_model/1.6/device_types/
+                           EVSE.xml lists only Identify + Temperature
+                           Measurement (both optional) and a composed
+                           Electrical Sensor device type as this device
+                           type's OTHER clusters — DeviceEnergyManagement
+                           isn't mentioned anywhere in that XML at all, yet
+                           esp-matter's own top-level helper adds it
+                           unconditionally. Kept as esp-matter ships it
+                           (left at its default — `delegate = nullptr`,
+                           `feature_flags = 0` — confirmed by reading
+                           `esp_matter_cluster.cpp`'s own `device_energy_
+                           management::create()` that this creates only
+                           the cluster's base ember attributes with no
+                           delegate wiring at all, the same "nullptr
+                           delegate is a no-op" behavior every other
+                           `config->delegate`-driven cluster in this repo
+                           already has). Identify is added onto the
+                           endpoint afterward — same "optionalConform, not
+                           auto-wired" pattern firmware/extractor-hood/
+                           and firmware/water-heater/ already hit.
+                           Temperature Measurement and the composed
+                           Electrical Sensor device type are both left
+                           out — same "smallest reasonable next step"
+                           scope cut every other device type's optional
+                           extras get.
+
+                           EnergyEvseMode is a fourth ModeBase-derived
+                           cluster this repo has built (after RvcRunMode/
+                           RvcCleanMode/WaterHeaterMode), identical
+                           `config->delegate` automatic-construction
+                           integration. Manual/TimeOfUse/SolarCharging are
+                           all real, selectable modes that behave
+                           identically to Manual — no tariff schedule or
+                           solar-surplus tracking implemented, same
+                           honest scope cut as WaterHeaterMode's own
+                           "Timed" mode. `kV2X` mode tag exists in the
+                           spec but is never offered — no V2X hardware.
+
+                           EnergyEvse itself is this repo's biggest single
+                           Delegate interface so far (confirmed by reading
+                           `Delegate.h` directly — roughly 20 pure virtual
+                           methods, including per-attribute `OnXChanged`
+                           reactive callbacks with no default bodies at
+                           all, unlike RvcOperationalState's Start/Stop
+                           dummy defaults). Confirmed by reading
+                           `EnergyEvseCluster.cpp`'s own `HandleDisable()`/
+                           `HandleEnableCharging()` directly that the
+                           cluster only does a plain min/max-current
+                           sanity check before forwarding straight to the
+                           Delegate — no State/SupplyState transition of
+                           its own, same "cluster validates the command
+                           shape, the app decides the actual state" split
+                           firmware/water-heater/'s WaterHeaterManagement
+                           already established. Unlike that cluster's
+                           Delegate, `EnergyEvse::Delegate` has NO
+                           `SetInstance()`/`GetInstance()` back-pointer at
+                           all (confirmed directly) — reporting State back
+                           uses the registry-lookup-and-cast pattern
+                           firmware/valve/'s and firmware/fan/'s own
+                           setters already established instead.
+                           `ChargingPreferences` (`PREF`) is confirmed
+                           `<mandatoryConform/>` directly in the cluster
+                           XML's own `<features>` block — genuinely
+                           mandatory, not an optional extra — so
+                           SetTargets/GetTargets/ClearTargets/LoadTargets
+                           are real, working, bounded in-memory storage (a
+                           controller can round-trip real schedule data),
+                           but honestly, no automatic scheduler in this
+                           file acts on stored targets (no real-time-of-
+                           day clock, and no pilot-signal current
+                           negotiation to act on a target with anyway),
+                           same honesty precedent as EnergyEvseMode's own
+                           inert extra modes above. `EnableDischarging`
+                           always rejects (no V2X); `StartDiagnostics`
+                           accepts and logs but runs no real self-test,
+                           same simulated-self-test precedent firmware/
+                           smoke-co-alarm/'s own SelfTestRequest already
+                           established. `FaultState` is always `NoError`
+                           — no ground-fault/over-current/contact-welding
+                           detection hardware assumed. `State::
+                           PluggedInDemand` is never reported — telling it
+                           apart from merely-connected needs real Control-
+                           Pilot state-B/state-C detection this firmware
+                           doesn't have.
+
+                           *** This device type ships with a prominent
+                           safety note at the top of app_main.cpp, worth
+                           repeating here: this firmware does NOT
+                           implement the real SAE J1772/IEC 61851 Control
+                           Pilot protocol (the PWM signal + voltage-level
+                           state machine a real EV charger uses to
+                           negotiate current with the vehicle and detect
+                           plug/fault states) — that's real, safety-
+                           relevant automotive-grade engineering, well
+                           outside what this repo's "read the datasheet,
+                           drive the GPIO" style should be trusted to
+                           implement for something that switches vehicle
+                           charging current. The single relay
+                           (`EVSE_RELAY_GPIO`, active-LOW) is designed to
+                           drive an ALREADY-APPROVED EVSE unit's own low-
+                           voltage enable/authorize dry-contact input —
+                           the same simple external-control interlock many
+                           commercial EVSEs already expose — NOT to switch
+                           AC mains or vehicle charging current directly.
+                           Same "gate an existing appliance's own control
+                           input" framing as firmware/thermostat/'s RELAY
+                           output (a boiler's call-for-heat input, not its
+                           gas valve). *** An optional plug-detect input
+                           (`EVSE_PLUG_DETECT_GPIO`, off by default) reads
+                           a real EVSE unit's own "vehicle connected"
+                           status output if it has one — same opt-in-GPIO,
+                           optimistic-when-absent convention firmware/
+                           door-lock/'s position sensor and firmware/
+                           robot-vacuum/'s dock sensor already use.
+                           `EVSE_CIRCUIT_CAPACITY_MA`/`EVSE_MIN_CHARGE_
+                           CURRENT_MA`/`EVSE_MAX_CHARGE_CURRENT_MA` are
+                           plain informational #defines (6000/32000 mA
+                           defaults — 6A is IEC 61851's own documented
+                           minimum EV charging current, 32A a common
+                           single-phase EU home circuit rating), never
+                           communicated to a vehicle via any pilot signal
+                           since none is implemented. Standard quick-
+                           power-cycle factory reset. Build-verified in
+                           Docker; not hardware-tested (no EVSE hardware
+                           with a real external-enable input physically
+                           available when written).
+  partitions.csv           same OTA + fctry layout as firmware/light/
+  sdkconfig.defaults        same as firmware/light/
 tools/
   dev.sh                  opens the Docker dev environment
   gen_factory.sh          local QR + factory partition generator
@@ -3801,7 +3943,42 @@ SECURITY.md               flash encryption / secure boot / signed OTA guidance
    already shipped at their wizard defaults, confirming a correct no-op).
    See `tools/product-wizard/README.md`'s own updated device-type list
    and its new paragraph on this addition.
-2. Implement Matter **OTA** — partially done. All twenty-four firmware
+
+   A twenty-fifth device type, `firmware/evse/` (EnergyEvse + EnergyEvseMode
+   + DeviceEnergyManagement), followed — the user's choice from a short
+   AskUserQuestion list (EVSE / Generic Switch / Refrigerator / Dishwasher
+   or Laundry Washer/Dryer). This repo's first over the Energy EVSE cluster
+   family, and its biggest single Delegate interface so far (~20 pure
+   virtual methods, confirmed by reading `Delegate.h` directly). A real,
+   checked discrepancy was found between the CSA's own EVSE.xml (which
+   doesn't list DeviceEnergyManagement at all) and esp-matter's own
+   top-level helper (which adds it unconditionally) — kept as shipped,
+   left at its harmless default. `ChargingPreferences` (SetTargets/
+   GetTargets/ClearTargets) is genuinely `<mandatoryConform/>`, so it's
+   real, working, bounded in-memory storage — not a stub — but honestly
+   never acted on by any scheduler, the same documented-limitation
+   precedent WaterHeaterMode's own unused "Timed" mode already
+   established. This device type ships with a prominent safety note at
+   the top of `app_main.cpp` (and repeated in its own repository-layout
+   entry above): no real SAE J1772/IEC 61851 Control Pilot protocol is
+   implemented — the single relay is designed to gate an ALREADY-APPROVED
+   EVSE unit's own low-voltage enable input, the same "gate an existing
+   appliance's own control input" framing firmware/thermostat/'s RELAY
+   output already uses for a boiler, never to switch AC mains or vehicle
+   charging current directly. One real compile error was caught and fixed
+   by an actual Docker build: `EnergyEvseCluster` needed its full
+   `EnergyEvse::EnergyEvseCluster` qualification, the same "a namespace
+   brought into scope doesn't bring its members in unqualified" lesson
+   firmware/robot-vacuum/'s and firmware/water-heater/'s own `_span`/
+   `WaterHeaterHeatSourceBitmap` fixes already taught — caught and fixed
+   on the second Docker build attempt (clean after that). See its own
+   repository-layout entry above for the complete detail. Build-verified
+   in Docker; not hardware-tested (no EVSE hardware with a real external-
+   enable input physically available when written). Not yet integrated
+   into `tools/product-wizard/` — worth a follow-up pass; needs a relay
+   plus an optional plug-detect input, similar shape to firmware/
+   robot-vacuum/'s `dockSensor` field.
+2. Implement Matter **OTA** — partially done. All twenty-five firmware
    types ship `CONFIG_ENABLE_OTA_REQUESTOR=y`, which adds the OTA Requestor
    cluster to the root node endpoint entirely via Kconfig — esp-matter's
    own core startup (`esp_matter_core.cpp`) calls
@@ -3878,7 +4055,7 @@ SECURITY.md               flash encryption / secure boot / signed OTA guidance
    later in `app_main()`, after `esp_matter::start()` has completed.
 
    Quick-power-cycle factory reset is Docker build-verified across all
-   twenty-four device types — not yet hardware-tested. The wizard
+   twenty-five device types — not yet hardware-tested. The wizard
    (`tools/product-wizard/`) has a static "Factory reset" info box
    rendered directly under the Configuration summary sidebar on every
    device type (wrapped together in a `.config-sidebar-stack` flex

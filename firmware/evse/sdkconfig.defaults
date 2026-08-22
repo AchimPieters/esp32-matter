@@ -1,0 +1,50 @@
+# Default build configuration. These mirror the settings used by the esp-matter
+# examples. If a build fails after an SDK update, diff this file against the
+# sdkconfig.defaults of any example under $ESP_MATTER_PATH/examples/.
+
+# --- Partition table (uses the custom table with OTA + factory partition) ---
+CONFIG_PARTITION_TABLE_CUSTOM=y
+CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions.csv"
+CONFIG_ESPTOOLPY_FLASHSIZE_4MB=y
+
+# --- Factory data provider: read certs + commissioning data from "fctry" ---
+CONFIG_ENABLE_ESP32_FACTORY_DATA_PROVIDER=y
+CONFIG_ENABLE_ESP32_DEVICE_INSTANCE_INFO_PROVIDER=y
+CONFIG_CHIP_FACTORY_NAMESPACE_PARTITION_LABEL="fctry"
+
+# --- Matter core ---
+CONFIG_ESP_MATTER_ENABLE_DATA_MODEL=y
+
+# --- Matter OTA: adds the OTA Requestor cluster to the root node endpoint,
+# so this device can be updated over the air once bound to an OTA Provider
+# node on the same fabric (that binding is set up by a controller — see
+# CLAUDE.md). The ota_0/ota_1 A/B slots + otadata partition this needs are
+# already in partitions.csv. No app code required: esp-matter's core
+# startup wires the requestor up automatically once this Kconfig option is
+# on (see esp_matter_core.cpp).
+CONFIG_ENABLE_OTA_REQUESTOR=y
+
+# --- BLE (commissioning transport) ---
+CONFIG_BT_ENABLED=y
+CONFIG_BT_NIMBLE_ENABLED=y
+
+# --- IPv6 (Matter's operational network runs over IPv6/mDNS) ---
+CONFIG_LWIP_IPV6_AUTOCONFIG=y
+CONFIG_LWIP_HOOK_IP6_ROUTE_DEFAULT=y
+CONFIG_LWIP_HOOK_ND6_GET_GW_DEFAULT=y
+# One address per fabric plus a link-local address; matches the max fabric count.
+CONFIG_LWIP_IPV6_NUM_ADDRESSES=6
+
+# --- mbedTLS: CHIP's crypto layer calls mbedtls_hkdf() directly, which is
+# compiled out unless this is explicitly enabled ---
+CONFIG_MBEDTLS_HKDF_C=y
+
+# --- Logging (turn down for production images) ---
+CONFIG_LOG_DEFAULT_LEVEL_INFO=y
+
+# --- Recommended security hardening ---------------------------------------
+# Leave these OFF while learning (they make re-flashing harder), then turn them
+# on for real deployments. See SECURITY.md for the full walkthrough.
+# CONFIG_SECURE_BOOT=y
+# CONFIG_SECURE_BOOT_V2_ENABLED=y
+# CONFIG_SECURE_FLASH_ENC_ENABLED=y
