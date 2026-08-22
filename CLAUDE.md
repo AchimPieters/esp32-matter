@@ -3134,6 +3134,202 @@ firmware/refrigerator/    Refrigerator — twenty-seventh device type, and
                            physically available when written).
   partitions.csv           same OTA + fctry layout as firmware/light/
   sdkconfig.defaults        same as firmware/light/
+firmware/dishwasher/      Dishwasher — twenty-eighth device type, and this
+                           repo's first over the *generic* OperationalState
+                           cluster (0x0060 — the same base cluster
+                           RvcOperationalState derives from, but used here
+                           directly, un-derived) plus a genuinely new
+                           command-cycle shape: Start/Stop/Pause/Resume
+                           driving a real, if simplified, wash cycle,
+                           rather than a continuous regulation loop
+                           (thermostat/water-heater/refrigerator) or a
+                           one-shot actuation (valve/door-lock).
+  main/app_main.cpp        Confirmed directly against the CSA's own
+                           data_model/1.6/device_types/Dishwasher.xml: only
+                           OperationalState is `<mandatoryConform/>` (with
+                           its own OperationCompletion event also
+                           mandatory, per this device type's own revision
+                           2) — Identify, On/Off (DeadFrontOnOff feature
+                           only — a narrow "is the device's own UI/front-
+                           panel powered" semantic, not a real power
+                           switch, left out), TemperatureControl,
+                           DishwasherMode, and DishwasherAlarm are all
+                           `<optionalConform/>`. A real naming gotcha found
+                           while researching this: esp-matter's own
+                           generated files use `dish_washer` (with an
+                           underscore) throughout — the endpoint helper is
+                           `esp_matter::endpoint::dish_washer::create()`,
+                           the mode cluster is `cluster::dish_washer_mode`,
+                           the alarm cluster is
+                           `cluster::dish_washer_alarm` — none matching the
+                           CSA's own un-underscored "Dishwasher"/
+                           "DishwasherMode"/"DishwasherAlarm" naming; a
+                           first source search for "dishwasher" (no
+                           underscore) came back nearly empty as a result.
+                           The underlying connectedhomeip cluster server
+                           code and its own C++ namespaces use the CSA's
+                           spelling as expected — only esp-matter's own
+                           wrapper file/namespace names differ.
+                           `endpoint::dish_washer::create()` confirmed to
+                           add only a Descriptor cluster + OperationalState
+                           (with OperationCompletion pre-registered) via
+                           `common::create<T>()` — Identify +
+                           TemperatureControl + DishwasherMode +
+                           DishwasherAlarm are all added manually onto that
+                           same endpoint afterward.
+
+                           OperationalState itself surfaced a SIXTH
+                           genuinely distinct "how do I reach a live
+                           cluster instance from app code" pattern in this
+                           repo: unlike firmware/robot-vacuum/'s
+                           RvcOperationalState (whose esp-matter `config_t`
+                           is a literally empty struct, needing a hand-
+                           built raw `Instance`+`Delegate` pair), the
+                           generic OperationalState cluster DOES support
+                           `config->delegate` (confirmed by reading
+                           `esp_matter_cluster.cpp`'s own
+                           `operational_state::create()` directly — the
+                           same `set_delegate_and_init_callback()` pattern
+                           every other auto-wired delegate cluster in this
+                           repo already uses). Ported directly from
+                           connectedhomeip's own real reference
+                           (`examples/dishwasher-app/dishwasher-common/
+                           src/operational-state-delegate-impl.cpp`, read
+                           end to end): each `HandleXStateCallback` calls
+                           `GetInstance()->SetOperationalState(...)`
+                           directly and sets `err` accordingly — the
+                           Delegate itself owns the state transition,
+                           unlike e.g. firmware/door-lock/'s LockState or
+                           firmware/valve/'s CurrentState (both reported
+                           back through a separate call after the
+                           framework's own command handling already ran).
+                           A registry-style lookup is still needed for the
+                           two places this file touches the cluster from
+                           OUTSIDE the delegate's own callbacks — the door
+                           sensor's own async safety-pause, and the wash-
+                           cycle finishing on its own — via esp-matter's
+                           own public `get_delegate_managed_instance
+                           (cluster::get(endpoint_id, OperationalState::Id))`
+                           (declared in `esp_matter_data_model.h`), the
+                           sixth pattern: (1) plain registry-lookup setter,
+                           (2) a Delegate whose own reporting call happens
+                           to be a working generic free-function proxy,
+                           (3) the `chip::app::…registry().Get()`-based
+                           fallback for `DefaultServerCluster`-derived
+                           clusters, (4) a cluster-family-specific
+                           convenience free function
+                           (`ResourceMonitoring::GetClusterInstance()`),
+                           (5) a direct FeatureMap `attribute::update()`
+                           override, and now (6)
+                           `get_delegate_managed_instance()` for a legacy-
+                           ember-style cluster whose live C++ instance is
+                           delegate-managed but not one of
+                           connectedhomeip's `DefaultServerCluster`-
+                           registry clusters at all (confirmed: no
+                           `operational_state/` folder exists under
+                           `data_model_provider/clusters/`). Four real
+                           compile errors were caught and fixed across two
+                           failed Docker build attempts, not guessed: a
+                           missing `#include <app/clusters/
+                           operational-state-server/CodegenIntegration.h>`
+                           (the header declaring `Delegate`/`Instance`/
+                           `GenericOperationalState`/`GenericOperationalError`
+                           at all — without it, the compiler silently
+                           resolved `err`'s type to plain `int&` instead of
+                           erroring outright, a genuinely confusing failure
+                           mode worth remembering); `DishwasherAlarmServer`
+                           needing its full `DishwasherAlarm::
+                           DishwasherAlarmServer` qualification (nested
+                           inside the `DishwasherAlarm` namespace, not
+                           reachable through a top-level `using namespace
+                           chip::app::Clusters;` alone); esp-matter's own
+                           `get_delegate_managed_instance()` needing its
+                           full `esp_matter::cluster::` qualification too;
+                           and a missing `GetCountdownTime()` pure-virtual
+                           override (returns null — no live countdown
+                           reported, a documented scope cut).
+
+                           TemperatureControl (TN-only, wash-temperature
+                           target: 30.00-70.00 degC, default 50.00 degC)
+                           reuses firmware/refrigerator/'s exact pattern,
+                           including its own documented legacy-vs-generated
+                           `feature_flags`/`temp_setpoint` pitfall — set
+                           explicitly here for the same reason.
+                           DishwasherMode is a fifth ModeBase-derived
+                           cluster in this repo (same automatic
+                           `config->delegate` wiring as every prior one),
+                           offering three real dishwasher-specific tags
+                           confirmed directly against connectedhomeip's own
+                           generated `DishwasherMode/Enums.h` — "Normal"
+                           (`kNormal`), "Heavy" (`kHeavy`), "Light"
+                           (`kLight`) — plus a real business rule borrowed
+                           from firmware/robot-vacuum/'s own "reject a
+                           clean-mode change while actively cleaning" rule:
+                           `HandleChangeToMode()` rejects with
+                           `ModeBase::StatusCode::kInvalidInMode` whenever
+                           OperationalState is Running.
+
+                           DishwasherAlarm turned out to have a genuinely
+                           complete Delegate + Server API — unlike
+                           firmware/refrigerator/'s own RefrigeratorAlarm,
+                           confirmed by reading `dishwasher-alarm-server.h`
+                           directly: `DishwasherAlarmServer::Instance()
+                           ::SetStateValue()` both sets the State attribute
+                           AND fires the cluster's own Notify event
+                           internally — no manual event-rigging gap this
+                           time. All six real `AlarmBitmap` bits (InflowError/
+                           DrainError/DoorError/TempTooLow/TempTooHigh/
+                           WaterLevelError, confirmed against
+                           connectedhomeip's own generated Enums.h) are
+                           declared Supported/Mask at startup, but only
+                           DoorError is ever actually asserted (driven by a
+                           real reed-switch door sensor) — the other five
+                           would each need real flow/level/temperature-
+                           fault sensing hardware this hobby-scale build
+                           doesn't have, same "smallest reasonable next
+                           step" scope cut as firmware/evse/'s own always-
+                           `NoError` `FaultState`. `dish_washer_alarm
+                           ::create()`'s own FeatureMap is hardcoded to 0
+                           (same documented gap class as RefrigeratorAlarm/
+                           AirQuality) — the Reset feature is therefore
+                           never advertised, so DoorError only ever clears
+                           via the door physically closing again, not via a
+                           controller-issued ResetAlarms command.
+
+                           The wash cycle itself is a real, if deliberately
+                           simplified, timed state machine: Washing (heater
+                           relay, hysteresis-controlled against a DS18B20
+                           reading and TemperatureControl's own live
+                           setpoint, same 0.5 degC hysteresis convention
+                           firmware/refrigerator/'s and firmware/
+                           water-heater/'s own control loops already use,
+                           plus the wash pump running continuously) for 45
+                           minutes, then Draining (drain pump only) for 5
+                           minutes, then `OnOperationCompletionDetected()`
+                           back to Stopped — no Fill phase or turbidity/
+                           soil-sensing logic is modelled at all (a real
+                           water-inlet valve + float switch would be needed
+                           for a genuine Fill phase), same honest,
+                           documented scope cut as firmware/robot-vacuum/'s
+                           own "no real navigation" limitation.
+                           `HandleStartStateCallback()` rejects the command
+                           if the door is open, matching real dishwasher
+                           interlock behavior; opening the door mid-cycle
+                           doesn't error the OperationalState at all — it
+                           PAUSES it (a real, physically-correct dishwasher
+                           behavior, not an error condition) while
+                           separately raising DishwasherAlarm's DoorError
+                           bit, with no silent auto-resume once the door
+                           closes again (the user must explicitly resume).
+
+                           Standard quick-power-cycle factory reset.
+                           Build-verified in Docker (four real compile
+                           errors caught and fixed across two failed
+                           attempts — see above); not hardware-tested (no
+                           relay/DS18B20/reed-switch hardware for this
+                           device type physically available when written).
+  partitions.csv           same OTA + fctry layout as firmware/light/
+  sdkconfig.defaults        same as firmware/light/
 tools/
   dev.sh                  opens the Docker dev environment
   gen_factory.sh          local QR + factory partition generator
@@ -4413,7 +4609,40 @@ SECURITY.md               flash encryption / secure boot / signed OTA guidance
    for the complete detail. Build-verified in Docker; not hardware-tested
    (no relay/DS18B20/reed-switch hardware for this device type physically
    available when written).
-2. Implement Matter **OTA** — partially done. All twenty-seven firmware
+
+   A twenty-eighth device type, `firmware/dishwasher/` (OperationalState +
+   TemperatureControl + DishwasherMode + DishwasherAlarm), followed — the
+   user's choice from a short AskUserQuestion list (Dishwasher had already
+   come up as a recommended-but-unchosen option alongside water-heater and
+   evse). This repo's first over the *generic* OperationalState cluster
+   (0x0060), used directly rather than derived the way RvcOperationalState
+   is — and a genuinely new command-cycle shape (Start/Stop/Pause/Resume
+   driving a real, if simplified, timed wash cycle) rather than a
+   continuous regulation loop or a one-shot actuation. A real naming
+   gotcha was found before any code was written: esp-matter's own
+   generated files use `dish_washer` (with an underscore) throughout,
+   not matching the CSA's own un-underscored "Dishwasher" naming at all —
+   a first source search for "dishwasher" came back nearly empty as a
+   result, only resolved by widening the search to "dish.washer".
+   OperationalState itself turned out to support esp-matter's own
+   automatic `config->delegate` wiring (unlike RvcOperationalState's empty
+   `config_t`), but reaching the live cluster instance from OUTSIDE the
+   delegate's own callbacks (needed for the door sensor's own async
+   safety-pause, and for the wash cycle finishing on its own) needed
+   esp-matter's own `get_delegate_managed_instance()` — a sixth genuinely
+   distinct "how do I reach a live cluster instance from app code" pattern
+   in this repo now (see its own repository-layout entry above for the
+   full enumeration of all six). DishwasherAlarm turned out to have a
+   genuinely complete Delegate + Server API (its own `SetStateValue()`
+   fires the Notify event internally) — unlike firmware/refrigerator/'s
+   own RefrigeratorAlarm, no manual event-rigging gap this time, though
+   the same FeatureMap-hardcoded-to-0 gap class still applies to its Reset
+   feature. Four real compile errors were caught and fixed across two
+   failed Docker build attempts, not guessed — see its own repository-
+   layout entry above for the complete detail on all four. Build-verified
+   in Docker; not hardware-tested (no relay/DS18B20/reed-switch hardware
+   for this device type physically available when written).
+2. Implement Matter **OTA** — partially done. All twenty-eight firmware
    types ship `CONFIG_ENABLE_OTA_REQUESTOR=y`, which adds the OTA Requestor
    cluster to the root node endpoint entirely via Kconfig — esp-matter's
    own core startup (`esp_matter_core.cpp`) calls
@@ -4490,7 +4719,7 @@ SECURITY.md               flash encryption / secure boot / signed OTA guidance
    later in `app_main()`, after `esp_matter::start()` has completed.
 
    Quick-power-cycle factory reset is Docker build-verified across all
-   twenty-seven device types — not yet hardware-tested. The wizard
+   twenty-eight device types — not yet hardware-tested. The wizard
    (`tools/product-wizard/`) has a static "Factory reset" info box
    rendered directly under the Configuration summary sidebar on every
    device type (wrapped together in a `.config-sidebar-stack` flex
