@@ -2499,6 +2499,159 @@ firmware/extractor-hood/  Extractor Hood — twenty-third device type, and the
                            board physically available when written).
   partitions.csv           same OTA + fctry layout as firmware/light/
   sdkconfig.defaults        same as firmware/light/
+firmware/water-heater/    Water Heater — twenty-fourth device type, and the
+                           first to combine a plain-ember-attribute
+                           Thermostat cluster, a ModeBase-derived Mode
+                           cluster, and a Delegate-driven command cluster
+                           with its own events, all on one endpoint — plus
+                           a genuinely new cluster (WaterHeaterManagement)
+                           this repo hadn't touched before.
+  main/app_main.cpp        `endpoint::water_heater::create()` (device type
+                           0x050F) confirmed complete/ready-to-use —
+                           Thermostat[Heat] + WaterHeaterManagement +
+                           WaterHeaterMode, auto-Descriptor via
+                           `common::create<T>()` — matches the CSA's own
+                           data_model/1.6/device_types/WaterHeater.xml
+                           exactly (all three mandatory; Identify only
+                           `<optionalConform/>`, same spec shape firmware/
+                           extractor-hood/ already hit, added onto the
+                           endpoint afterward the same way). An optional
+                           composed Electrical Sensor device type is
+                           listed too — not implemented, same "smallest
+                           reasonable next step" scope cut as every other
+                           device type's own optional extras; firmware/
+                           outlet/ already has that exact two-cluster
+                           pattern built if it's ever wanted here.
+                           ControlSequenceOfOperation is HeatingOnly — a
+                           water heater physically can't cool, so unlike
+                           firmware/thermostat/'s own Heat+Cool scope
+                           there's no ambiguity to scope down at all.
+                           WaterHeaterMode is wired through esp-matter's
+                           own `config->delegate` field exactly like
+                           firmware/robot-vacuum/'s RvcRunMode/RvcCleanMode
+                           — confirmed by reading `esp_matter_cluster.cpp`'s
+                           own `water_heater_mode::create()` directly, same
+                           automatic `WaterHeaterModeDelegateInitCB` ->
+                           `InitModeDelegate()` construction, no ordering
+                           awareness needed. Real mode/tag values
+                           (`WaterHeaterMode::ModeTag::kOff/kManual/kTimed`)
+                           confirmed against connectedhomeip's own
+                           generated Enums.h. "Timed" behaves identically
+                           to "Manual" — no RTC-driven schedule
+                           implemented, same honest scope cut as
+                           firmware/robot-vacuum/'s "Mapping" mode having
+                           no real navigation. WaterHeaterManagement is
+                           ALSO wired through `config->delegate` the same
+                           automatic way (confirmed directly) — but
+                           confirmed by reading `Delegate.h` that every one
+                           of its attributes (HeaterTypes/HeatDemand/
+                           TankVolume/EstimatedHeatRequired/TankPercentage/
+                           BoostState) is delegate-driven via a pure-
+                           virtual getter, read live on every request,
+                           despite esp-matter's own `config_t` exposing
+                           `heater_types`/`heat_demand`/`boost_state`
+                           fields that get seeded into now-irrelevant
+                           ember attributes — same "code-driven cluster
+                           shadows the plain ember store" pattern this
+                           repo has hit repeatedly (RvcOperationalState,
+                           ModeBase, ResourceMonitoring).
+                           GetTankVolume()/GetEstimatedHeatRequired()/
+                           GetTankPercentage() all return trivial
+                           placeholders (0) — confirmed SAFE, not just
+                           assumed, by reading
+                           `WaterHeaterManagementCluster.cpp`'s own
+                           `Attributes()` method: it only advertises those
+                           three at all when the EnergyManagement/
+                           TankPercent feature bits are set, which this
+                           file leaves off, so a real controller never has
+                           an attribute path that would reach those
+                           getters. A real, previously-undocumented gap
+                           was found while researching this: connectedhomeip's
+                           own reference example
+                           (`examples/water-heater-app/`) contains a
+                           literal `// TODO: Implement Thermostat Cluster
+                           temperature handling. It's mandatory to be spec
+                           conformant.` comment — confirming there is no
+                           single prescribed relationship between
+                           Thermostat's own SystemMode and WaterHeaterMode's
+                           Off/Manual/Timed even from the SDK authors
+                           themselves. This file's own deliberate,
+                           documented choice: heating is enabled only when
+                           BOTH `WaterHeaterMode != Off` AND `Thermostat
+                           SystemMode == Heat` — either cluster saying Off
+                           turns the heater off. Both boot to Off, matching
+                           every other device type's boot-to-known-safe-
+                           state convention. `Boost`/`CancelBoost` are
+                           handled entirely in this file (confirmed the
+                           cluster itself has no countdown/state-machine
+                           logic of its own, unlike e.g. firmware/valve/'s
+                           ValveConfigurationAndControl) — the countdown,
+                           the hysteresis control loop, and the DS18B20
+                           sensor read all run together in one periodic
+                           FreeRTOS task, calling straight into the
+                           delegate's own state/event-generation methods
+                           with no explicit Matter stack lock, the same
+                           lock-free precedent firmware/air-purifier/'s
+                           `filter_life_task` already established (re-
+                           confirmed by re-reading that file — no
+                           `lock::ScopedChipStackLock` there either).
+                           `OneShot` is honestly implemented — this device
+                           has a real local temperature reading to check
+                           it against, so the task ends the boost itself,
+                           generating a real `BoostEnded` event, once the
+                           target is reached. `EmergencyBoost` is accepted
+                           and logged but has no second heat source to
+                           enable in this single-relay v1 design — a
+                           documented, honest scope cut, same category as
+                           firmware/robot-vacuum/'s "Mapping" mode. Single
+                           relay (active-LOW, matching firmware/valve/'s
+                           and firmware/door-lock/'s own convention) drives
+                           a contactor in series with an immersion heating
+                           element's own thermostat — the classic DIY
+                           smart-electric-water-heater retrofit, not a gas
+                           boiler ignition interface (a meaningfully
+                           different, less hobbyist-safe problem).
+                           `GetHeaterTypes()` is correspondingly fixed to
+                           `kImmersionElement1` (confirmed against the
+                           cluster's own `WaterHeaterHeatSourceBitmap`
+                           enum, which also lists ImmersionElement2/
+                           HeatPump/Boiler/Other for installation types
+                           not implemented here); `GetHeatDemand()` mirrors
+                           the relay's real, current state.
+                           `WATER_HEATER_SENSOR_GPIO` reuses firmware/
+                           thermostat/'s own DS18B20 driver verbatim —
+                           deliberately NOT the full 7-chip `SENSOR_TYPE`
+                           library that file offers for room-air
+                           temperature: DS18B20 is specifically sold in a
+                           waterproof stainless-steel probe variant widely
+                           used for exactly this (tank/aquarium/brewing)
+                           purpose, while the other six options are all
+                           bare room-air sensors with no waterproof form
+                           factor — offering them here would suggest
+                           submerging hardware never designed for it.
+                           `WATER_HEATER_HYSTERESIS_CENTIDEGREES` (0.5 degC)
+                           is deliberately wider than firmware/thermostat/'s
+                           own 0.3 degC default — a water tank's thermal
+                           mass responds far more slowly than room air, so
+                           a tighter band would just cause needless relay
+                           chatter with no real benefit. Standard quick-
+                           power-cycle factory reset. Two real, sequential
+                           compile errors were caught and fixed by an
+                           actual Docker build, not guessed: the same
+                           `_span` literal-operator scoping fix firmware/
+                           robot-vacuum/ already needed (`using namespace
+                           chip::literals;`, not a blanket `using namespace
+                           chip;`), and `WaterHeaterHeatSourceBitmap`/
+                           `Energy_mWh` both needing their real fully-
+                           qualified names (`WaterHeaterManagement::
+                           WaterHeaterHeatSourceBitmap`, `chip::Energy_mWh`
+                           — NOT `chip::app::Clusters::Globals::Energy_mWh`,
+                           an initially-guessed wrong namespace path).
+                           Build-verified in Docker; not hardware-tested
+                           (no relay/DS18B20 probe hardware physically
+                           available when written).
+  partitions.csv           same OTA + fctry layout as firmware/light/
+  sdkconfig.defaults        same as firmware/light/
 tools/
   dev.sh                  opens the Docker dev environment
   gen_factory.sh          local QR + factory partition generator
@@ -3602,7 +3755,39 @@ SECURITY.md               flash encryption / secure boot / signed OTA guidance
    already shipped at their wizard defaults, confirming a correct no-op
    rather than a rewrite). See `tools/product-wizard/README.md`'s own
    updated device-type list and its new paragraph on this addition.
-2. Implement Matter **OTA** — partially done. All twenty-three firmware
+
+   A twenty-fourth device type, `firmware/water-heater/` (Thermostat[Heat]
+   + WaterHeaterManagement + WaterHeaterMode), followed — the user's
+   choice from a short AskUserQuestion list (Water Heater / EVSE / Generic
+   Switch / Room Air Conditioner). The first device type in this repo to
+   combine three previously-separate integration patterns on one endpoint
+   at once (plain-ember-attribute Thermostat, ModeBase-derived Mode
+   cluster, Delegate-driven command cluster with its own events), plus a
+   genuinely new cluster (WaterHeaterManagement) with real Boost/
+   CancelBoost command handling and BoostStarted/BoostEnded events. A
+   real, previously-undocumented gap was found in connectedhomeip's own
+   reference example (`examples/water-heater-app/`) — a literal
+   "TODO: Implement Thermostat Cluster temperature handling. It's
+   mandatory to be spec conformant." comment, confirming even the SDK
+   authors haven't settled on one prescribed relationship between
+   Thermostat's SystemMode and WaterHeaterMode's own Off/Manual/Timed;
+   this file makes its own deliberate, documented choice (heating enabled
+   only when both clusters agree, i.e. neither says Off) rather than
+   guessing at an intended-but-unwritten convention. Two real, sequential
+   compile errors were caught and fixed by an actual Docker build: the
+   same `_span` literal-operator scoping issue firmware/robot-vacuum/
+   already hit, and two wrong namespace-qualified type guesses
+   (`WaterHeaterHeatSourceBitmap`, `Energy_mWh`) corrected against the
+   compiler's own error output rather than assumed correct on the first
+   attempt. See its own repository-layout entry above for the complete
+   detail. Build-verified in Docker; not hardware-tested (no relay/
+   DS18B20 probe hardware physically available when written). Not yet
+   integrated into `tools/product-wizard/` — worth a follow-up pass;
+   unlike firmware/extractor-hood/'s simple single-GPIO shape, this
+   device type has a real relay output plus a temperature-sensor pin,
+   closer in shape to firmware/valve/'s or firmware/pressure-sensor/'s
+   own entries than to firmware/fan/'s.
+2. Implement Matter **OTA** — partially done. All twenty-four firmware
    types ship `CONFIG_ENABLE_OTA_REQUESTOR=y`, which adds the OTA Requestor
    cluster to the root node endpoint entirely via Kconfig — esp-matter's
    own core startup (`esp_matter_core.cpp`) calls
@@ -3679,7 +3864,7 @@ SECURITY.md               flash encryption / secure boot / signed OTA guidance
    later in `app_main()`, after `esp_matter::start()` has completed.
 
    Quick-power-cycle factory reset is Docker build-verified across all
-   twenty-three device types — not yet hardware-tested. The wizard
+   twenty-four device types — not yet hardware-tested. The wizard
    (`tools/product-wizard/`) has a static "Factory reset" info box
    rendered directly under the Configuration summary sidebar on every
    device type (wrapped together in a `.config-sidebar-stack` flex
