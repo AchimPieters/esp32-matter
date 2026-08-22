@@ -2384,6 +2384,37 @@ const DEVICE_TYPES = [
       defaultsByModule: { esp32: 2, esp32c2: 2, esp32c3: 2, esp32c5: 2, esp32c6: 2, esp32c61: 2, esp32s3: 2, esp32h2: 2 },
     },
   },
+  {
+    id: "generic-switch",
+    name: "Generic Switch",
+    desc: "Matter generic switch: a momentary pushbutton fires real InitialPress/LongPress/ShortRelease/LongRelease/MultiPressOngoing/MultiPressComplete events for automations — a full single/double/triple/quadruple-click-plus-long-press \"smart button,\" unlike firmware/switch/'s own On/Off Switch which sends a command straight to a bound target. Reference device in firmware/generic-switch/.",
+    shortDesc: "Momentary button, click/multi-click/long-press events.",
+    // Matches project(matter_generic_switch) in
+    // firmware/generic-switch/CMakeLists.txt. Same single-GPIO-plus-
+    // identify shape as firmware/fan/'s own entry — the press-timing
+    // state machine (debounce/long-press/multi-press) is all in-firmware
+    // logic with no GPIOs of its own, so no extra fields are needed
+    // beyond the button + identify pins.
+    binName: "matter_generic_switch.bin",
+    driver: {
+      summary: "GPIO (digital input, active-low)",
+      fieldLabel: "Button GPIO pin",
+      blockTitle: "Button · digital GPIO input",
+      filePath: "firmware/generic-switch/main/app_main.cpp",
+      defineName: "GENERIC_SWITCH_BUTTON_GPIO",
+      currentGpio: 4,
+      defaultsByModule: { esp32: 4, esp32c2: 4, esp32c3: 4, esp32c5: 4, esp32c6: 4, esp32c61: 4, esp32s3: 4, esp32h2: 4 },
+    },
+    identify: {
+      summary: "GPIO (digital output)",
+      fieldLabel: "Identify LED GPIO pin",
+      blockTitle: "Identify LED · digital output",
+      filePath: "firmware/generic-switch/main/app_main.cpp",
+      defineName: "IDENTIFY_LED_GPIO",
+      currentGpio: 2,
+      defaultsByModule: { esp32: 2, esp32c2: 2, esp32c3: 2, esp32c5: 2, esp32c6: 2, esp32c61: 2, esp32s3: 2, esp32h2: 2 },
+    },
+  },
 ];
 
 function findDeviceType(id) {
@@ -2805,6 +2836,19 @@ const DEVICE_TYPE_ICONS = {
   evse: `<svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
     <rect x="8" y="8" width="32" height="32" rx="10"/>
     <path d="M26 14 L17 27 H23 L21 34 L31 20 H25 Z" fill="currentColor" stroke="none"/>
+  </svg>`,
+  // A round button bezel with a filled cap (same "filled center dot"
+  // motif fan's/dimmable-light's own icons already use for the
+  // mechanically-important point) plus four short radiating ticks
+  // suggesting a press/click — distinct from every other icon here by
+  // showing the action itself, not a reading or a piece of hardware.
+  "generic-switch": `<svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+    <circle cx="24" cy="24" r="14"/>
+    <circle cx="24" cy="24" r="6" fill="currentColor" stroke="none"/>
+    <path d="M24 6v4"/>
+    <path d="M24 38v4"/>
+    <path d="M6 24h4"/>
+    <path d="M38 24h4"/>
   </svg>`,
 };
 

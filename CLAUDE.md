@@ -4149,6 +4149,18 @@ SECURITY.md               flash encryption / secure boot / signed OTA guidance
    in Docker; not hardware-tested (though this repo's other momentary-
    button device types already confirm the underlying breadboard-
    pushbutton wiring works on real hardware).
+
+   Integrated into `tools/product-wizard/` immediately afterward — the
+   simplest wizard entry in several sessions: a single `driver` (the
+   button) plus `identify`, the exact same shape firmware/fan/'s own
+   entry already uses (the press-timing state machine has no GPIOs of
+   its own). Plus a new hand-drawn icon (a round button bezel with a
+   filled cap and four radiating "click" ticks). Verified the same way
+   as every wizard change this session: a Node.js sandboxed check, then
+   those exact generated sed commands run for real against a copy of the
+   actual `app_main.cpp` and diffed against the original — a byte-for-
+   byte match. See `tools/product-wizard/README.md`'s own updated
+   device-type list and its new paragraph on this addition.
 2. Implement Matter **OTA** — partially done. All twenty-six firmware
    types ship `CONFIG_ENABLE_OTA_REQUESTOR=y`, which adds the OTA Requestor
    cluster to the root node endpoint entirely via Kconfig — esp-matter's

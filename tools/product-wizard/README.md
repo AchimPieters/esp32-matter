@@ -40,8 +40,8 @@ open tools/product-wizard/index.html
   "Pressure Sensor" (`firmware/pressure-sensor/`), "Robot Vacuum"
   (`firmware/robot-vacuum/`), "Extractor Hood"
   (`firmware/extractor-hood/`), "Water Heater"
-  (`firmware/water-heater/`), or "EVSE" (`firmware/evse/`). All
-  twenty-four are real, buildable
+  (`firmware/water-heater/`), "EVSE" (`firmware/evse/`), or "Generic
+  Switch" (`firmware/generic-switch/`). All twenty-five are real, buildable
   firmware, not just UI placeholders (`firmware/camera/`, this repo's
   twelfth device type, is deliberately NOT offered here — see its own
   section further down for why: its two-chip/two-firmware/external-SDK
@@ -823,6 +823,19 @@ copy of the actual `app_main.cpp` and diffed against the original: relay
 and identify a byte-for-byte no-op match, and the plug-sensor line
 separately confirmed to correctly rewrite `GPIO_NUM_NC` to a real pin
 when enabled. All checks passed.
+
+`firmware/generic-switch/` followed — the simplest wizard entry in
+several sessions: a single `driver` (the button) plus `identify`, the
+exact same shape `firmware/fan/`'s own entry already uses (the press-
+timing state machine has no GPIOs of its own). Plus a new hand-drawn
+icon (a round button bezel with a filled cap and four radiating "click"
+ticks). Verified the same way: `findDeviceType` lookup,
+`renderConfigureDevice` output containing both field labels,
+`isProductComplete` before and after render, the exact generated sed
+commands for `GENERIC_SWITCH_BUTTON_GPIO`/`IDENTIFY_LED_GPIO` — then
+those exact commands run for real against a copy of the actual
+`app_main.cpp` and diffed against the original, a byte-for-byte match.
+All checks passed.
 
 ## Known limitations
 
