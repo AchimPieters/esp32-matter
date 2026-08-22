@@ -2919,6 +2919,221 @@ firmware/generic-switch/  Generic Switch — twenty-sixth device type, and
                            physical board).
   partitions.csv           same OTA + fctry layout as firmware/light/
   sdkconfig.defaults        same as firmware/light/
+firmware/refrigerator/    Refrigerator — twenty-seventh device type, and
+                           this repo's first genuinely composed, multi-
+                           endpoint device: a Refrigerator (0x0070) root
+                           endpoint with two Temperature Controlled Cabinet
+                           (0x0071) *child* endpoints (Fridge + Freezer),
+                           linked via esp-matter's real parent-child
+                           endpoint API — not just "two endpoints that
+                           happen to exist on one node" the way firmware/
+                           outlet/'s second (Electrical Sensor) endpoint is.
+  main/app_main.cpp        Confirmed directly against the CSA's own
+                           data_model/1.6/device_types/Refrigerator.xml:
+                           its `<conditionRequirements>` block mandates at
+                           least one child endpoint of device type
+                           Temperature Controlled Cabinet with the "Cooler"
+                           condition — a real, spec-level structural
+                           requirement, not a design choice made here.
+                           `endpoint::refrigerator::create()` confirmed to
+                           add only a Descriptor cluster + the device-type-
+                           list entry (Identify/RefrigeratorAndTemperature
+                           ControlledCabinetMode/RefrigeratorAlarm are all
+                           `<optionalConform/>`, so esp-matter's own
+                           generated file's comment says outright it isn't
+                           adding them by default) — Identify +
+                           RefrigeratorAlarm are added manually onto the
+                           root endpoint, same "add extra clusters onto an
+                           already-correct endpoint" pattern established
+                           repeatedly in this repo. `temperature_controlled_
+                           cabinet::create()` DOES add TemperatureControl
+                           automatically (mandatoryConform there) but not
+                           RefrigeratorAndTemperatureControlledCabinetMode
+                           or TemperatureMeasurement (both optionalConform)
+                           — added manually onto each cabinet endpoint.
+                           The two cabinet endpoints are linked to the root
+                           via the real `esp_matter::set_parent_endpoint
+                           (child, parent)` API, confirmed by reading
+                           esp-matter's own official `examples/refrigerator/
+                           main/app_main.cpp` reference end to end.
+
+                           A real, previously-undocumented discrepancy
+                           between esp-matter's two parallel cluster/
+                           endpoint implementations was found and is worth
+                           remembering for any future device type: esp-
+                           matter ships a newer "generated" data model
+                           (only compiled in when
+                           CONFIG_ESP_MATTER_ENABLE_GENERATED_DATA_MODEL is
+                           set — off by default, and left off here, same as
+                           every other device type in this repo) alongside
+                           an older "legacy" one that's the actual default
+                           `esp_matter_cluster.h` compiles against. The
+                           "generated" version's `temperature_controlled_
+                           cabinet_device.cpp` sets the TemperatureNumber
+                           (TN) feature flag automatically inside its own
+                           `add()`, and its temperature_number config
+                           field is named `temperature_setpoint` — but the
+                           actual "legacy" `esp_matter_endpoint.cpp`'s own
+                           `temperature_controlled_cabinet::add()` does
+                           NOT set that feature flag, and its field is
+                           named `temp_setpoint` instead. Both were
+                           initially written assuming "generated" behavior
+                           (since that's what a first read of the SDK
+                           source showed) and both were real Docker-build-
+                           caught compile errors, fixed by setting
+                           `feature_flags` explicitly and using the legacy
+                           field name. A second such discrepancy: esp-
+                           matter's own C++ wrapper namespace for
+                           RefrigeratorAndTemperatureControlledCabinetMode
+                           is shorter in the legacy header —
+                           `cluster::refrigerator_and_tcc_mode`, not
+                           `::refrigerator_and_temperature_controlled_
+                           cabinet_mode` — a straight "has not been
+                           declared" compile error rather than a field-name
+                           mismatch, fixed the same way. The underlying
+                           connectedhomeip cluster server code and its
+                           `ModeTag`/`Id` enum values are unaffected by
+                           this split either time — only esp-matter's own
+                           wrapper naming differs.
+
+                           TemperatureControl is TN-only — the device
+                           type's own XML mandates TN and explicitly
+                           disallows TL (TemperatureLevel). The official
+                           reference example calls `TemperatureControlCluster
+                           ::SetDelegate(&sAppSupportedTemperatureLevels
+                           Delegate)` regardless; this file deliberately
+                           does NOT, confirmed safe by reading
+                           `TemperatureControlCluster.cpp` directly rather
+                           than copying the reference blindly:
+                           `SetDelegate()`'s own target (`mDelegate`) is
+                           only ever read in two places, both gated behind
+                           the TL feature flag, which is never set here.
+                           The real, always-relevant API for TN mode is
+                           `SetTemperatureSetpoint()`/`GetTemperatureSetpoint()`
+                           — and `HandleSetTemperature()` (the SetTemperature
+                           command's own handler) already calls
+                           `SetTemperatureSetpoint()` internally, so a
+                           controller's command is handled entirely inside
+                           the cluster with zero app code needed; this
+                           file's own control loop only ever *reads* the
+                           live setpoint back via `GetTemperatureSetpoint()`,
+                           through the same registry-lookup-and-cast
+                           pattern this repo's other code-driven-cluster
+                           access already uses (confirmed: a real
+                           `temperature_control/` folder exists under
+                           `data_model_provider/clusters/`).
+                           MinTemperature/MaxTemperature/TemperatureSetpoint
+                           are all Matter's global `temperature` type
+                           (int16, hundredths of a degree C, same encoding
+                           firmware/thermostat/'s setpoints use). Fridge:
+                           1.00-10.00 degC, default target 4.00 degC.
+                           Freezer: -24.00..-14.00 degC, default target
+                           -18.00 degC — ordinary commercial ranges, not
+                           researched against one specific real appliance's
+                           spec sheet, since there's no single "correct"
+                           answer here the way a chip's register map has
+                           one.
+
+                           RefrigeratorAndTemperatureControlledCabinetMode
+                           is wired the same automatic way as firmware/
+                           water-heater/'s WaterHeaterMode/firmware/
+                           robot-vacuum/'s RvcRunMode (`config->delegate` +
+                           `InitModeDelegate()`, no ordering awareness
+                           needed). Each cabinet gets its OWN instance with
+                           its own 2-mode list: "Normal" (ModeTag::kAuto)
+                           and either "Rapid Cool" (fridge) or "Rapid
+                           Freeze" (freezer) — both tag values confirmed
+                           against connectedhomeip's own generated
+                           RefrigeratorAndTemperatureControlledCabinetMode/
+                           Enums.h. Rather than two near-duplicate Delegate
+                           subclasses, this file writes ONE parameterized
+                           `RefrigeratorCabinetModeDelegate` class taking a
+                           `CabinetKind` at construction — the two mode
+                           lists differ only in one tag/label. "Rapid
+                           Cool"/"Rapid Freeze" get no genuinely different
+                           control algorithm — same "smallest reasonable
+                           next step" scope cut as firmware/robot-vacuum/'s
+                           "Mapping" mode: while active, the cabinet's
+                           control loop simply targets 3.00 degC colder
+                           than the normal setpoint, honestly simulating
+                           "cool down faster" without claiming any real
+                           compressor-staging logic a hobby-scale single-
+                           relay design doesn't have.
+
+                           RefrigeratorAlarm confirmed NOT code-driven (no
+                           `refrigerator_alarm/` folder under
+                           `data_model_provider/clusters/`) — Mask/State/
+                           Supported are plain ember uint32_t bitmap
+                           attributes, written via `attribute::update()`.
+                           `RefrigeratorAlarm::AlarmBitmap` has exactly ONE
+                           bit, `kDoorOpen` — Mask/Supported are both fixed
+                           to it, State toggled live by a debounced
+                           door-sensor poll (a whole-appliance reed switch,
+                           not per-compartment — real combination fridge/
+                           freezers commonly ship one door-open indicator
+                           per exterior door, matching this scope). A real,
+                           previously-undocumented gap: esp-matter's
+                           `esp_matter_event_impl.h` declares a
+                           `refrigerator_alarm::event::create_notify()`
+                           capability but, unlike e.g. `switch_cluster`'s
+                           own `send_initial_press()`, there is no matching
+                           `send_notify()`-style runtime helper for firing
+                           it — confirmed by reading that entire header.
+                           This file does NOT hand-rig the low-level
+                           connectedhomeip event API to work around that;
+                           State's own attribute-change report already
+                           tells a controller the alarm changed, and
+                           skipping the supplementary Notify event is the
+                           same "smallest reasonable next step" scope cut
+                           this repo applies to other optional-richness
+                           gaps (e.g. firmware/air-quality-sensor/'s
+                           AirQuality FeatureMap gap).
+
+                           TemperatureMeasurement (one instance per
+                           cabinet) reuses firmware/water-heater/'s own
+                           DS18B20 driver (itself from firmware/
+                           thermostat/'s SENSOR_TYPE library) verbatim,
+                           parameterized by GPIO instead of a single
+                           hardcoded `#define` since this file genuinely
+                           needs two independent sensors. Confirmed the
+                           same code-driven-cluster status as firmware/
+                           temperature-sensor/'s own TemperatureMeasurement
+                           — `SetMeasuredValue()` via the registry-lookup-
+                           and-cast pattern, parameterized by endpoint id
+                           since there are two live instances on one node.
+
+                           Hardware: two independent relay+sensor pairs
+                           (REFRIGERATOR_FRIDGE_RELAY_GPIO/_FREEZER_
+                           RELAY_GPIO, active-LOW, matching firmware/
+                           valve/'s and firmware/water-heater/'s own relay
+                           convention) — a deliberate, documented
+                           simplification, since a real fridge/freezer
+                           combination almost always shares ONE compressor
+                           and refrigerant loop with a damper, not two
+                           fully independent cooling circuits; modelling
+                           real shared-compressor thermodynamics is out of
+                           scope for a hobby retrofit, same reasoning
+                           firmware/thermostat/'s RELAY output already
+                           applies to a boiler's own internals. One
+                           reusable control-loop task body
+                           (`cabinet_control_task`) is spawned twice with a
+                           different `cabinet_runtime_t` argument each
+                           time, rather than writing two near-duplicate
+                           tasks. 0.5 degC hysteresis reuses firmware/
+                           water-heater/'s own reasoning (slow thermal
+                           mass, avoid relay chatter); a sensor read
+                           failure turns that cabinet's own cooling off
+                           (fail-safe), same convention firmware/
+                           water-heater/'s control loop already
+                           established. Standard quick-power-cycle factory
+                           reset. Build-verified in Docker (two real,
+                           sequential sets of compile errors caught and
+                           fixed — see the "legacy vs. generated" gap
+                           above); not hardware-tested (no relay/DS18B20/
+                           reed-switch hardware for this device type
+                           physically available when written).
+  partitions.csv           same OTA + fctry layout as firmware/light/
+  sdkconfig.defaults        same as firmware/light/
 tools/
   dev.sh                  opens the Docker dev environment
   gen_factory.sh          local QR + factory partition generator
@@ -4161,7 +4376,44 @@ SECURITY.md               flash encryption / secure boot / signed OTA guidance
    actual `app_main.cpp` and diffed against the original — a byte-for-
    byte match. See `tools/product-wizard/README.md`'s own updated
    device-type list and its new paragraph on this addition.
-2. Implement Matter **OTA** — partially done. All twenty-six firmware
+
+   A twenty-seventh device type, `firmware/refrigerator/` (Refrigerator +
+   Temperature Controlled Cabinet), followed — the user's choice from a
+   short AskUserQuestion list (Refrigerator / Robot Vacuum-adjacent
+   options had already been exhausted; Refrigerator was the recommended
+   pick). This repo's first genuinely composed, multi-endpoint device: a
+   Refrigerator root endpoint with two Temperature Controlled Cabinet
+   *child* endpoints (Fridge + Freezer) linked via esp-matter's real
+   `set_parent_endpoint()` API, confirmed against the CSA's own
+   `<conditionRequirements>` block (a real spec-level structural
+   requirement, not a design choice) and against esp-matter's own official
+   `examples/refrigerator/` reference. Research surfaced and resolved a
+   real open question before any code was written: whether
+   `TemperatureControlCluster::SetDelegate()` (which the official
+   reference always calls) is actually needed for TN-only mode — confirmed
+   NO by reading `TemperatureControlCluster.cpp` directly, since
+   `SetDelegate()`'s target is only ever read behind the TL feature flag,
+   which this device never sets. Implementation then surfaced a genuinely
+   new class of gap for this repo: esp-matter ships two parallel cluster/
+   endpoint implementations ("legacy", the actual default this repo's own
+   sdkconfig.defaults compiles against, and a newer "generated" one gated
+   behind a Kconfig flag this repo has never enabled) that silently
+   disagree with each other — a feature-flag auto-set behavior, a config
+   field name (`temp_setpoint` vs. `temperature_setpoint`), and an entire
+   C++ wrapper namespace (`refrigerator_and_tcc_mode` vs. `refrigerator_
+   and_temperature_controlled_cabinet_mode`) all differ between the two,
+   and code initially written against the "generated" behavior (since
+   that's what a first read of the SDK source showed) failed to compile
+   against the actual "legacy" default — caught and fixed by an actual
+   Docker build, not guessed. Worth remembering for any future device
+   type using a less-common cluster: esp-matter's SDK source should be
+   read from the SAME implementation (legacy vs. generated) the project's
+   own sdkconfig actually compiles against, not whichever one a search
+   happens to surface first. See its own repository-layout entry above
+   for the complete detail. Build-verified in Docker; not hardware-tested
+   (no relay/DS18B20/reed-switch hardware for this device type physically
+   available when written).
+2. Implement Matter **OTA** — partially done. All twenty-seven firmware
    types ship `CONFIG_ENABLE_OTA_REQUESTOR=y`, which adds the OTA Requestor
    cluster to the root node endpoint entirely via Kconfig — esp-matter's
    own core startup (`esp_matter_core.cpp`) calls
@@ -4238,7 +4490,7 @@ SECURITY.md               flash encryption / secure boot / signed OTA guidance
    later in `app_main()`, after `esp_matter::start()` has completed.
 
    Quick-power-cycle factory reset is Docker build-verified across all
-   twenty-six device types — not yet hardware-tested. The wizard
+   twenty-seven device types — not yet hardware-tested. The wizard
    (`tools/product-wizard/`) has a static "Factory reset" info box
    rendered directly under the Configuration summary sidebar on every
    device type (wrapped together in a `.config-sidebar-stack` flex
