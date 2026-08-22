@@ -2332,6 +2332,58 @@ const DEVICE_TYPES = [
       defaultsByModule: { esp32: 2, esp32c2: 2, esp32c3: 2, esp32c5: 2, esp32c6: 2, esp32c61: 2, esp32s3: 2, esp32h2: 2 },
     },
   },
+  {
+    id: "evse",
+    name: "EVSE",
+    desc: "Matter EVSE controller: a single relay gates an ALREADY-APPROVED EVSE unit's own low-voltage enable/authorize input via the EnergyEvse cluster's EnableCharging/Disable commands — NOT vehicle charging current directly, see the safety note in app_main.cpp — plus EnergyEvseMode (Manual/Time of Use/Solar Charging) and a real, working ChargingPreferences schedule store (round-trips real data, but nothing acts on it automatically). Reference device in firmware/evse/.",
+    shortDesc: "Relay gates an existing EVSE's enable input.",
+    // Matches project(matter_evse) in firmware/evse/CMakeLists.txt. `driver`
+    // is the relay (always visible, matching firmware/valve/'s and
+    // firmware/water-heater/'s own relay-as-driver convention). The
+    // optional plug-detect input is a NEW `plugSensor` field — a
+    // deliberate fourth parallel copy of `statusLed`/`positionSensor`/
+    // `dockSensor`'s identical single-GPIO checkbox-gated shape, not a
+    // reuse of any of those three literal fields, since each carries its
+    // own hardcoded, device-type-specific copy (an on/off-mirroring LED;
+    // a door bolt's position; a robot's charging dock) that would
+    // misdescribe an EV "vehicle connected" signal.
+    binName: "matter_evse.bin",
+    driver: {
+      summary: "GPIO (relay, active-LOW)",
+      fieldLabel: "Relay GPIO pin",
+      blockTitle: "Relay · digital output",
+      filePath: "firmware/evse/main/app_main.cpp",
+      defineName: "EVSE_RELAY_GPIO",
+      currentGpio: 4,
+      defaultsByModule: { esp32: 4, esp32c2: 4, esp32c3: 4, esp32c5: 4, esp32c6: 4, esp32c61: 4, esp32s3: 4, esp32h2: 4 },
+    },
+    // Optional — off by default (EVSE_PLUG_DETECT_GPIO ships as
+    // GPIO_NUM_NC). Without it, this firmware optimistically assumes a
+    // vehicle is connected whenever charging is enabled; with it wired
+    // (to a real EVSE unit's own "vehicle connected" status output, if it
+    // has one), State/SupplyState track the real signal, including
+    // detecting a mid-session unplug. See plugSensorIsEnabled()'s own
+    // comment above for why this is a new field, not a reuse of
+    // statusLed/positionSensor/dockSensor.
+    plugSensor: {
+      summary: "GPIO (digital input)",
+      fieldLabel: "Plug-detect sensor GPIO pin",
+      blockTitle: "Plug-detect sensor · digital input",
+      filePath: "firmware/evse/main/app_main.cpp",
+      defineName: "EVSE_PLUG_DETECT_GPIO",
+      currentGpio: 16,
+      defaultsByModule: { esp32: 16, esp32c2: 16, esp32c3: 16, esp32c5: 16, esp32c6: 16, esp32c61: 16, esp32s3: 16, esp32h2: 16 },
+    },
+    identify: {
+      summary: "GPIO (digital output)",
+      fieldLabel: "Identify LED GPIO pin",
+      blockTitle: "Identify LED · digital output",
+      filePath: "firmware/evse/main/app_main.cpp",
+      defineName: "IDENTIFY_LED_GPIO",
+      currentGpio: 2,
+      defaultsByModule: { esp32: 2, esp32c2: 2, esp32c3: 2, esp32c5: 2, esp32c6: 2, esp32c61: 2, esp32s3: 2, esp32h2: 2 },
+    },
+  },
 ];
 
 function findDeviceType(id) {
@@ -2746,6 +2798,14 @@ const DEVICE_TYPE_ICONS = {
     <rect x="12" y="6" width="24" height="34" rx="12"/>
     <path d="M24 32c-3.5-3-3.5-7 0-11c1 2.5 2.3 3.5 3.3 2.3c0.3 3.7-1 6.7-3.3 8.7Z" fill="currentColor" stroke="none"/>
   </svg>`,
+  // A rounded-square badge (same badge motif air-quality's own icon
+  // already uses) with a filled lightning bolt — the near-universal
+  // "charging/power" pictogram, unmistakably distinct from every other
+  // icon here.
+  evse: `<svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+    <rect x="8" y="8" width="32" height="32" rx="10"/>
+    <path d="M26 14 L17 27 H23 L21 34 L31 20 H25 Z" fill="currentColor" stroke="none"/>
+  </svg>`,
 };
 
 // `title` becomes each badge's hover tooltip. `zigbee`'s tooltip carries
@@ -2883,10 +2943,20 @@ function dockSensorIsEnabled(p) {
   return p.dockSensorEnabled === true;
 }
 
+// EVSE's optional plug-detect sensor (firmware/evse/ only) — same
+// single-GPIO, off-by-default, checkbox-gated shape as statusLed/
+// positionSensor/dockSensor above, deliberately duplicated for the same
+// reason each of those was: its own checkbox/description text (an EV
+// "vehicle connected" signal) is genuinely different wording from any of
+// the other three.
+function plugSensorIsEnabled(p) {
+  return p.plugSensorEnabled === true;
+}
+
 // Rotary encoder (firmware/thermostat/ only, so far) — same off-by-default
-// shape as statusLed/positionSensor/dockSensor above, deliberately
-// parallel rather than sharing its render code (see makeRotaryEncoder()'s
-// own comment for why).
+// shape as statusLed/positionSensor/dockSensor/plugSensor above,
+// deliberately parallel rather than sharing its render code (see
+// makeRotaryEncoder()'s own comment for why).
 function rotaryEncoderIsEnabled(p) {
   return p.rotaryEncoderEnabled === true;
 }
@@ -2899,6 +2969,7 @@ function renderConfigureDevice(p) {
   const statusLed = deviceType ? deviceType.statusLed : null;
   const positionSensor = deviceType ? deviceType.positionSensor : null;
   const dockSensor = deviceType ? deviceType.dockSensor : null;
+  const plugSensor = deviceType ? deviceType.plugSensor : null;
   const rotaryEncoder = deviceType ? deviceType.rotaryEncoder : null;
   const componentOptions = deviceType ? deviceType.componentOptions : null;
   const extraButtons = deviceType ? deviceType.extraButtons : null;
@@ -2914,6 +2985,8 @@ function renderConfigureDevice(p) {
   const positionSensorOn = positionSensor ? positionSensorIsEnabled(p) : false;
   const defaultDockSensorGpio = dockSensor ? (dockSensor.defaultsByModule[p.target] != null ? dockSensor.defaultsByModule[p.target] : 32) : 32;
   const dockSensorOn = dockSensor ? dockSensorIsEnabled(p) : false;
+  const defaultPlugSensorGpio = plugSensor ? (plugSensor.defaultsByModule[p.target] != null ? plugSensor.defaultsByModule[p.target] : 16) : 16;
+  const plugSensorOn = plugSensor ? plugSensorIsEnabled(p) : false;
   const rotaryEncoderOn = rotaryEncoder ? rotaryEncoderIsEnabled(p) : false;
   if (rotaryEncoder) {
     if (typeof p.rotaryEncoderPins !== "object" || p.rotaryEncoderPins == null) p.rotaryEncoderPins = {};
@@ -3018,13 +3091,15 @@ function renderConfigureDevice(p) {
   const positionSensorGpioValid = !positionSensorOn || (Number.isInteger(p.positionSensorGpioPin) && p.positionSensorGpioPin >= 0);
   if (dockSensor && p.dockSensorGpioPin == null) p.dockSensorGpioPin = defaultDockSensorGpio;
   const dockSensorGpioValid = !dockSensorOn || (Number.isInteger(p.dockSensorGpioPin) && p.dockSensorGpioPin >= 0);
+  if (plugSensor && p.plugSensorGpioPin == null) p.plugSensorGpioPin = defaultPlugSensorGpio;
+  const plugSensorGpioValid = !plugSensorOn || (Number.isInteger(p.plugSensorGpioPin) && p.plugSensorGpioPin >= 0);
   // numberField (currently just the addressable light's pixel count): a
   // plain integer #define, not a GPIO — validated against its own
   // min/max rather than the GPIO fields' "0 or higher" rule.
   if (numberField && p[numberField.key] == null) p[numberField.key] = numberField.defaultValue;
   const numberFieldValid = !numberField ||
     (Number.isInteger(p[numberField.key]) && p[numberField.key] >= numberField.min && p[numberField.key] <= numberField.max);
-  const allValid = gpioValid && secondaryGpioValid && identifyGpioValid && extraButtonsValid && statusLedGpioValid && positionSensorGpioValid && dockSensorGpioValid && pickerPinsValid && numberFieldValid && rotaryEncoderValid;
+  const allValid = gpioValid && secondaryGpioValid && identifyGpioValid && extraButtonsValid && statusLedGpioValid && positionSensorGpioValid && dockSensorGpioValid && plugSensorGpioValid && pickerPinsValid && numberFieldValid && rotaryEncoderValid;
 
   // Component-aware field labels: falls back to the device type's own
   // static text when there's no componentOptions list (every device type
@@ -3283,6 +3358,36 @@ function renderConfigureDevice(p) {
           </div>
         ` : ""}
 
+        ${plugSensor ? `
+          <div class="driver-block">
+            <label class="checkbox-label" for="plug-sensor-enabled">
+              <input type="checkbox" id="plug-sensor-enabled" ${plugSensorOn ? "checked" : ""}>
+              <h3 style="display:inline; margin:0;">Add a Plug-Detect Sensor</h3>
+            </label>
+            <p class="field-note" style="margin-top:4px;">
+              An optional "vehicle connected" signal from the EVSE unit's
+              own status output, instead of the firmware just assuming a
+              vehicle is connected whenever charging is enabled. Off by
+              default — without it, this firmware optimistically reports
+              a vehicle as connected whenever charging is enabled; with it
+              wired, State/SupplyState track the real signal, including
+              detecting a mid-session unplug. The firmware ships this pin
+              disabled (<code>GPIO_NUM_NC</code>) until you tick this and
+              set a real pin.
+            </p>
+
+            ${plugSensorOn ? `
+              <label class="field-label" for="plug-sensor-gpio-pin" style="margin-top:12px;">${escapeHtml(plugSensor.fieldLabel)}</label>
+              <input type="number" id="plug-sensor-gpio-pin" min="0" max="48" value="${p.plugSensorGpioPin}">
+              <div class="field-error">${plugSensorGpioValid ? "" : "Enter a valid GPIO number (0 or higher)."}</div>
+              <p class="field-note">
+                Adjust to match your board — GPIO ${defaultPlugSensorGpio}
+                is a common default for ${escapeHtml(moduleName(p.target))} devkits, not a guarantee for yours.
+              </p>
+            ` : ""}
+          </div>
+        ` : ""}
+
         ${rotaryEncoder ? `
           <div class="driver-block">
             <label class="checkbox-label" for="rotary-encoder-enabled">
@@ -3355,7 +3460,8 @@ function renderConfigureDevice(p) {
           <code>${escapeHtml(numberField.defineName)}</code>` : ""}${statusLedOn ? `,
           <code>${escapeHtml(statusLed.defineName)}</code>` : ""}${positionSensorOn ? `,
           <code>${escapeHtml(positionSensor.defineName)}</code>` : ""}${dockSensorOn ? `,
-          <code>${escapeHtml(dockSensor.defineName)}</code>` : ""}${rotaryEncoderOn ? rotaryEncoder.pins.map((pin) => `,
+          <code>${escapeHtml(dockSensor.defineName)}</code>` : ""}${plugSensorOn ? `,
+          <code>${escapeHtml(plugSensor.defineName)}</code>` : ""}${rotaryEncoderOn ? rotaryEncoder.pins.map((pin) => `,
           <code>${escapeHtml(pin.defineName)}</code>`).join("") : ""}${identifyOn ? `,
           <code>${escapeHtml(identify ? identify.defineName : "IDENTIFY_LED_GPIO")}</code>` : ""}${activePickerPins.map(({ pin }) => `,
           <code>${escapeHtml(pin.defineName)}</code>`).join("")}) happens
@@ -3422,6 +3528,12 @@ function renderConfigureDevice(p) {
           <div class="summary-row">
             <div class="summary-label">DOCK SENSOR</div>
             <div class="summary-detail">${dockSensorOn ? `IO pin: GPIO ${dockSensorGpioValid ? p.dockSensorGpioPin : "?"}` : "Not added"}</div>
+          </div>
+        ` : ""}
+        ${plugSensor ? `
+          <div class="summary-row">
+            <div class="summary-label">PLUG SENSOR</div>
+            <div class="summary-detail">${plugSensorOn ? `IO pin: GPIO ${plugSensorGpioValid ? p.plugSensorGpioPin : "?"}` : "Not added"}</div>
           </div>
         ` : ""}
         ${rotaryEncoder ? `
@@ -3602,6 +3714,8 @@ function isProductComplete(p) {
     (Number.isInteger(p.positionSensorGpioPin) && p.positionSensorGpioPin >= 0);
   const dockSensorOk = !(deviceType && deviceType.dockSensor) || !dockSensorIsEnabled(p) ||
     (Number.isInteger(p.dockSensorGpioPin) && p.dockSensorGpioPin >= 0);
+  const plugSensorOk = !(deviceType && deviceType.plugSensor) || !plugSensorIsEnabled(p) ||
+    (Number.isInteger(p.plugSensorGpioPin) && p.plugSensorGpioPin >= 0);
   const rotaryEncoder = deviceType ? deviceType.rotaryEncoder : null;
   const rotaryEncoderOk = !rotaryEncoder || !rotaryEncoderIsEnabled(p) ||
     rotaryEncoder.pins.every((pin) =>
@@ -3631,7 +3745,7 @@ function isProductComplete(p) {
     (Number.isInteger(p[numberField.key]) && p[numberField.key] >= numberField.min && p[numberField.key] <= numberField.max);
   return !!p.deviceType && !!p.target &&
     Number.isInteger(p.gpioPin) && p.gpioPin >= 0 &&
-    secondaryOk && identifyOk && buttonsOk && statusLedOk && positionSensorOk && dockSensorOk && rotaryEncoderOk && pickerPinsOk && numberFieldOk;
+    secondaryOk && identifyOk && buttonsOk && statusLedOk && positionSensorOk && dockSensorOk && plugSensorOk && rotaryEncoderOk && pickerPinsOk && numberFieldOk;
 }
 
 function buildConfigPreview(p) {
@@ -3802,6 +3916,15 @@ function renderCustomiseReview(p) {
             <button class="link" data-goto-step="2">Edit</button>
           </div>
         ` : ""}
+        ${findDeviceType(p.deviceType) && findDeviceType(p.deviceType).plugSensor ? `
+          <div class="review-row">
+            <div>
+              <div class="summary-label">PLUG SENSOR</div>
+              <div class="summary-value">${plugSensorIsEnabled(p) ? `GPIO ${p.plugSensorGpioPin != null ? p.plugSensorGpioPin : "?"}` : "Not added"}</div>
+            </div>
+            <button class="link" data-goto-step="2">Edit</button>
+          </div>
+        ` : ""}
         ${(() => {
           const dt = findDeviceType(p.deviceType);
           if (!dt || !dt.rotaryEncoder) return "";
@@ -3909,7 +4032,7 @@ function renderGenerateFirmware(p) {
       <p class="step-hint">
         For "${escapeHtml(p.name)}" —
         <strong>${escapeHtml(deviceTypeName(p.deviceType))}</strong>${selectedSensor ? ` (<strong>${escapeHtml(selectedSensor.name)}</strong>)` : ""} on
-        <strong>${escapeHtml(moduleName(p.target))}</strong>, GPIO ${p.gpioPin}${extraButtonGpios.length ? ` (+ ${extraButtonNoun}${extraButtonGpios.length === 1 ? "" : "s"} on GPIO ${extraButtonGpios.join(", ")})` : ""}${deviceType && deviceType.secondary ? ` (${escapeHtml((deviceType.secondary.label || "secondary").toLowerCase())} on GPIO ${p.secondaryGpioPin})` : ""}${deviceType && deviceType.statusLed && statusLedIsEnabled(p) ? ` (status LED on GPIO ${p.statusLedGpioPin})` : ""}${deviceType && deviceType.positionSensor && positionSensorIsEnabled(p) ? ` (position sensor on GPIO ${p.positionSensorGpioPin})` : ""}${deviceType && deviceType.dockSensor && dockSensorIsEnabled(p) ? ` (dock sensor on GPIO ${p.dockSensorGpioPin})` : ""}${identifyIsEnabled(p) ? ` (identify LED on GPIO ${p.identifyGpioPin})` : ""}.
+        <strong>${escapeHtml(moduleName(p.target))}</strong>, GPIO ${p.gpioPin}${extraButtonGpios.length ? ` (+ ${extraButtonNoun}${extraButtonGpios.length === 1 ? "" : "s"} on GPIO ${extraButtonGpios.join(", ")})` : ""}${deviceType && deviceType.secondary ? ` (${escapeHtml((deviceType.secondary.label || "secondary").toLowerCase())} on GPIO ${p.secondaryGpioPin})` : ""}${deviceType && deviceType.statusLed && statusLedIsEnabled(p) ? ` (status LED on GPIO ${p.statusLedGpioPin})` : ""}${deviceType && deviceType.positionSensor && positionSensorIsEnabled(p) ? ` (position sensor on GPIO ${p.positionSensorGpioPin})` : ""}${deviceType && deviceType.dockSensor && dockSensorIsEnabled(p) ? ` (dock sensor on GPIO ${p.dockSensorGpioPin})` : ""}${deviceType && deviceType.plugSensor && plugSensorIsEnabled(p) ? ` (plug sensor on GPIO ${p.plugSensorGpioPin})` : ""}${identifyIsEnabled(p) ? ` (identify LED on GPIO ${p.identifyGpioPin})` : ""}.
         This is the exact two-step flow validated end to end on real
         hardware for this device type: build, then flash. Nothing runs
         automatically — you paste and run each command yourself.
@@ -4093,6 +4216,7 @@ function buildSedCommands(p) {
   const statusLed = deviceType ? deviceType.statusLed : null;
   const positionSensor = deviceType ? deviceType.positionSensor : null;
   const dockSensor = deviceType ? deviceType.dockSensor : null;
+  const plugSensor = deviceType ? deviceType.plugSensor : null;
   const filePath = driver ? driver.filePath.split("/").slice(2).join("/") : "main/app_main.cpp"; // relative to firmwareDir
   const cmds = [];
   if (componentOptions && deviceType.componentDefineName) {
@@ -4180,9 +4304,14 @@ function buildSedCommands(p) {
     // also ships as GPIO_NUM_NC by default, not a numeric value.
     cmds.push(`sed -i 's/^#define ${dockSensor.defineName} .*/#define ${dockSensor.defineName} GPIO_NUM_${p.dockSensorGpioPin}/' ${filePath}`);
   }
-  if (deviceType && deviceType.rotaryEncoder && rotaryEncoderIsEnabled(p)) {
+  if (plugSensor && plugSensorIsEnabled(p)) {
     // Same broad `.*` match as statusLed/positionSensor/dockSensor above —
-    // all pins ship as GPIO_NUM_NC by default.
+    // this one also ships as GPIO_NUM_NC by default, not a numeric value.
+    cmds.push(`sed -i 's/^#define ${plugSensor.defineName} .*/#define ${plugSensor.defineName} GPIO_NUM_${p.plugSensorGpioPin}/' ${filePath}`);
+  }
+  if (deviceType && deviceType.rotaryEncoder && rotaryEncoderIsEnabled(p)) {
+    // Same broad `.*` match as statusLed/positionSensor/dockSensor/
+    // plugSensor above — all pins ship as GPIO_NUM_NC by default.
     deviceType.rotaryEncoder.pins.forEach((pin) => {
       const gpio = p.rotaryEncoderPins && p.rotaryEncoderPins[pin.defineName] != null
         ? p.rotaryEncoderPins[pin.defineName]
@@ -4421,6 +4550,10 @@ function bindEvents() {
         // statusLed/positionSensor above.
         state.currentProduct.dockSensorGpioPin = null;
         state.currentProduct.dockSensorEnabled = null;
+        // plugSensor (evse only): same stale-GPIO risk as
+        // statusLed/positionSensor/dockSensor above.
+        state.currentProduct.plugSensorGpioPin = null;
+        state.currentProduct.plugSensorEnabled = null;
         // rotaryEncoder (thermostat only, so far): same stale-value risk.
         state.currentProduct.rotaryEncoderPins = null;
         state.currentProduct.rotaryEncoderEnabled = null;
@@ -4580,6 +4713,26 @@ function bindEvents() {
   if (dockSensorEnabledInput) {
     dockSensorEnabledInput.addEventListener("change", () => {
       state.currentProduct.dockSensorEnabled = dockSensorEnabledInput.checked;
+      saveProducts();
+      render();
+    });
+  }
+
+  const plugSensorGpioPinInput = document.getElementById("plug-sensor-gpio-pin");
+  if (plugSensorGpioPinInput) {
+    plugSensorGpioPinInput.addEventListener("input", () => {
+      const raw = plugSensorGpioPinInput.value;
+      state.currentProduct.plugSensorGpioPin = raw === "" ? null : parseInt(raw, 10);
+      saveProducts();
+      render();
+      document.getElementById("plug-sensor-gpio-pin").focus();
+    });
+  }
+
+  const plugSensorEnabledInput = document.getElementById("plug-sensor-enabled");
+  if (plugSensorEnabledInput) {
+    plugSensorEnabledInput.addEventListener("change", () => {
+      state.currentProduct.plugSensorEnabled = plugSensorEnabledInput.checked;
       saveProducts();
       render();
     });

@@ -39,8 +39,9 @@ open tools/product-wizard/index.html
   (`firmware/air-purifier/`), "Water Valve" (`firmware/valve/`),
   "Pressure Sensor" (`firmware/pressure-sensor/`), "Robot Vacuum"
   (`firmware/robot-vacuum/`), "Extractor Hood"
-  (`firmware/extractor-hood/`), or "Water Heater"
-  (`firmware/water-heater/`). All twenty-three are real, buildable
+  (`firmware/extractor-hood/`), "Water Heater"
+  (`firmware/water-heater/`), or "EVSE" (`firmware/evse/`). All
+  twenty-four are real, buildable
   firmware, not just UI placeholders (`firmware/camera/`, this repo's
   twelfth device type, is deliberately NOT offered here — see its own
   section further down for why: its two-chip/two-firmware/external-SDK
@@ -802,6 +803,26 @@ commands for `WATER_HEATER_RELAY_GPIO`/`WATER_HEATER_SENSOR_GPIO`/
 copy of the actual `app_main.cpp` and diffed against the original, a
 byte-for-byte match (all three GPIOs already shipped at their wizard
 defaults, confirming a correct no-op). All checks passed.
+
+`firmware/evse/` followed — a fourth parallel copy of the `statusLed`/
+`positionSensor`/`dockSensor` single-GPIO checkbox-gated shape, this time
+as a new `plugSensor` field for the EVSE's optional "vehicle connected"
+input, since each of the other three carries its own hardcoded, device-
+type-specific copy (an on/off-mirroring LED; a door bolt's position; a
+robot's charging dock) that would misdescribe an EV plug signal. `driver`
+(the relay) needed no new mechanism — same relay-as-driver shape
+`firmware/valve/`'s and `firmware/water-heater/`'s own entries already
+use. Verified the same two-step way as every wizard change this session:
+a Node.js sandboxed check (device-type lookup, `renderConfigureDevice`
+output for all three fields including the plug-sensor checkbox showing/
+hiding its GPIO field correctly, `isProductComplete` before and after
+render with the plug sensor both off and on, the exact generated sed
+commands for `EVSE_RELAY_GPIO`/`EVSE_PLUG_DETECT_GPIO`/
+`IDENTIFY_LED_GPIO`) — then those exact commands run for real against a
+copy of the actual `app_main.cpp` and diffed against the original: relay
+and identify a byte-for-byte no-op match, and the plug-sensor line
+separately confirmed to correctly rewrite `GPIO_NUM_NC` to a real pin
+when enabled. All checks passed.
 
 ## Known limitations
 

@@ -3974,10 +3974,25 @@ SECURITY.md               flash encryption / secure boot / signed OTA guidance
    on the second Docker build attempt (clean after that). See its own
    repository-layout entry above for the complete detail. Build-verified
    in Docker; not hardware-tested (no EVSE hardware with a real external-
-   enable input physically available when written). Not yet integrated
-   into `tools/product-wizard/` — worth a follow-up pass; needs a relay
-   plus an optional plug-detect input, similar shape to firmware/
-   robot-vacuum/'s `dockSensor` field.
+   enable input physically available when written).
+
+   Integrated into `tools/product-wizard/` immediately afterward: `driver`
+   (the relay) needed no new mechanism (same relay-as-driver shape
+   firmware/valve/'s and firmware/water-heater/'s own entries already
+   use), and the optional plug-detect input became a new `plugSensor`
+   field — this repo's fourth parallel copy of the `statusLed`/
+   `positionSensor`/`dockSensor` single-GPIO checkbox-gated shape, since
+   each of those three carries its own hardcoded, device-type-specific
+   copy that would misdescribe an EV "vehicle connected" signal. Plus a
+   new hand-drawn icon (a rounded-square badge with a filled lightning
+   bolt). Verified the same two-step way as every wizard change this
+   session: a Node.js sandboxed check, then those exact generated sed
+   commands run for real against a copy of the actual `app_main.cpp` and
+   diffed against the original — the relay and identify lines a byte-for-
+   byte no-op match, and the plug-sensor line separately confirmed to
+   correctly rewrite `GPIO_NUM_NC` to a real pin once enabled. See
+   `tools/product-wizard/README.md`'s own updated device-type list and
+   its new paragraph on this addition.
 2. Implement Matter **OTA** — partially done. All twenty-five firmware
    types ship `CONFIG_ENABLE_OTA_REQUESTOR=y`, which adds the OTA Requestor
    cluster to the root node endpoint entirely via Kconfig — esp-matter's
