@@ -42,8 +42,9 @@ open tools/product-wizard/index.html
   (`firmware/extractor-hood/`), "Water Heater"
   (`firmware/water-heater/`), "EVSE" (`firmware/evse/`), "Generic
   Switch" (`firmware/generic-switch/`), "Refrigerator"
-  (`firmware/refrigerator/`), or "Dishwasher"
-  (`firmware/dishwasher/`). All twenty-seven are real, buildable
+  (`firmware/refrigerator/`), "Dishwasher"
+  (`firmware/dishwasher/`), or "Laundry Washer"
+  (`firmware/laundry-washer/`). All twenty-eight are real, buildable
   firmware, not just UI placeholders (`firmware/camera/`, this repo's
   twelfth device type, is deliberately NOT offered here — see its own
   section further down for why: its two-chip/two-firmware/external-SDK
@@ -875,6 +876,21 @@ after render, the exact generated sed commands for all six `#define`s —
 then those exact commands run for real against a copy of the actual
 `app_main.cpp` and diffed against the original, a byte-for-byte match. All
 checks passed.
+
+`firmware/laundry-washer/` followed — again zero new wizard mechanism:
+`driver` (Heater Relay) + `extraButtons` (Motor Relay, Drain Pump Relay,
+Wash Water Sensor, Door Sensor — a fixed set of 4) + `identify`, the same
+shape `firmware/dishwasher/`'s own entry already established. Plus a new
+hand-drawn icon — the same appliance-body-plus-control-panel shape as
+dishwasher's own icon, but with a round porthole door (an outer ring +
+inner drum circle) instead of a rectangular one, the real classic visual
+distinction between a front-loading washing machine and a dishwasher.
+Verified the same way: `findDeviceType` lookup, the icon's presence in
+`DEVICE_TYPE_ICONS`, `renderConfigureDevice` output containing all six
+field labels, `isProductComplete` before and after render, the exact
+generated sed commands for all six `#define`s — then those exact commands
+run for real against a copy of the actual `app_main.cpp` and diffed
+against the original, a byte-for-byte match. All checks passed.
 
 ## Known limitations
 

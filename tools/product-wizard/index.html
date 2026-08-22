@@ -2557,6 +2557,75 @@ const DEVICE_TYPES = [
       defaultsByModule: { esp32: 2, esp32c2: 2, esp32c3: 2, esp32c5: 2, esp32c6: 2, esp32c61: 2, esp32s3: 2, esp32h2: 2 },
     },
   },
+  {
+    id: "laundry-washer",
+    name: "Laundry Washer",
+    desc: "Matter Laundry Washer: the generic OperationalState cluster (Start/Stop/Pause/Resume) drives a real wash cycle — Washing (heater relay, hysteresis-controlled against a DS18B20 reading and TemperatureControl's own live wash-temperature setpoint, plus the motor running), then however many rinses LaundryWasherControls' own NumberOfRinses setting calls for (each a real Rinse + Drain phase pair), then Spinning. LaundryWasherMode (Normal/Delicate/Heavy/Whites) is locked out while running. A real door sensor pauses the cycle mid-wash. Reference device in firmware/laundry-washer/.",
+    shortDesc: "Timed wash + N rinses + spin, heater/motor/drain relays.",
+    // Matches project(matter_laundry_washer) in
+    // firmware/laundry-washer/CMakeLists.txt. Five fixed GPIO fields
+    // (driver + 4 extraButtons) — same "fixed set, not a variable count"
+    // shape firmware/dishwasher/'s and firmware/refrigerator/'s own
+    // entries already established.
+    binName: "matter_laundry_washer.bin",
+    driverLabel: "Heater Relay",
+    driver: {
+      summary: "Heater relay · GPIO (digital output, active-LOW)",
+      fieldLabel: "Heater relay GPIO pin",
+      blockTitle: "Heater relay · digital output",
+      filePath: "firmware/laundry-washer/main/app_main.cpp",
+      defineName: "LAUNDRY_WASHER_HEATER_RELAY_GPIO",
+      currentGpio: 16,
+      defaultsByModule: { esp32: 16, esp32c2: 16, esp32c3: 16, esp32c5: 16, esp32c6: 16, esp32c61: 16, esp32s3: 16, esp32h2: 16 },
+    },
+    extraButtons: [
+      {
+        label: "Motor Relay",
+        fieldLabel: "Motor relay GPIO pin",
+        blockTitle: "Motor relay · digital output (active-LOW, agitation + spin)",
+        filePath: "firmware/laundry-washer/main/app_main.cpp",
+        defineName: "LAUNDRY_WASHER_MOTOR_RELAY_GPIO",
+        currentGpio: 17,
+        defaultsByModule: { esp32: 17, esp32c2: 17, esp32c3: 17, esp32c5: 17, esp32c6: 17, esp32c61: 17, esp32s3: 17, esp32h2: 17 },
+      },
+      {
+        label: "Drain Pump Relay",
+        fieldLabel: "Drain pump relay GPIO pin",
+        blockTitle: "Drain pump relay · digital output (active-LOW)",
+        filePath: "firmware/laundry-washer/main/app_main.cpp",
+        defineName: "LAUNDRY_WASHER_DRAIN_PUMP_RELAY_GPIO",
+        currentGpio: 18,
+        defaultsByModule: { esp32: 18, esp32c2: 18, esp32c3: 18, esp32c5: 18, esp32c6: 18, esp32c61: 18, esp32s3: 18, esp32h2: 18 },
+      },
+      {
+        label: "Wash Water Sensor",
+        fieldLabel: "Wash-water DS18B20 sensor GPIO pin",
+        blockTitle: "Wash-water sensor · 1-Wire (DS18B20)",
+        filePath: "firmware/laundry-washer/main/app_main.cpp",
+        defineName: "LAUNDRY_WASHER_SENSOR_GPIO",
+        currentGpio: 21,
+        defaultsByModule: { esp32: 21, esp32c2: 21, esp32c3: 21, esp32c5: 21, esp32c6: 21, esp32c61: 21, esp32s3: 21, esp32h2: 21 },
+      },
+      {
+        label: "Door Sensor",
+        fieldLabel: "Door reed-switch GPIO pin",
+        blockTitle: "Door sensor · digital input (reed switch)",
+        filePath: "firmware/laundry-washer/main/app_main.cpp",
+        defineName: "LAUNDRY_WASHER_DOOR_GPIO",
+        currentGpio: 4,
+        defaultsByModule: { esp32: 4, esp32c2: 4, esp32c3: 4, esp32c5: 4, esp32c6: 4, esp32c61: 4, esp32s3: 4, esp32h2: 4 },
+      },
+    ],
+    identify: {
+      summary: "GPIO (digital output)",
+      fieldLabel: "Identify LED GPIO pin",
+      blockTitle: "Identify LED · digital output",
+      filePath: "firmware/laundry-washer/main/app_main.cpp",
+      defineName: "IDENTIFY_LED_GPIO",
+      currentGpio: 2,
+      defaultsByModule: { esp32: 2, esp32c2: 2, esp32c3: 2, esp32c5: 2, esp32c6: 2, esp32c61: 2, esp32s3: 2, esp32h2: 2 },
+    },
+  },
 ];
 
 function findDeviceType(id) {
@@ -3014,6 +3083,16 @@ const DEVICE_TYPE_ICONS = {
     <path d="M8 14h32"/>
     <rect x="13" y="19" width="22" height="20" rx="2"/>
     <path d="M17 19v-3"/>
+  </svg>`,
+  // Same appliance-body-plus-control-panel shape as dishwasher's own icon,
+  // but with a round porthole door (an outer ring + inner drum circle)
+  // instead of a rectangular one — the real, classic visual distinction
+  // between a front-loading washing machine and a dishwasher.
+  "laundry-washer": `<svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+    <rect x="8" y="6" width="32" height="38" rx="3"/>
+    <path d="M8 14h32"/>
+    <circle cx="24" cy="29" r="10"/>
+    <circle cx="24" cy="29" r="5"/>
   </svg>`,
 };
 
