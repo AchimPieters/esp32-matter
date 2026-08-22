@@ -2794,6 +2794,131 @@ firmware/evse/            EVSE (electric vehicle charger controller) —
                            available when written).
   partitions.csv           same OTA + fctry layout as firmware/light/
   sdkconfig.defaults        same as firmware/light/
+firmware/generic-switch/  Generic Switch — twenty-sixth device type, and
+                           this repo's first "smart button" accessory: a
+                           plain momentary pushbutton that fires real
+                           InitialPress/LongPress/ShortRelease/LongRelease/
+                           MultiPressOngoing/MultiPressComplete events for
+                           automations, rather than sending a command to a
+                           bound target the way firmware/switch/'s own
+                           On/Off Switch does.
+  main/app_main.cpp        `endpoint::generic_switch::create()` (device
+                           type 0x000F) confirmed complete/ready-to-use —
+                           Identify + Switch, via `common::create<T>()`
+                           (auto-Descriptor) — matches the CSA's own
+                           data_model/1.6/device_types/GenericSwitch.xml
+                           exactly (those two are the ONLY clusters
+                           listed, both mandatory). Unlike firmware/
+                           extractor-hood/'s, firmware/water-heater/'s,
+                           and firmware/evse/'s own endpoint helpers,
+                           Identify IS wired in automatically here — the
+                           first of several recent device types that
+                           hasn't needed a manual `cluster::identify::
+                           create()` call. Confirmed by reading
+                           `esp_matter_cluster.cpp`'s own `switch_cluster::
+                           create()` directly that Switch is a plain
+                           ember-attribute cluster (NumberOfPositions/
+                           CurrentPosition are ordinary attributes, no
+                           `config->delegate` field exists at all) — but
+                           the six press/release/multi-press events are
+                           generated through a real, registry-registered
+                           `chip::app::Clusters::SwitchCluster` (a
+                           `DefaultServerCluster`, same category as
+                           `FanControlCluster`/`ValveConfigurationAndControlCluster`
+                           — and, unlike firmware/evse/'s
+                           `EnergyEvse::EnergyEvseCluster`, this one
+                           resolves directly under `chip::app::Clusters`
+                           with no extra sub-namespace qualification,
+                           confirmed by reading `SwitchCluster.h`'s own
+                           namespace block), reached via the same
+                           registry-lookup-and-cast pattern. None of its
+                           `OnXxx()` event methods touch CurrentPosition
+                           at all (confirmed by reading `SwitchCluster.cpp`
+                           directly — each only calls `GenerateEvent()`),
+                           so this file calls `SetCurrentPosition()`
+                           separately alongside each event.
+
+                           Features: `momentary_switch` (MS) +
+                           `momentary_switch_release` (MSR) +
+                           `momentary_switch_long_press` (MSL) +
+                           `momentary_switch_multi_press` (MSM) — a
+                           complete single/double/triple/quadruple-click-
+                           plus-long-press button, the same capability
+                           set real commercial "smart button" accessories
+                           expose. `action_switch` (AS, a scene-selector-
+                           style switch) and `latching_switch` (a toggle/
+                           rocker) are both out of scope — the cluster's
+                           own `VALIDATE_FEATURES_EXACT_ONE` check
+                           (confirmed directly) makes momentary and
+                           latching mutually exclusive anyway, and a
+                           plain multi-click button is the more directly
+                           automatable hobbyist use case. A real,
+                           previously-unnoticed namespace gotcha was
+                           caught by an actual Docker build: these
+                           features live under `cluster::switch_cluster::
+                           feature::momentary_switch::get_id()` etc. —
+                           NOT a flat `cluster::feature::` namespace
+                           shared across every cluster, confirmed by
+                           reading `esp_matter_feature_impl.h` directly
+                           (feature is nested inside EACH cluster's own
+                           namespace, e.g. `descriptor::feature::
+                           tag_list`, `zone_management::feature::
+                           focus_zones` — a pattern worth remembering for
+                           any future `feature::xxx::add()` call in this
+                           repo).
+
+                           The press-timing state machine itself (debounce,
+                           long-press threshold, multi-press windowing) is
+                           real engineering this repo had to do itself —
+                           checked directly that no example in the esp-
+                           matter/connectedhomeip SDK (including
+                           `examples/chef/common/clusters/switch/`)
+                           implements a real GPIO-to-press-timing driver;
+                           chef's own `SwitchManager.cpp` is a test-event-
+                           injection harness, not something reading a real
+                           button, and the cluster's own
+                           `TestSwitchCluster.cpp` only exercises each
+                           `OnXxx()` call in isolation. This file's own
+                           state machine (`switch_task`, a periodic poll
+                           rather than firmware/switch/'s ISR+queue shape,
+                           since this one also needs to track ongoing
+                           *duration*) uses the same industry-standard
+                           technique virtually every DIY multi-click
+                           button library uses: a 1000ms long-press
+                           threshold (the common consumer-smart-button
+                           convention) and a 400ms post-release multi-
+                           press window (the common double-click timing
+                           window). Both `MultiPressOngoing`'s field
+                           constraint (`CurrentNumberOfPressesCounted`
+                           between 2 and MultiPressMax) and
+                           `MultiPressComplete`'s (only a `max`
+                           constraint, no `min: 2`) were checked directly
+                           in the cluster XML before writing this logic —
+                           confirming MultiPressOngoing never fires for a
+                           lone single click, but MultiPressComplete
+                           correctly DOES fire even after one (reporting
+                           count=1), the real, spec-grounded reason a
+                           plain single click still produces a
+                           MultiPressComplete event here, not just an
+                           unpaired ShortRelease. A long press doesn't
+                           chain into multi-press counting afterward —
+                           matches how every real multi-click button
+                           product behaves. Standard quick-power-cycle
+                           factory reset. Build-verified in Docker (two
+                           real, sequential compile errors caught and
+                           fixed: a missing `#include
+                           <app/clusters/switch-server/switch-server.h>`
+                           for `SwitchCluster` itself, and the
+                           `cluster::switch_cluster::feature::` namespace
+                           gotcha above); not hardware-tested (though
+                           this repo's other momentary-button device
+                           types already confirm the underlying breadboard-
+                           pushbutton wiring works on real hardware — this
+                           file's own press-timing state machine on top of
+                           that hasn't itself been exercised on a
+                           physical board).
+  partitions.csv           same OTA + fctry layout as firmware/light/
+  sdkconfig.defaults        same as firmware/light/
 tools/
   dev.sh                  opens the Docker dev environment
   gen_factory.sh          local QR + factory partition generator
@@ -3993,7 +4118,38 @@ SECURITY.md               flash encryption / secure boot / signed OTA guidance
    correctly rewrite `GPIO_NUM_NC` to a real pin once enabled. See
    `tools/product-wizard/README.md`'s own updated device-type list and
    its new paragraph on this addition.
-2. Implement Matter **OTA** — partially done. All twenty-five firmware
+
+   A twenty-sixth device type, `firmware/generic-switch/` (Switch
+   cluster, momentary), followed — the user's choice from a short
+   AskUserQuestion list (Generic Switch had already come up as a
+   recommended-but-unchosen option in three previous rounds). This
+   repo's first "smart button" accessory: fires real InitialPress/
+   LongPress/ShortRelease/LongRelease/MultiPressOngoing/MultiPressComplete
+   events for automations rather than sending a command to a bound
+   target the way firmware/switch/'s own On/Off Switch does. Architecturally
+   the simplest device type in several sessions (just Identify + Switch,
+   both wired in automatically by the top-level helper — no manual
+   Identify cluster call needed, the first time in a few device types),
+   but the press-timing state machine itself was real, from-scratch
+   engineering: checked directly that no SDK example (chef's own
+   `SwitchManager.cpp` included) implements a real GPIO-to-press-timing
+   driver, only test-event-injection harnesses. Built using the same
+   industry-standard debounce/long-press/multi-press-window technique
+   virtually every DIY multi-click button library uses, grounded in the
+   cluster XML's own field constraints (confirmed that `MultiPressOngoing`
+   never fires for a lone click but `MultiPressComplete` correctly does,
+   reporting count=1 — a real, spec-checked detail, not assumed). Two
+   real, sequential compile errors were caught and fixed by an actual
+   Docker build: a missing `#include` for `SwitchCluster` itself, and a
+   namespace gotcha worth remembering for any future `feature::xxx::add()`
+   call in this repo — `feature` is nested inside EACH cluster's own
+   namespace (`cluster::switch_cluster::feature::...`), not a flat
+   `cluster::feature::` shared across every cluster. See its own
+   repository-layout entry above for the complete detail. Build-verified
+   in Docker; not hardware-tested (though this repo's other momentary-
+   button device types already confirm the underlying breadboard-
+   pushbutton wiring works on real hardware).
+2. Implement Matter **OTA** — partially done. All twenty-six firmware
    types ship `CONFIG_ENABLE_OTA_REQUESTOR=y`, which adds the OTA Requestor
    cluster to the root node endpoint entirely via Kconfig — esp-matter's
    own core startup (`esp_matter_core.cpp`) calls
@@ -4070,7 +4226,7 @@ SECURITY.md               flash encryption / secure boot / signed OTA guidance
    later in `app_main()`, after `esp_matter::start()` has completed.
 
    Quick-power-cycle factory reset is Docker build-verified across all
-   twenty-five device types — not yet hardware-tested. The wizard
+   twenty-six device types — not yet hardware-tested. The wizard
    (`tools/product-wizard/`) has a static "Factory reset" info box
    rendered directly under the Configuration summary sidebar on every
    device type (wrapped together in a `.config-sidebar-stack` flex
