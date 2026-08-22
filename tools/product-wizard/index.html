@@ -2415,6 +2415,80 @@ const DEVICE_TYPES = [
       defaultsByModule: { esp32: 2, esp32c2: 2, esp32c3: 2, esp32c5: 2, esp32c6: 2, esp32c61: 2, esp32s3: 2, esp32h2: 2 },
     },
   },
+  {
+    id: "refrigerator",
+    name: "Refrigerator",
+    desc: "Matter Refrigerator: a genuinely composed device — a Refrigerator root endpoint with two Temperature Controlled Cabinet child endpoints (Fridge + Freezer) linked via esp-matter's real parent-child endpoint API, each with its own TemperatureControl setpoint, RefrigeratorAndTemperatureControlledCabinetMode (Normal/Rapid Cool or Normal/Rapid Freeze), and DS18B20-based TemperatureMeasurement driving an independent hysteresis-controlled relay. A whole-appliance door sensor drives RefrigeratorAlarm's DoorOpen state. Reference device in firmware/refrigerator/.",
+    shortDesc: "Fridge + freezer compartments, each with its own sensor/relay/mode.",
+    // Matches project(matter_refrigerator) in
+    // firmware/refrigerator/CMakeLists.txt. Five fixed GPIO fields
+    // (driver + 4 extraButtons) — same "fixed set, not a variable count"
+    // shape firmware/robot-vacuum/'s own 6-field entry already
+    // established (no buttonCountDefineName here either). The door sensor
+    // is just a plain extraButtons entry, not a new optional-checkbox
+    // field like statusLed/positionSensor/dockSensor/plugSensor — unlike
+    // those four, REFRIGERATOR_DOOR_GPIO isn't optional in the firmware
+    // (no GPIO_NUM_NC default, always wired up), so it doesn't need the
+    // checkbox-gated shape at all.
+    binName: "matter_refrigerator.bin",
+    driverLabel: "Fridge Relay",
+    driver: {
+      summary: "Fridge compressor relay · GPIO (digital output, active-LOW)",
+      fieldLabel: "Fridge relay GPIO pin",
+      blockTitle: "Fridge relay · digital output",
+      filePath: "firmware/refrigerator/main/app_main.cpp",
+      defineName: "REFRIGERATOR_FRIDGE_RELAY_GPIO",
+      currentGpio: 16,
+      defaultsByModule: { esp32: 16, esp32c2: 16, esp32c3: 16, esp32c5: 16, esp32c6: 16, esp32c61: 16, esp32s3: 16, esp32h2: 16 },
+    },
+    extraButtons: [
+      {
+        label: "Freezer Relay",
+        fieldLabel: "Freezer relay GPIO pin",
+        blockTitle: "Freezer relay · digital output (active-LOW)",
+        filePath: "firmware/refrigerator/main/app_main.cpp",
+        defineName: "REFRIGERATOR_FREEZER_RELAY_GPIO",
+        currentGpio: 17,
+        defaultsByModule: { esp32: 17, esp32c2: 17, esp32c3: 17, esp32c5: 17, esp32c6: 17, esp32c61: 17, esp32s3: 17, esp32h2: 17 },
+      },
+      {
+        label: "Fridge Sensor",
+        fieldLabel: "Fridge DS18B20 sensor GPIO pin",
+        blockTitle: "Fridge sensor · 1-Wire (DS18B20)",
+        filePath: "firmware/refrigerator/main/app_main.cpp",
+        defineName: "REFRIGERATOR_FRIDGE_SENSOR_GPIO",
+        currentGpio: 21,
+        defaultsByModule: { esp32: 21, esp32c2: 21, esp32c3: 21, esp32c5: 21, esp32c6: 21, esp32c61: 21, esp32s3: 21, esp32h2: 21 },
+      },
+      {
+        label: "Freezer Sensor",
+        fieldLabel: "Freezer DS18B20 sensor GPIO pin",
+        blockTitle: "Freezer sensor · 1-Wire (DS18B20)",
+        filePath: "firmware/refrigerator/main/app_main.cpp",
+        defineName: "REFRIGERATOR_FREEZER_SENSOR_GPIO",
+        currentGpio: 22,
+        defaultsByModule: { esp32: 22, esp32c2: 22, esp32c3: 22, esp32c5: 22, esp32c6: 22, esp32c61: 22, esp32s3: 22, esp32h2: 22 },
+      },
+      {
+        label: "Door Sensor",
+        fieldLabel: "Door reed-switch GPIO pin",
+        blockTitle: "Door sensor · digital input (reed switch)",
+        filePath: "firmware/refrigerator/main/app_main.cpp",
+        defineName: "REFRIGERATOR_DOOR_GPIO",
+        currentGpio: 4,
+        defaultsByModule: { esp32: 4, esp32c2: 4, esp32c3: 4, esp32c5: 4, esp32c6: 4, esp32c61: 4, esp32s3: 4, esp32h2: 4 },
+      },
+    ],
+    identify: {
+      summary: "GPIO (digital output)",
+      fieldLabel: "Identify LED GPIO pin",
+      blockTitle: "Identify LED · digital output",
+      filePath: "firmware/refrigerator/main/app_main.cpp",
+      defineName: "IDENTIFY_LED_GPIO",
+      currentGpio: 2,
+      defaultsByModule: { esp32: 2, esp32c2: 2, esp32c3: 2, esp32c5: 2, esp32c6: 2, esp32c61: 2, esp32s3: 2, esp32h2: 2 },
+    },
+  },
 ];
 
 function findDeviceType(id) {
@@ -2849,6 +2923,18 @@ const DEVICE_TYPE_ICONS = {
     <path d="M24 38v4"/>
     <path d="M6 24h4"/>
     <path d="M38 24h4"/>
+  </svg>`,
+  // A tall rounded-rectangle appliance body (the fridge/freezer cabinet)
+  // with a horizontal divider splitting it into two compartments (the
+  // fridge-over-freezer silhouette real combination units have) plus a
+  // short handle tick on each door — distinct from water-heater's own
+  // tank-plus-flame by showing the two-compartment structure itself,
+  // the one visual idea unique to this device type.
+  refrigerator: `<svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+    <rect x="12" y="4" width="24" height="40" rx="3"/>
+    <path d="M12 19h24"/>
+    <path d="M17 9v6"/>
+    <path d="M17 24v6"/>
   </svg>`,
 };
 

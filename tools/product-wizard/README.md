@@ -40,8 +40,9 @@ open tools/product-wizard/index.html
   "Pressure Sensor" (`firmware/pressure-sensor/`), "Robot Vacuum"
   (`firmware/robot-vacuum/`), "Extractor Hood"
   (`firmware/extractor-hood/`), "Water Heater"
-  (`firmware/water-heater/`), "EVSE" (`firmware/evse/`), or "Generic
-  Switch" (`firmware/generic-switch/`). All twenty-five are real, buildable
+  (`firmware/water-heater/`), "EVSE" (`firmware/evse/`), "Generic
+  Switch" (`firmware/generic-switch/`), or "Refrigerator"
+  (`firmware/refrigerator/`). All twenty-six are real, buildable
   firmware, not just UI placeholders (`firmware/camera/`, this repo's
   twelfth device type, is deliberately NOT offered here — see its own
   section further down for why: its two-chip/two-firmware/external-SDK
@@ -836,6 +837,28 @@ commands for `GENERIC_SWITCH_BUTTON_GPIO`/`IDENTIFY_LED_GPIO` — then
 those exact commands run for real against a copy of the actual
 `app_main.cpp` and diffed against the original, a byte-for-byte match.
 All checks passed.
+
+`firmware/refrigerator/` followed — this repo's first composed, multi-
+endpoint device (a Refrigerator root + Fridge/Freezer Temperature
+Controlled Cabinet child endpoints), but its wizard entry needed zero new
+mechanism: `driver` (Fridge Relay) + `extraButtons` (Freezer Relay,
+Fridge Sensor, Freezer Sensor, Door Sensor — a fixed set of 4, no "how
+many" picker, same shape `firmware/robot-vacuum/`'s own 6-field entry
+already established) + `identify`. The door sensor is a plain
+`extraButtons` entry rather than a new checkbox-gated optional field
+(unlike `statusLed`/`positionSensor`/`dockSensor`/`plugSensor`) since
+`REFRIGERATOR_DOOR_GPIO` isn't optional in the firmware — always wired
+up, no `GPIO_NUM_NC` default. Plus a new hand-drawn icon (a tall
+rounded-rectangle appliance body split by a horizontal divider into two
+compartments, each with its own door-handle tick). Verified the same
+way: `findDeviceType` lookup, the icon's presence in
+`DEVICE_TYPE_ICONS`, `renderConfigureDevice` output containing all six
+field labels, `isProductComplete` before and after render, the exact
+generated sed commands for all six `#define`s — then those exact
+commands run for real against a copy of the actual `app_main.cpp` and
+diffed against the original, a byte-for-byte match (every field's
+wizard default already matches the firmware's own shipped default). All
+checks passed.
 
 ## Known limitations
 
