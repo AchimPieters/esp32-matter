@@ -41,8 +41,9 @@ open tools/product-wizard/index.html
   (`firmware/robot-vacuum/`), "Extractor Hood"
   (`firmware/extractor-hood/`), "Water Heater"
   (`firmware/water-heater/`), "EVSE" (`firmware/evse/`), "Generic
-  Switch" (`firmware/generic-switch/`), or "Refrigerator"
-  (`firmware/refrigerator/`). All twenty-six are real, buildable
+  Switch" (`firmware/generic-switch/`), "Refrigerator"
+  (`firmware/refrigerator/`), or "Dishwasher"
+  (`firmware/dishwasher/`). All twenty-seven are real, buildable
   firmware, not just UI placeholders (`firmware/camera/`, this repo's
   twelfth device type, is deliberately NOT offered here — see its own
   section further down for why: its two-chip/two-firmware/external-SDK
@@ -858,6 +859,21 @@ generated sed commands for all six `#define`s — then those exact
 commands run for real against a copy of the actual `app_main.cpp` and
 diffed against the original, a byte-for-byte match (every field's
 wizard default already matches the firmware's own shipped default). All
+checks passed.
+
+`firmware/dishwasher/` followed — again zero new wizard mechanism: `driver`
+(Heater Relay) + `extraButtons` (Wash Pump Relay, Drain Pump Relay, Wash
+Water Sensor, Door Sensor — a fixed set of 4) + `identify`, the same
+shape `firmware/refrigerator/`'s own entry already established. Plus a
+new hand-drawn icon (a wide appliance body with a control-panel strip
+near the top and a large inset door with its own handle tick — distinct
+from refrigerator's tall two-compartment silhouette by being wide/squat
+with a single front-loading door). Verified the same way: `findDeviceType`
+lookup, the icon's presence in `DEVICE_TYPE_ICONS`, `renderConfigureDevice`
+output containing all six field labels, `isProductComplete` before and
+after render, the exact generated sed commands for all six `#define`s —
+then those exact commands run for real against a copy of the actual
+`app_main.cpp` and diffed against the original, a byte-for-byte match. All
 checks passed.
 
 ## Known limitations
