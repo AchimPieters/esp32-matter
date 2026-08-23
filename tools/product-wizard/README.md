@@ -43,8 +43,9 @@ open tools/product-wizard/index.html
   (`firmware/water-heater/`), "EVSE" (`firmware/evse/`), "Generic
   Switch" (`firmware/generic-switch/`), "Refrigerator"
   (`firmware/refrigerator/`), "Dishwasher"
-  (`firmware/dishwasher/`), or "Laundry Washer"
-  (`firmware/laundry-washer/`). All twenty-eight are real, buildable
+  (`firmware/dishwasher/`), "Laundry Washer"
+  (`firmware/laundry-washer/`), or "Pump" (`firmware/pump/`). All
+  twenty-nine are real, buildable
   firmware, not just UI placeholders (`firmware/camera/`, this repo's
   twelfth device type, is deliberately NOT offered here — see its own
   section further down for why: its two-chip/two-firmware/external-SDK
@@ -891,6 +892,24 @@ field labels, `isProductComplete` before and after render, the exact
 generated sed commands for all six `#define`s — then those exact commands
 run for real against a copy of the actual `app_main.cpp` and diffed
 against the original, a byte-for-byte match. All checks passed.
+
+`firmware/pump/` followed — this repo's thirtieth device type needed zero
+new wizard mechanism: `driver` (Relay) + `secondary` (Speed PWM) +
+`identify`, the same driver+secondary two-independent-GPIO shape
+`firmware/water-heater/`'s own relay+probe entry already established
+(here a relay enable line plus a PWM speed output instead of a relay
+plus a 1-Wire sensor). Plus a new hand-drawn icon (a circular pump-
+housing silhouette with a pipe stub inlet from above and a pipe stub
+outlet to the side, plus a filled center dot for the impeller shaft —
+distinct from every other icon here by showing the pump's own two-pipe
+plumbing shape). Verified the same way: `findDeviceType` lookup, the
+icon's presence in `DEVICE_TYPE_ICONS`, `renderConfigureDevice` output
+containing all three field labels, `isProductComplete` before and after
+render, the exact generated sed commands for all three `#define`s — then
+those exact commands run for real against a copy of the actual
+`app_main.cpp` and diffed against the original, a byte-for-byte match
+(every field's wizard default already matches the firmware's own shipped
+default). All checks passed.
 
 ## Known limitations
 

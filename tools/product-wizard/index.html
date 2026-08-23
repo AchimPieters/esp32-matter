@@ -2626,6 +2626,48 @@ const DEVICE_TYPES = [
       defaultsByModule: { esp32: 2, esp32c2: 2, esp32c3: 2, esp32c5: 2, esp32c6: 2, esp32c61: 2, esp32s3: 2, esp32h2: 2 },
     },
   },
+  {
+    id: "pump",
+    name: "Pump",
+    desc: "Matter pump: PumpConfigurationAndControl (ConstantSpeed) + On/Off + LevelControl. A relay gates the pump motor's own power while a separate PWM output drives a real speed-controller/VFD's speed input — the same plain enable-line-plus-speed-signal split a real variable-speed pump/circulator exposes. OperationMode (Normal/Minimum/Maximum) selects between LevelControl's own CurrentLevel and the feature-configured Min/MaxConstSpeed bounds. Reference device in firmware/pump/.",
+    shortDesc: "Relay enable + PWM speed output.",
+    // Matches project(matter_pump) in firmware/pump/CMakeLists.txt. Reuses
+    // the exact driver+secondary two-independent-GPIO shape firmware/
+    // water-heater/'s own relay+probe entry already established — here
+    // repurposed for a relay output (driver, PUMP_RELAY_GPIO) plus a PWM
+    // speed output (secondary, PUMP_SPEED_PWM_GPIO) instead of a relay
+    // plus a 1-Wire sensor input. No componentOptions on this entry, so
+    // `secondary` always renders unconditionally, same as water-heater's.
+    binName: "matter_pump.bin",
+    driver: {
+      summary: "GPIO (relay, active-LOW)",
+      fieldLabel: "Relay GPIO pin",
+      blockTitle: "Relay · digital output (pump motor enable)",
+      filePath: "firmware/pump/main/app_main.cpp",
+      defineName: "PUMP_RELAY_GPIO",
+      currentGpio: 16,
+      defaultsByModule: { esp32: 16, esp32c2: 16, esp32c3: 16, esp32c5: 16, esp32c6: 16, esp32c61: 16, esp32s3: 16, esp32h2: 16 },
+    },
+    secondary: {
+      label: "Speed PWM",
+      summary: "PWM (LEDC) output",
+      fieldLabel: "Speed PWM GPIO pin",
+      blockTitle: "Speed PWM · digital output (to speed controller/VFD)",
+      filePath: "firmware/pump/main/app_main.cpp",
+      defineName: "PUMP_SPEED_PWM_GPIO",
+      currentGpio: 17,
+      defaultsByModule: { esp32: 17, esp32c2: 17, esp32c3: 17, esp32c5: 17, esp32c6: 17, esp32c61: 17, esp32s3: 17, esp32h2: 17 },
+    },
+    identify: {
+      summary: "GPIO (digital output)",
+      fieldLabel: "Identify LED GPIO pin",
+      blockTitle: "Identify LED · digital output",
+      filePath: "firmware/pump/main/app_main.cpp",
+      defineName: "IDENTIFY_LED_GPIO",
+      currentGpio: 2,
+      defaultsByModule: { esp32: 2, esp32c2: 2, esp32c3: 2, esp32c5: 2, esp32c6: 2, esp32c61: 2, esp32s3: 2, esp32h2: 2 },
+    },
+  },
 ];
 
 function findDeviceType(id) {
@@ -3093,6 +3135,17 @@ const DEVICE_TYPE_ICONS = {
     <path d="M8 14h32"/>
     <circle cx="24" cy="29" r="10"/>
     <circle cx="24" cy="29" r="5"/>
+  </svg>`,
+  // A circular pump-housing silhouette (the volute) with a pipe stub
+  // inlet from above and a pipe stub outlet to the side, plus a filled
+  // center dot for the impeller shaft — distinct from every other icon
+  // here by showing the pump's own two-pipe plumbing shape rather than
+  // an appliance body or a reading.
+  pump: `<svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+    <circle cx="21" cy="27" r="14"/>
+    <path d="M21 4v9"/>
+    <path d="M35 27h9"/>
+    <circle cx="21" cy="27" r="3" fill="currentColor" stroke="none"/>
   </svg>`,
 };
 
