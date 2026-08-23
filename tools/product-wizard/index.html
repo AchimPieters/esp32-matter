@@ -2833,6 +2833,35 @@ const DEVICE_TYPES = [
       defaultsByModule: { esp32: 2, esp32c2: 2, esp32c3: 2, esp32c5: 2, esp32c6: 2, esp32c61: 2, esp32s3: 2, esp32h2: 2 },
     },
   },
+  {
+    id: "flow-sensor",
+    name: "Flow Sensor",
+    desc: "Matter Flow Sensor: a Hall-effect pulse-output flow sensor (YF-S201-class) is read via a GPIO interrupt, counting pulses to compute L/min (F(Hz) = 7.5 × Q(L/min)) and reporting FlowMeasurement's own m3/h-times-10 MeasuredValue. Reference device in firmware/flow-sensor/.",
+    shortDesc: "Pulse-counting Hall-effect flow sensor.",
+    // Matches project(matter_flow_sensor) in firmware/flow-sensor/CMakeLists.txt.
+    // Single GPIO (driver) + identify — the same simple shape firmware/
+    // fan/'s and firmware/generic-switch/'s own entries already use, since
+    // this sensor needs only one pulse-input pin.
+    binName: "matter_flow_sensor.bin",
+    driver: {
+      summary: "GPIO (digital input, pulse-counting)",
+      fieldLabel: "Pulse input GPIO pin",
+      blockTitle: "Pulse input · digital input (Hall-effect flow sensor)",
+      filePath: "firmware/flow-sensor/main/app_main.cpp",
+      defineName: "FLOW_SENSOR_PULSE_GPIO",
+      currentGpio: 4,
+      defaultsByModule: { esp32: 4, esp32c2: 4, esp32c3: 4, esp32c5: 4, esp32c6: 4, esp32c61: 4, esp32s3: 4, esp32h2: 4 },
+    },
+    identify: {
+      summary: "GPIO (digital output)",
+      fieldLabel: "Identify LED GPIO pin",
+      blockTitle: "Identify LED · digital output",
+      filePath: "firmware/flow-sensor/main/app_main.cpp",
+      defineName: "IDENTIFY_LED_GPIO",
+      currentGpio: 2,
+      defaultsByModule: { esp32: 2, esp32c2: 2, esp32c3: 2, esp32c5: 2, esp32c6: 2, esp32c61: 2, esp32s3: 2, esp32h2: 2 },
+    },
+  },
 ];
 
 function findDeviceType(id) {
@@ -3354,6 +3383,20 @@ const DEVICE_TYPE_ICONS = {
     <path d="M40 14l4 5"/>
     <path d="M40 34l-4-5"/>
     <path d="M40 34l4-5"/>
+  </svg>`,
+  // A straight pipe (two horizontal rails running the full width) with a
+  // pinwheel/turbine circle inline — the actual mechanism a Hall-effect
+  // flow sensor uses — plus a small flow-direction arrow above it. Distinct
+  // from valve's own pipe-TEE-with-handle (an actuator you turn) and from
+  // pressure-sensor's round gauge dial by showing in-line flow itself.
+  "flow-sensor": `<svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M4 18h40"/>
+    <path d="M4 30h40"/>
+    <circle cx="24" cy="24" r="9"/>
+    <path d="M24 24l6-4"/>
+    <path d="M24 24l-6-4"/>
+    <path d="M24 24v7"/>
+    <path d="M34 12l4 3l-4 3"/>
   </svg>`,
 };
 

@@ -46,9 +46,9 @@ open tools/product-wizard/index.html
   (`firmware/dishwasher/`), "Laundry Washer"
   (`firmware/laundry-washer/`), "Pump" (`firmware/pump/`), "Laundry
   Dryer" (`firmware/laundry-dryer/`), "Room Air Conditioner"
-  (`firmware/room-air-conditioner/`), or "Heat Pump"
-  (`firmware/heat-pump/`). All
-  thirty-two are real, buildable
+  (`firmware/room-air-conditioner/`), "Heat Pump"
+  (`firmware/heat-pump/`), or "Flow Sensor" (`firmware/flow-sensor/`). All
+  thirty-three are real, buildable
   firmware, not just UI placeholders (`firmware/camera/`, this repo's
   twelfth device type, is deliberately NOT offered here — see its own
   section further down for why: its two-chip/two-firmware/external-SDK
@@ -972,6 +972,20 @@ call-order requirement as every other fixed-`extraButtons` device type's
 own verification) — then those exact commands run for real against a copy
 of the actual `app_main.cpp` and diffed against the original, a
 byte-for-byte match. All checks passed.
+
+`firmware/flow-sensor/` followed — the simplest wizard entry in several
+sessions: a single `driver` (the pulse-input pin) plus `identify`, the
+same shape `firmware/fan/`'s and `firmware/generic-switch/`'s own entries
+already use, since this sensor needs only one GPIO. Plus a new hand-drawn
+icon (a straight pipe with an inline pinwheel/turbine circle and a small
+flow-direction arrow above it — distinct from `valve`'s own pipe-tee-with-
+handle and `pressure-sensor`'s round gauge dial). Verified the same way:
+`findDeviceType` lookup, the icon's presence in `DEVICE_TYPE_ICONS`,
+`renderConfigureDevice` output containing both field labels,
+`isProductComplete` before and after render, the exact generated sed
+commands for both `#define`s — then those exact commands run for real
+against a copy of the actual `app_main.cpp` and diffed against the
+original, a byte-for-byte match. All checks passed.
 
 ## Known limitations
 
