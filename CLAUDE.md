@@ -4053,6 +4053,62 @@ firmware/flow-sensor/     Flow Sensor — thirty-fourth device type, back to
                            sensor physically available when written).
   partitions.csv           same OTA + fctry layout as firmware/light/
   sdkconfig.defaults        same as firmware/light/
+firmware/humidity-sensor/  Humidity Sensor — thirty-fifth device type, and a
+                           standalone sibling to firmware/temperature-sensor/'s
+                           own humidity endpoint — recommended three times
+                           across recent AskUserQuestion rounds (firmware/
+                           room-air-conditioner/'s, firmware/heat-pump/'s,
+                           and firmware/flow-sensor/'s own) before finally
+                           being chosen.
+  main/app_main.cpp        Confirmed against the CSA's own data_model/1.6/
+                           device_types/HumiditySensor.xml: Identify +
+                           RelativeHumidityMeasurement are the ONLY
+                           clusters, both mandatory, with no optional
+                           TemperatureMeasurement slot at all (unlike
+                           RoomAirConditioner's own optional Temperature/
+                           Humidity pair) — confirmed by reading the XML
+                           directly. `endpoint::humidity_sensor::create()`
+                           is the exact same top-level helper firmware/
+                           temperature-sensor/ already calls for its own
+                           second (humidity) endpoint — reused here as the
+                           ONLY endpoint on a standalone device.
+                           RelativeHumidityMeasurement confirmed to be the
+                           same "code-driven" cluster category as
+                           TemperatureMeasurement — `SetMeasuredValue()`
+                           via the registry, same pattern firmware/
+                           temperature-sensor/'s own `update_humidity()`
+                           already establishes. `SENSOR_TYPE` reuses the
+                           same 6-chip library firmware/temperature-sensor/
+                           already established (SHT3x/SHT4x/AHT20/DHT11/
+                           DHT22/BME280 — every driver reused verbatim:
+                           I2C bus setup, Sensirion/Bosch checksum
+                           algorithms, register maps, conversion formulas,
+                           DHT11/DHT22's shared bit-banged protocol), minus
+                           DS18B20 — which measures temperature only and
+                           has no humidity output at all, so there's
+                           nothing for a humidity-only device type to read
+                           from it; unlike firmware/temperature-sensor/'s
+                           own `SENSOR_HAS_HUMIDITY` compile-time escape
+                           hatch (which still uses DS18B20 for its primary,
+                           mandatory temperature endpoint), that option
+                           simply isn't offered here at all. Each driver's
+                           own `sensor_read()` still returns a temperature
+                           value internally (several of these chips measure
+                           both together, in one transaction, inseparably)
+                           — never exposed via Matter here, the same "read
+                           but unused" pattern firmware/thermostat/'s own
+                           local-temperature-sensor reuse already
+                           establishes. None of the 6 chips is personally
+                           hardware-tested in THIS device type's own
+                           firmware (no fresh hardware pass was done for
+                           this addition) — flagged accordingly, same
+                           standard firmware/temperature-sensor/'s own
+                           less-verified chips already carry. Standard
+                           quick-power-cycle factory reset. Build-verified
+                           in Docker for all 6 `SENSOR_TYPE` values; not
+                           hardware-tested.
+  partitions.csv           same OTA + fctry layout as firmware/light/
+  sdkconfig.defaults        same as firmware/light/
 tools/
   dev.sh                  opens the Docker dev environment
   gen_factory.sh          local QR + factory partition generator
@@ -5587,14 +5643,37 @@ SECURITY.md               flash encryption / secure boot / signed OTA guidance
    the complete detail. Build-verified in Docker (clean first attempt); not
    hardware-tested (no YF-S201-class sensor physically available when
    written).
-2. Implement Matter **OTA** — partially done. All thirty-four firmware
+
+   A thirty-fifth device type, `firmware/humidity-sensor/`
+   (RelativeHumidityMeasurement), followed flow-sensor — the user's choice
+   from a short AskUserQuestion list (Humidity Sensor had already come up
+   as a recommended-but-unchosen option three times before, during
+   firmware/room-air-conditioner/'s, firmware/heat-pump/'s, and firmware/
+   flow-sensor/'s own rounds). A standalone sibling to firmware/
+   temperature-sensor/'s own humidity endpoint — confirmed by reading the
+   CSA's own HumiditySensor.xml directly that this device type has no
+   optional TemperatureMeasurement slot at all, unlike RoomAirConditioner's
+   own optional Temperature/Humidity pair. Reused firmware/
+   temperature-sensor/'s exact 6 humidity-capable sensor drivers verbatim
+   (SHT3x/SHT4x/AHT20/DHT11/DHT22/BME280) rather than writing anything new
+   — the one deliberate, documented difference from that file's own
+   7-sensor library: DS18B20 isn't offered at all here, since it measures
+   temperature only and a humidity-only device type has nothing to read
+   from it (unlike firmware/temperature-sensor/'s own `SENSOR_HAS_HUMIDITY`
+   compile-time escape hatch, which still needs DS18B20 for its primary
+   temperature endpoint). See its own repository-layout entry above for the
+   complete detail. Build-verified in Docker for all 6 `SENSOR_TYPE`
+   values (each one individually rebuilt and confirmed, not just the
+   shipped default); not hardware-tested (no fresh hardware pass was done
+   for this addition).
+2. Implement Matter **OTA** — partially done. All thirty-five firmware
    types ship `CONFIG_ENABLE_OTA_REQUESTOR=y`, which adds the OTA Requestor
    cluster to the root node endpoint entirely via Kconfig — esp-matter's
    own core startup (`esp_matter_core.cpp`) calls
    `esp_matter_ota_requestor_init()`/`_start()` automatically once that
    flag is on, so no app code was needed. Confirmed on real hardware for
    `firmware/contact-sensor/` and `firmware/switch/` (clean boot, cluster
-   registered, zero errors); the other thirty-two build identically since
+   registered, zero errors); the other thirty-three build identically since
    the code path is generic to every device type, not device-specific.
 
    Still open: a real OTA **transfer** needs an OTA Provider node
@@ -5664,7 +5743,7 @@ SECURITY.md               flash encryption / secure boot / signed OTA guidance
    later in `app_main()`, after `esp_matter::start()` has completed.
 
    Quick-power-cycle factory reset is Docker build-verified across all
-   thirty-four device types — not yet hardware-tested. The wizard
+   thirty-five device types — not yet hardware-tested. The wizard
    (`tools/product-wizard/`) has a static "Factory reset" info box
    rendered directly under the Configuration summary sidebar on every
    device type (wrapped together in a `.config-sidebar-stack` flex
