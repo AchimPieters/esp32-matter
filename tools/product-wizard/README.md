@@ -48,9 +48,10 @@ open tools/product-wizard/index.html
   Dryer" (`firmware/laundry-dryer/`), "Room Air Conditioner"
   (`firmware/room-air-conditioner/`), "Heat Pump"
   (`firmware/heat-pump/`), "Flow Sensor" (`firmware/flow-sensor/`),
-  "Humidity Sensor" (`firmware/humidity-sensor/`), or "Water Freeze
-  Detector" (`firmware/water-freeze-detector/`). All
-  thirty-five are real, buildable
+  "Humidity Sensor" (`firmware/humidity-sensor/`), "Water Freeze
+  Detector" (`firmware/water-freeze-detector/`), or "Soil Sensor"
+  (`firmware/soil-sensor/`). All
+  thirty-six are real, buildable
   firmware, not just UI placeholders (`firmware/camera/`, this repo's
   twelfth device type, is deliberately NOT offered here — see its own
   section further down for why: its two-chip/two-firmware/external-SDK
@@ -1023,6 +1024,18 @@ labels, `isProductComplete` before and after render, the exact generated
 sed commands for both `#define`s — then those exact commands run for real
 against a copy of the actual `app_main.cpp` and diffed against the
 original, a byte-for-byte match. All checks passed.
+
+`firmware/soil-sensor/` followed — a single `driver` (the probe's AOUT
+pin) plus `identify`, the same shape `firmware/water-freeze-detector/`'s
+own entry already uses, since this device type has exactly one sensor (a
+capacitive probe on ADC1) documented so far. Plus a new hand-drawn icon
+(a ground line with a probe stem rising into a two-leaf sprout, plus a
+small filled droplet beside it). Verified the same way: `findDeviceType`
+lookup, the icon's presence in `DEVICE_TYPE_ICONS`, `renderConfigureDevice`
+output containing both field labels, `isProductComplete` before and after
+render, the exact generated sed commands for both `#define`s — then those
+exact commands run for real against a copy of the actual `app_main.cpp`
+and diffed against the original, a byte-for-byte match. All checks passed.
 
 ## Known limitations
 

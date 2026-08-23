@@ -2939,6 +2939,39 @@ const DEVICE_TYPES = [
       defaultsByModule: { esp32: 2, esp32c2: 2, esp32c3: 2, esp32c5: 2, esp32c6: 2, esp32c61: 2, esp32s3: 2, esp32h2: 2 },
     },
   },
+  {
+    id: "soil-sensor",
+    name: "Soil Sensor",
+    desc: "Matter Soil Sensor: a cheap capacitive soil-moisture probe (analog output, ADC1) reports 0-100% via the Soil Measurement cluster. Needs a real two-point field calibration (dry air = 0%, submerged in water = 100%) — the shipped defaults are only representative placeholders, not a measured calibration. Reference device in firmware/soil-sensor/.",
+    shortDesc: "Capacitive probe (ADC), needs field calibration.",
+    // Matches project(matter_soil_sensor) in firmware/soil-sensor/CMakeLists.txt.
+    // Single GPIO (driver) + identify — same simple shape firmware/
+    // water-freeze-detector/'s own entry already uses, since this device
+    // type has exactly one sensor (a capacitive probe on ADC1) documented
+    // so far, same as firmware/light-sensor/'s own LDR-only ADC pin
+    // before BH1750 was added.
+    binName: "matter_soil_sensor.bin",
+    driver: {
+      summary: "GPIO (ADC1, analog input)",
+      fieldLabel: "Soil probe AOUT GPIO pin",
+      blockTitle: "Soil probe AOUT · analog input (ADC1)",
+      filePath: "firmware/soil-sensor/main/app_main.cpp",
+      defineName: "SOIL_SENSOR_PIN",
+      // GPIO 34 = ADC1 channel 6 on classic ESP32 (WROOM-32) — deliberately
+      // ADC1, not ADC2 (ADC2 is unreliable once Wi-Fi is active).
+      currentGpio: 34,
+      defaultsByModule: { esp32: 34, esp32c2: 34, esp32c3: 34, esp32c5: 34, esp32c6: 34, esp32c61: 34, esp32s3: 34, esp32h2: 34 },
+    },
+    identify: {
+      summary: "GPIO (digital output)",
+      fieldLabel: "Identify LED GPIO pin",
+      blockTitle: "Identify LED · digital output",
+      filePath: "firmware/soil-sensor/main/app_main.cpp",
+      defineName: "IDENTIFY_LED_GPIO",
+      currentGpio: 2,
+      defaultsByModule: { esp32: 2, esp32c2: 2, esp32c3: 2, esp32c5: 2, esp32c6: 2, esp32c61: 2, esp32s3: 2, esp32h2: 2 },
+    },
+  },
 ];
 
 function findDeviceType(id) {
@@ -3296,6 +3329,17 @@ const DEVICE_TYPE_ICONS = {
     <path d="M24 24v12"/>
     <path d="M29.2 27l-10.4 6"/>
     <path d="M18.8 27l10.4 6"/>
+  </svg>`,
+  // A ground line with a probe stem rising from it into a two-leaf sprout,
+  // plus a small filled droplet beside it — a soil probe reading moisture
+  // for a growing plant, distinct from every other icon here by showing
+  // the below-ground/above-ground relationship itself.
+  "soil-sensor": `<svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M6 30h36"/>
+    <path d="M20 30V14"/>
+    <path d="M20 18c-4-1-6-5-6-8c3 0 7 2 8 6"/>
+    <path d="M20 16c4-1 6-4 6-7c-3 0-6 2-7 5"/>
+    <path d="M30 34c2 2.5 2 5 0 7c-2-2-2-4.5 0-7Z" fill="currentColor" stroke="none"/>
   </svg>`,
   // A rounded body (the purifier's own housing, distinct from fan's bare
   // blade icon) with the same three-blade motif inside, plus short
