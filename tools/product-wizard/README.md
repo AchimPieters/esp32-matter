@@ -49,9 +49,10 @@ open tools/product-wizard/index.html
   (`firmware/room-air-conditioner/`), "Heat Pump"
   (`firmware/heat-pump/`), "Flow Sensor" (`firmware/flow-sensor/`),
   "Humidity Sensor" (`firmware/humidity-sensor/`), "Water Freeze
-  Detector" (`firmware/water-freeze-detector/`), or "Soil Sensor"
-  (`firmware/soil-sensor/`). All
-  thirty-six are real, buildable
+  Detector" (`firmware/water-freeze-detector/`), "Soil Sensor"
+  (`firmware/soil-sensor/`), or "Dimmable Plug-In Unit"
+  (`firmware/dimmable-plug/`). All
+  thirty-seven are real, buildable
   firmware, not just UI placeholders (`firmware/camera/`, this repo's
   twelfth device type, is deliberately NOT offered here — see its own
   section further down for why: its two-chip/two-firmware/external-SDK
@@ -1036,6 +1037,19 @@ output containing both field labels, `isProductComplete` before and after
 render, the exact generated sed commands for both `#define`s — then those
 exact commands run for real against a copy of the actual `app_main.cpp`
 and diffed against the original, a byte-for-byte match. All checks passed.
+
+`firmware/dimmable-plug/` followed — a single `driver` (the PWM output pin)
+plus `identify`, the same shape `firmware/dimmable-light/`'s own entry
+already uses (same GPIO defaults too, since `app_main.cpp` reuses that
+file's exact LEDC setup verbatim). Plus a new hand-drawn icon (the same
+wall-plate square frame as `outlet`'s own icon, but with a vertical
+dimmer-slider track and a filled knob partway down it instead of `outlet`'s
+own two prong-dots). Verified the same way: `findDeviceType` lookup, the
+icon's presence in `DEVICE_TYPE_ICONS`, `renderConfigureDevice` output
+containing both field labels, `isProductComplete` before and after render,
+the exact generated sed commands for both `#define`s — then those exact
+commands run for real against a copy of the actual `app_main.cpp` and
+diffed against the original, a byte-for-byte match. All checks passed.
 
 ## Known limitations
 

@@ -2972,6 +2972,38 @@ const DEVICE_TYPES = [
       defaultsByModule: { esp32: 2, esp32c2: 2, esp32c3: 2, esp32c5: 2, esp32c6: 2, esp32c61: 2, esp32s3: 2, esp32h2: 2 },
     },
   },
+  {
+    id: "dimmable-plug",
+    name: "Dimmable Plug-In Unit",
+    desc: "Matter Dimmable Plug-In Unit: On/Off + LevelControl (brightness), driven as real PWM via the LEDC peripheral — the same output pattern firmware/dimmable-light/ already uses, framed here for a plug-in appliance instead of a light fixture. A relay can't dim, so this drives a MOSFET-switched DC load or a real AC dimmer module's own PWM/analog dimming-control input, not mains current directly. Reference device in firmware/dimmable-plug/.",
+    shortDesc: "On/off + brightness (PWM), plug-in framing.",
+    // Matches project(matter_dimmable_plug) in
+    // firmware/dimmable-plug/CMakeLists.txt. Same single-GPIO-plus-
+    // identify shape as firmware/dimmable-light/'s own entry — no
+    // componentOptions/secondary/extraButtons/extraPickers needed, just
+    // one PWM-capable output pin. Same GPIO defaults as firmware/
+    // dimmable-light/'s own entry too, since app_main.cpp reuses that
+    // file's exact LEDC setup verbatim.
+    binName: "matter_dimmable_plug.bin",
+    driver: {
+      summary: "GPIO (PWM output, LEDC)",
+      fieldLabel: "Output GPIO pin",
+      blockTitle: "Output · PWM (LEDC) — MOSFET/dimmer-module control input",
+      filePath: "firmware/dimmable-plug/main/app_main.cpp",
+      defineName: "DIMMABLE_PLUG_OUTPUT_PWM_GPIO",
+      currentGpio: 2,
+      defaultsByModule: { esp32: 2, esp32c2: 2, esp32c3: 2, esp32c5: 2, esp32c6: 2, esp32c61: 2, esp32s3: 2, esp32h2: 2 },
+    },
+    identify: {
+      summary: "GPIO (digital output)",
+      fieldLabel: "Identify LED GPIO pin",
+      blockTitle: "Identify LED · digital output",
+      filePath: "firmware/dimmable-plug/main/app_main.cpp",
+      defineName: "IDENTIFY_LED_GPIO",
+      currentGpio: 4,
+      defaultsByModule: { esp32: 4, esp32c2: 4, esp32c3: 4, esp32c5: 4, esp32c6: 4, esp32c61: 4, esp32s3: 4, esp32h2: 4 },
+    },
+  },
 ];
 
 function findDeviceType(id) {
@@ -3340,6 +3372,16 @@ const DEVICE_TYPE_ICONS = {
     <path d="M20 18c-4-1-6-5-6-8c3 0 7 2 8 6"/>
     <path d="M20 16c4-1 6-4 6-7c-3 0-6 2-7 5"/>
     <path d="M30 34c2 2.5 2 5 0 7c-2-2-2-4.5 0-7Z" fill="currentColor" stroke="none"/>
+  </svg>`,
+  // The exact same wall-plate square frame as outlet's own icon (the real
+  // visual link — this is still a plug-in unit), but with a vertical
+  // dimmer-slider track and a filled knob partway down it instead of
+  // outlet's own two prong-dots — the one clear difference, showing
+  // "dimmable" rather than a plain socket.
+  "dimmable-plug": `<svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+    <rect x="6" y="6" width="36" height="36" rx="9"/>
+    <path d="M24 14v20"/>
+    <circle cx="24" cy="26" r="3.2" fill="currentColor" stroke="none"/>
   </svg>`,
   // A rounded body (the purifier's own housing, distinct from fan's bare
   // blade icon) with the same three-blade motif inside, plus short
