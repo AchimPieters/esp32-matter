@@ -2668,6 +2668,67 @@ const DEVICE_TYPES = [
       defaultsByModule: { esp32: 2, esp32c2: 2, esp32c3: 2, esp32c5: 2, esp32c6: 2, esp32c61: 2, esp32s3: 2, esp32h2: 2 },
     },
   },
+  {
+    id: "laundry-dryer",
+    name: "Laundry Dryer",
+    desc: "Matter Laundry Dryer: the generic OperationalState cluster (Start/Stop/Pause/Resume) drives a real 2-phase cycle — Drying (heater relay, hysteresis-controlled against a DS18B20 reading and TemperatureControl's own live drying-air setpoint, plus the drum motor tumbling) for a duration set by LaundryDryerControls' own SelectedDrynessLevel (Low/Normal/Extra/Max), then a fixed unheated Cooldown tumble. Reuses LaundryWasher's own Mode cluster (Normal/Delicate/Heavy/Quick) — Matter has no separate dryer-specific mode cluster. No water handling at all: no fill, no rinse, no drain. Reference device in firmware/laundry-dryer/.",
+    shortDesc: "Timed drying + cooldown, heater/motor relays.",
+    // Matches project(matter_laundry_dryer) in
+    // firmware/laundry-dryer/CMakeLists.txt. Three fixed GPIO fields
+    // (driver + 2 extraButtons) — same "fixed set, not a variable count"
+    // shape firmware/dishwasher/'s and firmware/laundry-washer/'s own
+    // entries already established, just one relay fewer since a dryer has
+    // no drain pump.
+    binName: "matter_laundry_dryer.bin",
+    driverLabel: "Heater Relay",
+    driver: {
+      summary: "Heater relay · GPIO (digital output, active-LOW)",
+      fieldLabel: "Heater relay GPIO pin",
+      blockTitle: "Heater relay · digital output",
+      filePath: "firmware/laundry-dryer/main/app_main.cpp",
+      defineName: "LAUNDRY_DRYER_HEATER_RELAY_GPIO",
+      currentGpio: 16,
+      defaultsByModule: { esp32: 16, esp32c2: 16, esp32c3: 16, esp32c5: 16, esp32c6: 16, esp32c61: 16, esp32s3: 16, esp32h2: 16 },
+    },
+    extraButtons: [
+      {
+        label: "Motor Relay",
+        fieldLabel: "Motor relay GPIO pin",
+        blockTitle: "Motor relay · digital output (active-LOW, drum tumble)",
+        filePath: "firmware/laundry-dryer/main/app_main.cpp",
+        defineName: "LAUNDRY_DRYER_MOTOR_RELAY_GPIO",
+        currentGpio: 17,
+        defaultsByModule: { esp32: 17, esp32c2: 17, esp32c3: 17, esp32c5: 17, esp32c6: 17, esp32c61: 17, esp32s3: 17, esp32h2: 17 },
+      },
+      {
+        label: "Drying-Air Sensor",
+        fieldLabel: "Drying-air DS18B20 sensor GPIO pin",
+        blockTitle: "Drying-air sensor · 1-Wire (DS18B20)",
+        filePath: "firmware/laundry-dryer/main/app_main.cpp",
+        defineName: "LAUNDRY_DRYER_SENSOR_GPIO",
+        currentGpio: 21,
+        defaultsByModule: { esp32: 21, esp32c2: 21, esp32c3: 21, esp32c5: 21, esp32c6: 21, esp32c61: 21, esp32s3: 21, esp32h2: 21 },
+      },
+      {
+        label: "Door Sensor",
+        fieldLabel: "Door reed-switch GPIO pin",
+        blockTitle: "Door sensor · digital input (reed switch)",
+        filePath: "firmware/laundry-dryer/main/app_main.cpp",
+        defineName: "LAUNDRY_DRYER_DOOR_GPIO",
+        currentGpio: 4,
+        defaultsByModule: { esp32: 4, esp32c2: 4, esp32c3: 4, esp32c5: 4, esp32c6: 4, esp32c61: 4, esp32s3: 4, esp32h2: 4 },
+      },
+    ],
+    identify: {
+      summary: "GPIO (digital output)",
+      fieldLabel: "Identify LED GPIO pin",
+      blockTitle: "Identify LED · digital output",
+      filePath: "firmware/laundry-dryer/main/app_main.cpp",
+      defineName: "IDENTIFY_LED_GPIO",
+      currentGpio: 2,
+      defaultsByModule: { esp32: 2, esp32c2: 2, esp32c3: 2, esp32c5: 2, esp32c6: 2, esp32c61: 2, esp32s3: 2, esp32h2: 2 },
+    },
+  },
 ];
 
 function findDeviceType(id) {
@@ -3146,6 +3207,18 @@ const DEVICE_TYPE_ICONS = {
     <path d="M21 4v9"/>
     <path d="M35 27h9"/>
     <circle cx="21" cy="27" r="3" fill="currentColor" stroke="none"/>
+  </svg>`,
+  // Same appliance-body-plus-control-panel shape as laundry-washer's own
+  // icon, and the same round porthole outer ring — but with wavy heat
+  // lines rising inside it instead of an inner drum circle, the real
+  // visual distinction between a dryer (hot air) and a washer (a drum
+  // full of water) sharing the same front-loading silhouette family.
+  "laundry-dryer": `<svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+    <rect x="8" y="6" width="32" height="38" rx="3"/>
+    <path d="M8 14h32"/>
+    <circle cx="24" cy="29" r="10"/>
+    <path d="M20 34c1.5-2 1.5-4.5 0-6.5c1.5 0.6 2.8 0.2 3.5-1c0.4 2.3-0.4 4.9-1.5 7.5"/>
+    <path d="M27 34c1.5-2 1.5-4.5 0-6.5c1.5 0.6 2.8 0.2 3.5-1c0.4 2.3-0.4 4.9-1.5 7.5"/>
   </svg>`,
 };
 

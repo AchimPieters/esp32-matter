@@ -44,8 +44,9 @@ open tools/product-wizard/index.html
   Switch" (`firmware/generic-switch/`), "Refrigerator"
   (`firmware/refrigerator/`), "Dishwasher"
   (`firmware/dishwasher/`), "Laundry Washer"
-  (`firmware/laundry-washer/`), or "Pump" (`firmware/pump/`). All
-  twenty-nine are real, buildable
+  (`firmware/laundry-washer/`), "Pump" (`firmware/pump/`), or "Laundry
+  Dryer" (`firmware/laundry-dryer/`). All
+  thirty are real, buildable
   firmware, not just UI placeholders (`firmware/camera/`, this repo's
   twelfth device type, is deliberately NOT offered here — see its own
   section further down for why: its two-chip/two-firmware/external-SDK
@@ -910,6 +911,28 @@ those exact commands run for real against a copy of the actual
 `app_main.cpp` and diffed against the original, a byte-for-byte match
 (every field's wizard default already matches the firmware's own shipped
 default). All checks passed.
+
+`firmware/laundry-dryer/` followed — again zero new wizard mechanism:
+`driver` (Heater Relay) + `extraButtons` (Motor Relay, Drying-Air Sensor,
+Door Sensor — a fixed set of 3, one relay fewer than `firmware/
+laundry-washer/`'s own 4 since a dryer has no drain pump) + `identify`,
+the same shape `firmware/dishwasher/`'s and `firmware/laundry-washer/`'s
+own entries already established. Plus a new hand-drawn icon — the same
+appliance-body-plus-control-panel shape and round porthole outer ring as
+`firmware/laundry-washer/`'s own icon, but with wavy heat lines rising
+inside it instead of an inner drum circle (hot air vs. a drum full of
+water, the real visual distinction between the two appliances). Verified
+the same way: `findDeviceType` lookup, the icon's presence in
+`DEVICE_TYPE_ICONS`, `renderConfigureDevice` output containing all five
+field labels, `isProductComplete` before and after render, the exact
+generated sed commands for all five `#define`s (calling
+`renderConfigureDevice` first on the same product object so the fixed
+`extraButtons` set's own `buttonCount` gets filled in, exactly like the
+real wizard flow does — the same call-order requirement `firmware/
+robot-vacuum/`'s and every other fixed-`extraButtons` device type's own
+verification already relies on) — then those exact commands run for real
+against a copy of the actual `app_main.cpp` and diffed against the
+original, a byte-for-byte match. All checks passed.
 
 ## Known limitations
 
