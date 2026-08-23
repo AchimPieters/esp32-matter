@@ -47,8 +47,9 @@ open tools/product-wizard/index.html
   (`firmware/laundry-washer/`), "Pump" (`firmware/pump/`), "Laundry
   Dryer" (`firmware/laundry-dryer/`), "Room Air Conditioner"
   (`firmware/room-air-conditioner/`), "Heat Pump"
-  (`firmware/heat-pump/`), or "Flow Sensor" (`firmware/flow-sensor/`). All
-  thirty-three are real, buildable
+  (`firmware/heat-pump/`), "Flow Sensor" (`firmware/flow-sensor/`), or
+  "Humidity Sensor" (`firmware/humidity-sensor/`). All
+  thirty-four are real, buildable
   firmware, not just UI placeholders (`firmware/camera/`, this repo's
   twelfth device type, is deliberately NOT offered here — see its own
   section further down for why: its two-chip/two-firmware/external-SDK
@@ -986,6 +987,27 @@ handle and `pressure-sensor`'s round gauge dial). Verified the same way:
 commands for both `#define`s — then those exact commands run for real
 against a copy of the actual `app_main.cpp` and diffed against the
 original, a byte-for-byte match. All checks passed.
+
+`firmware/humidity-sensor/` followed — reuses `firmware/temperature-sensor/`'s
+own `componentOptions`/`componentDefineName` mechanism and its 6 shared
+`COMPONENT_LIBRARY` sensor-chip ids (SHT3X/SHT4X/AHT20/DHT11/DHT22/BME280)
+verbatim, no new mechanism or library entries needed — just without
+DS18B20 in the list (temperature-only, nothing for a humidity-only device
+type to read from it). `driver` + `secondary` (pin 1/pin 2, same generic
+SDA-or-DATA / SCL-only-for-I2C shape `firmware/temperature-sensor/`'s own
+entry already uses) + `identify`. Plus a new hand-drawn icon (a cloud
+outline with a filled droplet beneath it — the standard weather-app
+"humidity" pictogram, distinct from `water-leak`'s own plain single
+droplet and from `temperature`'s own thermometer-bulb shape). Verified the
+same way: `findDeviceType` lookup, the icon's presence in
+`DEVICE_TYPE_ICONS`, `renderConfigureDevice` output containing the
+selected chip's own dynamic pin labels (e.g. "SDA GPIO pin"/"SCL GPIO
+pin" for an I2C chip, "DATA GPIO pin" with the SCL field correctly hidden
+for DHT11/DHT22) and confirming DS18B20 is absent from the rendered
+option list, `isProductComplete` before and after render, the exact
+generated sed commands for all four `#define`s — then those exact
+commands run for real against a copy of the actual `app_main.cpp` and
+diffed against the original, a byte-for-byte match. All checks passed.
 
 ## Known limitations
 

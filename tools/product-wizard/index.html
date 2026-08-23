@@ -2862,6 +2862,53 @@ const DEVICE_TYPES = [
       defaultsByModule: { esp32: 2, esp32c2: 2, esp32c3: 2, esp32c5: 2, esp32c6: 2, esp32c61: 2, esp32s3: 2, esp32h2: 2 },
     },
   },
+  {
+    id: "humidity-sensor",
+    name: "Humidity Sensor",
+    desc: "Matter Humidity Sensor — pick which sensor chip you actually have wired up below. Standalone RelativeHumidityMeasurement only (unlike firmware/temperature-sensor/'s combined temperature+humidity device, this device type has no TemperatureMeasurement slot at all) — reuses that same driver library, minus DS18B20 (temperature-only, nothing for a humidity-only device to read). Reference device in firmware/humidity-sensor/.",
+    shortDesc: "Humidity only, pick your sensor.",
+    // Matches project(matter_humidity_sensor) in
+    // firmware/humidity-sensor/CMakeLists.txt. Reuses firmware/
+    // temperature-sensor/'s own componentOptions/COMPONENT_LIBRARY ids
+    // verbatim (SHT3X/SHT4X/AHT20/DHT11/DHT22/BME280 — no new
+    // COMPONENT_LIBRARY entries needed), just without DS18B20 in the list
+    // — see the header comment in app_main.cpp for why that one sensor
+    // doesn't apply to a humidity-only device type at all.
+    binName: "matter_humidity_sensor.bin",
+    componentOptions: ["SHT3X", "SHT4X", "AHT20", "DHT11", "DHT22", "BME280"],
+    componentDefineName: "SENSOR_TYPE",
+    driver: {
+      summary: "Sensor pin 1 (SDA / DATA)",
+      fieldLabel: "Sensor pin 1 (SDA / DATA) GPIO",
+      blockTitle: "Sensor · pin 1",
+      filePath: "firmware/humidity-sensor/main/app_main.cpp",
+      defineName: "SENSOR_PIN_1",
+      currentGpio: 21,
+      defaultsByModule: { esp32: 21, esp32c2: 21, esp32c3: 21, esp32c5: 21, esp32c6: 21, esp32c61: 21, esp32s3: 21, esp32h2: 21 },
+    },
+    // Second GPIO — only meaningful for the I2C sensors (SCL); unused
+    // (but harmless to still set) for DHT11/DHT22. Same `secondary` field
+    // firmware/temperature-sensor/'s own entry already uses.
+    secondary: {
+      label: "Pin 2",
+      summary: "Sensor pin 2 (SCL, I2C only)",
+      fieldLabel: "Sensor pin 2 (SCL) GPIO",
+      blockTitle: "Sensor · pin 2",
+      filePath: "firmware/humidity-sensor/main/app_main.cpp",
+      defineName: "SENSOR_PIN_2",
+      currentGpio: 22,
+      defaultsByModule: { esp32: 22, esp32c2: 22, esp32c3: 22, esp32c5: 22, esp32c6: 22, esp32c61: 22, esp32s3: 22, esp32h2: 22 },
+    },
+    identify: {
+      summary: "GPIO (digital output)",
+      fieldLabel: "Identify LED GPIO pin",
+      blockTitle: "Identify LED · digital output",
+      filePath: "firmware/humidity-sensor/main/app_main.cpp",
+      defineName: "IDENTIFY_LED_GPIO",
+      currentGpio: 2,
+      defaultsByModule: { esp32: 2, esp32c2: 2, esp32c3: 2, esp32c5: 2, esp32c6: 2, esp32c61: 2, esp32s3: 2, esp32h2: 2 },
+    },
+  },
 ];
 
 function findDeviceType(id) {
@@ -3397,6 +3444,14 @@ const DEVICE_TYPE_ICONS = {
     <path d="M24 24l-6-4"/>
     <path d="M24 24v7"/>
     <path d="M34 12l4 3l-4 3"/>
+  </svg>`,
+  // A cloud outline with a filled droplet beneath it — the standard
+  // weather-app "humidity" pictogram, distinct from water-leak's own
+  // plain single droplet (this is ambient air moisture, not a liquid leak)
+  // and from temperature's own thermometer-bulb shape.
+  "humidity-sensor": `<svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M13 24a7 7 0 0 1 0-14a8 8 0 0 1 15-3a6 6 0 0 1 6 6a6 6 0 0 1-2 12H13Z"/>
+    <path d="M24 28c3 3.5 3 7.5 0 11c-3-3.5-3-7.5 0-11Z" fill="currentColor" stroke="none"/>
   </svg>`,
 };
 
