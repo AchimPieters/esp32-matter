@@ -4109,6 +4109,70 @@ firmware/humidity-sensor/  Humidity Sensor — thirty-fifth device type, and a
                            hardware-tested.
   partitions.csv           same OTA + fctry layout as firmware/light/
   sdkconfig.defaults        same as firmware/light/
+firmware/water-freeze-detector/  Water Freeze Detector — thirty-sixth
+                           device type, and the closest sibling to
+                           firmware/water-leak-detector/ in this repo: same
+                           BooleanState cluster, same "true = alarm/
+                           problem" StateValue direction, same real
+                           esp-matter FeatureMap gap and fix — but a
+                           temperature-threshold classifier instead of a
+                           debounced digital sensor input.
+  main/app_main.cpp        Confirmed directly via esp-matter's own
+                           `water_freeze_detector::add()`: identical
+                           structure to `water_leak_detector::add()`/
+                           `contact_sensor::add()` (Identify + BooleanState
+                           + StateChange event, via `common::create<T>()`)
+                           — matches the CSA's own data_model/1.6/
+                           device_types/WaterFreezeDetector.xml exactly.
+                           StateValue confirmed to use the same "true =
+                           alarm/problem" direction firmware/
+                           water-leak-detector/'s own StateValue already
+                           uses (confirmed against Espressif's own
+                           `MatterWaterFreezeDetector` Arduino-ESP32 class,
+                           whose `setFreeze(bool)` sets true for a detected
+                           freeze condition) — boots with StateValue false
+                           rather than seeding a real boot-time reading the
+                           way firmware/water-leak-detector/'s own GPIO
+                           sensor can, since a DS18B20 needs one real
+                           conversion cycle first before anything can be
+                           honestly reported. The same real, documented
+                           esp-matter FeatureMap gap firmware/
+                           water-leak-detector/'s own header comment
+                           documents in full (`boolean_state::create()`
+                           hardcodes FeatureMap to 0, never actually
+                           setting the ChangeEvent feature bit this device
+                           type's own spec (revision 2) makes mandatory)
+                           gets the identical fix: a direct
+                           `attribute::update()` on FeatureMap after
+                           endpoint creation but before
+                           `esp_matter::start()`, safe for the same reason
+                           (`boolean_state::event::create_state_change()`
+                           fires the StateChange event unconditionally,
+                           with no feature-flag gate). Unlike firmware/
+                           water-leak-detector/'s own cheap comparator
+                           probe module, no equally common, hobby-
+                           accessible "freeze switch" module exists to
+                           point to with the same confidence (real
+                           commercial pipe-freeze alarms mostly use a
+                           specialized factory-preset bimetallic
+                           thermostat switch) — this file instead reuses
+                           the exact DS18B20 1-Wire driver already
+                           established across this repo's other appliance/
+                           HVAC device types verbatim, paired with a plain
+                           adjustable threshold (3.00 degC default, a few
+                           degrees above the actual 0 degC freezing point
+                           to leave response time) + 0.3 degC hysteresis
+                           classifier — same "adjustable threshold, not a
+                           calibrated reading" precedent firmware/
+                           smoke-co-alarm/'s and firmware/
+                           air-quality-sensor/'s own classifiers already
+                           establish. Standard quick-power-cycle factory
+                           reset. Build-verified in Docker (clean first
+                           attempt); not hardware-tested (no DS18B20
+                           hardware for this device type physically
+                           available when written).
+  partitions.csv           same OTA + fctry layout as firmware/light/
+  sdkconfig.defaults        same as firmware/light/
 tools/
   dev.sh                  opens the Docker dev environment
   gen_factory.sh          local QR + factory partition generator
@@ -5666,14 +5730,40 @@ SECURITY.md               flash encryption / secure boot / signed OTA guidance
    values (each one individually rebuilt and confirmed, not just the
    shipped default); not hardware-tested (no fresh hardware pass was done
    for this addition).
-2. Implement Matter **OTA** — partially done. All thirty-five firmware
+
+   A thirty-sixth device type, `firmware/water-freeze-detector/`
+   (BooleanState), followed humidity-sensor — the user's choice from a
+   short AskUserQuestion list (Water Freeze Detector / Soil Sensor /
+   Dimmable Plug-In Unit). The closest sibling to firmware/
+   water-leak-detector/ in this repo — same BooleanState cluster, same
+   "true = alarm/problem" StateValue direction (confirmed against
+   Espressif's own `MatterWaterFreezeDetector` Arduino-ESP32 class
+   directly, mirroring the exact same verification already done for
+   firmware/water-leak-detector/'s own StateValue direction), and the
+   identical real esp-matter FeatureMap gap + fix (`boolean_state::
+   create()` hardcodes FeatureMap to 0, never setting the ChangeEvent
+   feature bit this device type's own spec makes mandatory — safe to
+   overwrite directly since the StateChange event fires unconditionally
+   either way). The one genuinely different design choice: unlike water
+   leaks, there's no equally common, hobby-accessible "freeze switch"
+   module to point to with the same confidence, so this file reuses the
+   DS18B20 driver already established across this repo's other appliance/
+   HVAC device types instead, paired with a plain adjustable threshold
+   (3.00 degC, a few degrees above actual freezing to leave response
+   time) + hysteresis classifier — same "adjustable threshold, not a
+   calibrated reading" precedent firmware/smoke-co-alarm/'s and firmware/
+   air-quality-sensor/'s own classifiers already establish. See its own
+   repository-layout entry above for the complete detail. Build-verified
+   in Docker (clean first attempt); not hardware-tested (no DS18B20
+   hardware for this device type physically available when written).
+2. Implement Matter **OTA** — partially done. All thirty-six firmware
    types ship `CONFIG_ENABLE_OTA_REQUESTOR=y`, which adds the OTA Requestor
    cluster to the root node endpoint entirely via Kconfig — esp-matter's
    own core startup (`esp_matter_core.cpp`) calls
    `esp_matter_ota_requestor_init()`/`_start()` automatically once that
    flag is on, so no app code was needed. Confirmed on real hardware for
    `firmware/contact-sensor/` and `firmware/switch/` (clean boot, cluster
-   registered, zero errors); the other thirty-three build identically since
+   registered, zero errors); the other thirty-four build identically since
    the code path is generic to every device type, not device-specific.
 
    Still open: a real OTA **transfer** needs an OTA Provider node
@@ -5743,7 +5833,7 @@ SECURITY.md               flash encryption / secure boot / signed OTA guidance
    later in `app_main()`, after `esp_matter::start()` has completed.
 
    Quick-power-cycle factory reset is Docker build-verified across all
-   thirty-five device types — not yet hardware-tested. The wizard
+   thirty-six device types — not yet hardware-tested. The wizard
    (`tools/product-wizard/`) has a static "Factory reset" info box
    rendered directly under the Configuration summary sidebar on every
    device type (wrapped together in a `.config-sidebar-stack` flex
