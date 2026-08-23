@@ -3495,6 +3495,123 @@ firmware/laundry-washer/  Laundry Washer — twenty-ninth device type, and the
                            device type physically available when written).
   partitions.csv           same OTA + fctry layout as firmware/light/
   sdkconfig.defaults        same as firmware/light/
+firmware/pump/             Pump — thirtieth device type, and this repo's
+                           first over the PumpConfigurationAndControl
+                           cluster — also its first plain continuous-
+                           control-loop-free device type in three
+                           sessions (after Dishwasher/Laundry Washer/
+                           Refrigerator's own OperationalState- or
+                           hysteresis-loop-driven designs): a pump reacts
+                           directly to a controller's own On/Off,
+                           CurrentLevel, and OperationMode writes, with no
+                           background task of its own at all.
+  main/app_main.cpp        Confirmed directly against the CSA's own
+                           data_model/1.6/device_types/Pump.xml:
+                           Identify, On/Off, and
+                           PumpConfigurationAndControl are all
+                           `<mandatoryConform/>` — a real, non-optional
+                           trio, unlike almost every other device type
+                           this repo has built, where Identify alone is
+                           consistently optional. `endpoint::pump::
+                           create()` confirmed complete/ready-to-use by
+                           reading esp_matter_endpoint.cpp's own
+                           `pump::add()` directly (Identify + OnOff +
+                           PumpConfigurationAndControl, auto-Descriptor
+                           via `common::create<T>()`) — and, a genuinely
+                           new detail for this repo, `pump::config_t`'s
+                           own constructor already sets
+                           `identify.identify_type = Identify::
+                           IdentifyTypeEnum::kActuator` itself, the first
+                           top-level helper here whose own constructor
+                           sets Identify's type rather than the call site
+                           doing it explicitly. LevelControl (pump speed)
+                           is added manually onto the same endpoint
+                           afterward — same "add extra clusters onto an
+                           already-correct endpoint" pattern used
+                           throughout this repo — using the plain legacy
+                           `level_control::config_t` with no Lighting
+                           feature at all (confirmed by reading that
+                           config_t directly: a pump genuinely doesn't
+                           need it, unlike firmware/dimmable-light/'s own
+                           Lighting-feature setup). PumpConfigurationAndControl
+                           enables only the ConstantSpeed (SPD) feature —
+                           the one of the cluster's five "choice, at
+                           least 1" control-mode features
+                           (ConstantPressure/CompensatedPressure/
+                           ConstantFlow/ConstantSpeed/ConstantTemperature)
+                           that maps directly onto a PWM-driven speed
+                           with no pressure/flow/temperature sensor
+                           hardware needed — same "smallest reasonable
+                           next step" scoping as every other device
+                           type's own first-cut feature choice.
+                           FeatureMap is confirmed set correctly here
+                           (`create()` threads `config->feature_flags`
+                           through directly) — unlike RefrigeratorAlarm/
+                           AirQuality's own documented hardcoded-to-0
+                           gap. MaxSpeed/MinConstSpeed/MaxConstSpeed use
+                           a plain 0-100 percent scale (the attribute
+                           carries no unit requirement, confirmed against
+                           its own uint16 definition) rather than a
+                           hardware-specific RPM figure, since no
+                           specific real pump motor's rated speed was
+                           being modelled. The cluster's own seventeen-
+                           event fault-reporting set (SupplyVoltageLow/
+                           High, DryRunning, PumpBlocked,
+                           MotorTemperatureHigh, Leakage, AirDetection,
+                           etc.) is not fired anywhere — every one needs
+                           real fault-detection hardware (current
+                           sensing, pressure transducers, thermal
+                           cutouts) this hobby-scale build doesn't have,
+                           the same "no sensor, no fabricated fault
+                           reporting" honesty precedent firmware/evse/'s
+                           always-NoError FaultState and firmware/
+                           smoke-co-alarm/'s simple heuristic already
+                           establish. OperationMode (Normal/Minimum/
+                           Maximum/Local) is a plain writable ember
+                           attribute that genuinely drives the output:
+                           Normal uses LevelControl's own CurrentLevel as
+                           the speed target (a controller's speed slider
+                           maps straight onto PWM duty); Minimum/Maximum
+                           instead use the feature-configured
+                           MinConstSpeed/MaxConstSpeed bounds, ignoring
+                           CurrentLevel entirely, matching the spec's own
+                           wording for those two modes; Local is accepted
+                           but behaves identically to Normal, logged as
+                           such (no separate physical control panel to
+                           defer to) — an honest, documented scope cut
+                           rather than silently ignoring the write.
+                           EffectiveOperationMode mirrors OperationMode
+                           1:1 (correct here since neither Automatic nor
+                           LocalOperation is enabled); EffectiveControlMode
+                           is fixed to ConstantSpeed at startup and never
+                           changes. `PUMP_RELAY_GPIO` (active-LOW, this
+                           repo's established relay convention) gates the
+                           pump motor's own power entirely, separate from
+                           `PUMP_SPEED_PWM_GPIO`'s real PWM speed signal
+                           (via ESP-IDF's driver/ledc.h, the same LEDC
+                           peripheral firmware/dimmable-light/'s and
+                           firmware/fan/'s own outputs already use) —
+                           matching how a real variable-speed pump/
+                           circulator commonly exposes both a plain
+                           enable line and a separate 0-10V/PWM speed
+                           input. `apply_pump_output()` is the single,
+                           direct call site every relevant PRE_UPDATE
+                           handler funnels into, recomputing the real
+                           duty cycle immediately on any OnOff/
+                           CurrentLevel/OperationMode change — no
+                           periodic task needed at all, unlike every
+                           hysteresis-loop device type this repo has
+                           built recently, since a pump's speed output is
+                           a direct, immediate function of those three
+                           attributes rather than something needing
+                           re-evaluation against a live sensor reading on
+                           a timer. Standard quick-power-cycle factory
+                           reset. Build-verified in Docker; not
+                           hardware-tested (no pump/relay/PWM-speed-
+                           controller hardware for this device type
+                           physically available when written).
+  partitions.csv           same OTA + fctry layout as firmware/light/
+  sdkconfig.defaults        same as firmware/light/
 tools/
   dev.sh                  opens the Docker dev environment
   gen_factory.sh          local QR + factory partition generator
@@ -4837,14 +4954,60 @@ SECURITY.md               flash encryption / secure boot / signed OTA guidance
    rediscovering them. See its own repository-layout entry above for the
    complete detail. Not hardware-tested (no relay/DS18B20/reed-switch
    hardware for this device type physically available when written).
-2. Implement Matter **OTA** — partially done. All twenty-nine firmware
+
+   A thirtieth device type, `firmware/pump/` (PumpConfigurationAndControl
+   + On/Off + LevelControl), followed laundry-washer — this repo's first
+   over the PumpConfigurationAndControl cluster, and, after three
+   sessions building OperationalState- or hysteresis-loop-driven device
+   types in a row (Dishwasher/Laundry Washer/Refrigerator), its first
+   plain continuous-control-loop-free one: a pump reacts directly to a
+   controller's own On/Off, CurrentLevel, and OperationMode writes, with
+   no background task of its own needed at all. Confirmed directly
+   against the CSA's own Pump.xml that Identify/On-Off/
+   PumpConfigurationAndControl are all genuinely mandatory together — a
+   real, non-optional trio, unlike almost every other device type this
+   repo has built, where Identify alone is consistently the one optional
+   cluster. `endpoint::pump::create()`'s own `config_t` constructor
+   turned out to already set Identify's type
+   (`Identify::IdentifyTypeEnum::kActuator`) itself — the first top-level
+   helper in this repo confirmed to do that internally rather than
+   needing the call site to set it explicitly, caught by reading the
+   constructor body directly rather than assumed from every prior device
+   type's own pattern. PumpConfigurationAndControl enables only the
+   ConstantSpeed (SPD) feature — the one of its five "choice, at least 1"
+   control-mode features that maps directly onto a PWM-driven speed with
+   no pressure/flow/temperature sensor hardware needed, same "smallest
+   reasonable next step" scoping as every other device type's own
+   first-cut feature choice — and, unlike RefrigeratorAlarm/AirQuality's
+   own documented FeatureMap gap, this cluster's `create()` was confirmed
+   to thread `config->feature_flags` through correctly with no gap to
+   work around. OperationMode (Normal/Minimum/Maximum/Local) is a plain
+   writable ember attribute — no Delegate at all on this cluster,
+   confirmed by reading its legacy `config_t` directly — that genuinely
+   drives the real PWM output: Normal follows LevelControl's own
+   CurrentLevel, Minimum/Maximum instead run at the feature-configured
+   MinConstSpeed/MaxConstSpeed bounds regardless of CurrentLevel
+   (matching the spec's own wording for those two modes), and Local is
+   accepted but honestly behaves identically to Normal (no separate
+   physical control panel to defer to on this hobby build). The
+   cluster's own rich seventeen-event fault-reporting set
+   (SupplyVoltageLow/High, DryRunning, PumpBlocked,
+   MotorTemperatureHigh, Leakage, AirDetection, etc.) is not fired
+   anywhere — every one needs real fault-detection hardware this
+   hobby-scale build doesn't have, the same "no sensor, no fabricated
+   fault reporting" honesty precedent firmware/evse/'s always-NoError
+   FaultState already establishes. See its own repository-layout entry
+   above for the complete detail. Build-verified in Docker; not
+   hardware-tested (no pump/relay/PWM-speed-controller hardware for this
+   device type physically available when written).
+2. Implement Matter **OTA** — partially done. All thirty firmware
    types ship `CONFIG_ENABLE_OTA_REQUESTOR=y`, which adds the OTA Requestor
    cluster to the root node endpoint entirely via Kconfig — esp-matter's
    own core startup (`esp_matter_core.cpp`) calls
    `esp_matter_ota_requestor_init()`/`_start()` automatically once that
    flag is on, so no app code was needed. Confirmed on real hardware for
    `firmware/contact-sensor/` and `firmware/switch/` (clean boot, cluster
-   registered, zero errors); the other nineteen build identically since
+   registered, zero errors); the other twenty-eight build identically since
    the code path is generic to every device type, not device-specific.
 
    Still open: a real OTA **transfer** needs an OTA Provider node
@@ -4914,7 +5077,7 @@ SECURITY.md               flash encryption / secure boot / signed OTA guidance
    later in `app_main()`, after `esp_matter::start()` has completed.
 
    Quick-power-cycle factory reset is Docker build-verified across all
-   twenty-nine device types — not yet hardware-tested. The wizard
+   thirty device types — not yet hardware-tested. The wizard
    (`tools/product-wizard/`) has a static "Factory reset" info box
    rendered directly under the Configuration summary sidebar on every
    device type (wrapped together in a `.config-sidebar-stack` flex
