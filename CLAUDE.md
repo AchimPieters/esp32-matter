@@ -3612,6 +3612,131 @@ firmware/pump/             Pump — thirtieth device type, and this repo's
                            physically available when written).
   partitions.csv           same OTA + fctry layout as firmware/light/
   sdkconfig.defaults        same as firmware/light/
+firmware/laundry-dryer/    Laundry Dryer — thirty-first device type, and the
+                           closest sibling to firmware/laundry-washer/ in
+                           this repo: the same generic OperationalState
+                           cluster (0x0060), the same TemperatureControl
+                           (TN-only) pattern — but the CSA's own device
+                           type XML reuses LaundryWasher's own Mode cluster
+                           verbatim rather than defining a dryer-specific
+                           one, and this is this repo's first laundry
+                           appliance with no water handling at all (no
+                           fill, no rinse, no drain — just heat and
+                           tumble).
+  main/app_main.cpp        Confirmed directly against the CSA's own
+                           data_model/1.6/device_types/LaundryDryer.xml:
+                           only OperationalState is `<mandatoryConform/>`
+                           (OperationCompletion event also mandatory, per
+                           this device type's own revision 2) — Identify,
+                           On/Off (DeadFrontOnOff feature only, same skip
+                           as firmware/dishwasher/'s and firmware/
+                           laundry-washer/'s own identical reasoning),
+                           Laundry Dryer Controls, Laundry Washer Mode, and
+                           TemperatureControl are all `<optionalConform/>`.
+                           `endpoint::laundry_dryer::add()` confirmed
+                           structurally identical to `dish_washer::add()`/
+                           `laundry_washer::add()` (all three share
+                           `config_t = app_with_operational_state_config`
+                           and only create OperationalState) — Identify +
+                           TemperatureControl + LaundryWasherMode +
+                           LaundryDryerControls all added manually
+                           afterward, same pattern. A real, spec-level
+                           detail worth remembering: the device type XML's
+                           own cluster entry is literally `<cluster
+                           id="0x0051" name="Laundry Washer Mode" .../>` —
+                           NOT a separate "Laundry Dryer Mode" cluster,
+                           confirmed by reading the XML directly rather
+                           than assumed from the device type's own name.
+                           Two constraints layered onto that reused
+                           cluster for this device type (DEPONOFF feature
+                           and StartUpMode attribute, both
+                           `<disallowConform/>`) needed no code to enforce
+                           — `laundry_washer_mode::create()` hardcodes
+                           FeatureMap to 0 (no `feature_flags` field at all
+                           — DEPONOFF was never reachable through this
+                           helper) and never creates a StartUpMode
+                           attribute either, so both are already satisfied
+                           by the helper's own narrower scope, confirmed
+                           by reading `esp_matter_cluster.cpp` directly.
+                           Mode tags offered: Normal/Delicate/Heavy (reused
+                           directly) plus Quick (`ModeTag::kQuick`, one of
+                           `ModeBase`'s own *common* tags) in place of
+                           Whites — Whites is a wash-specific concept
+                           (bleach-safe water temperature) that doesn't
+                           translate to a drying setting, confirmed by
+                           reading the full `LaundryWasherMode::ModeTag`
+                           enum directly before picking a fourth option.
+                           Same `kInvalidInMode`-while-Running rejection
+                           rule as firmware/dishwasher/'s and firmware/
+                           laundry-washer/'s own Mode delegates; purely
+                           informational here, same scope cut as
+                           firmware/laundry-washer/'s own SpinSpeedCurrent.
+                           OperationalState itself is the identical pattern
+                           to firmware/dishwasher/'s and firmware/
+                           laundry-washer/'s own (same automatic
+                           `config->delegate` wiring, same
+                           `get_delegate_managed_instance()` lookup, same
+                           door-sensor safety-pause behavior — no Alarm
+                           cluster on this device type either, so the
+                           Pause itself is the only signal a controller
+                           gets) — but drives a 2-phase Drying+Cooldown
+                           cycle instead of the washer's multi-rinse one.
+                           TemperatureControl (TN-only, drying-air target:
+                           40.00-80.00 degC, default 60.00 degC — ordinary
+                           real tumble-dryer heater-air range) reuses the
+                           exact legacy-vs-generated `feature_flags`/
+                           `temp_setpoint` handling documented in full
+                           elsewhere in this repo. LaundryDryerControls'
+                           SelectedDrynessLevel is the one attribute this
+                           file gives real physical meaning to (Low/
+                           Normal/Extra/Max map to 20/35/50/65 minutes of
+                           drying, tracked via `attribute::PRE_UPDATE`,
+                           same "one setting genuinely drives the cycle"
+                           precedent firmware/laundry-washer/'s own
+                           NumberOfRinses established) — SupportedDryness
+                           Levels is a real Delegate-served list
+                           (`GetSupportedDrynessLevelAtIndex()`, offering
+                           all four real values). A real, previously-
+                           undocumented gotcha was found by reading
+                           `laundry-dryer-controls-server.cpp` directly
+                           rather than assuming it behaves like
+                           LaundryWasherControls: its own
+                           `PreAttributeChangedCallback` calls
+                           `VerifyOrDie(delegate != nullptr)` before
+                           validating a SelectedDrynessLevel write against
+                           the supported list — a controller writing this
+                           attribute with NO delegate registered would
+                           abort the whole device, not just silently
+                           no-op, unlike every other optional-delegate
+                           cluster in this repo; `config_t.delegate` is
+                           therefore always set here. FeatureMap is
+                           hardcoded to 0 (this cluster defines no
+                           features at all, confirmed against its own
+                           cluster XML) — nothing to enable, unlike
+                           LaundryWasherControls' Spin/Rinse pair.
+                           `laundry_dryer_task()` drives two real relay
+                           outputs (heater + drum motor, both active-LOW)
+                           through Drying (heater, hysteresis-controlled
+                           against a DS18B20 reading and
+                           TemperatureControl's own live setpoint, same
+                           0.5 degC hysteresis convention used throughout
+                           this repo, plus the motor tumbling) for however
+                           long SelectedDrynessLevel calls for, then a
+                           fixed unheated Cooldown (motor only) — a real,
+                           standard tumble-dryer behavior (reduces
+                           wrinkling and hot-lint fire risk), not invented
+                           for this file — before
+                           `OnOperationCompletionDetected()` and returning
+                           to Stopped. Only two relays needed (no drain
+                           pump, no Fill/Rinse phase) — this repo's first
+                           laundry appliance with no water handling at
+                           all. Standard quick-power-cycle factory reset.
+                           Build-verified in Docker — clean on the first
+                           attempt; not hardware-tested (no relay/DS18B20/
+                           reed-switch hardware for this device type
+                           physically available when written).
+  partitions.csv           same OTA + fctry layout as firmware/light/
+  sdkconfig.defaults        same as firmware/light/
 tools/
   dev.sh                  opens the Docker dev environment
   gen_factory.sh          local QR + factory partition generator
@@ -5000,14 +5125,52 @@ SECURITY.md               flash encryption / secure boot / signed OTA guidance
    above for the complete detail. Build-verified in Docker; not
    hardware-tested (no pump/relay/PWM-speed-controller hardware for this
    device type physically available when written).
-2. Implement Matter **OTA** — partially done. All thirty firmware
+
+   A thirty-first device type, `firmware/laundry-dryer/` (OperationalState
+   + TemperatureControl + LaundryWasherMode (reused) +
+   LaundryDryerControls), followed pump — the user's choice from a short
+   AskUserQuestion list (recommended as the natural sibling to firmware/
+   laundry-washer/). The closest sibling to firmware/laundry-washer/ in
+   this repo, and this repo's first laundry appliance with no water
+   handling at all (no fill, no rinse, no drain — just heat and tumble).
+   A real, spec-level detail found before writing any code: the CSA's own
+   LaundryDryer.xml reuses LaundryWasher's own Mode cluster (0x0051)
+   verbatim — there is no separate "Laundry Dryer Mode" cluster at all,
+   confirmed by reading the XML directly rather than assumed from the
+   device type's own name. Two constraints layered onto that reused
+   cluster specifically for a dryer (the DEPONOFF feature and the
+   StartUpMode attribute, both disallowed) turned out to need no code at
+   all — `laundry_washer_mode::create()` already hardcodes FeatureMap to 0
+   and never creates a StartUpMode attribute, so both were already
+   unreachable through the same helper firmware/laundry-washer/ already
+   uses. A genuinely new, previously-undocumented gotcha was found by
+   reading `laundry-dryer-controls-server.cpp` directly rather than
+   assuming LaundryDryerControls behaves like LaundryWasherControls: its
+   own `PreAttributeChangedCallback` calls `VerifyOrDie(delegate !=
+   nullptr)` before validating a SelectedDrynessLevel write — a
+   controller writing that attribute with no delegate registered would
+   abort the whole device outright, not silently no-op, unlike every
+   other optional-delegate cluster built in this repo so far; the
+   delegate is therefore always set here, never left null. SelectedDryness
+   Level is the one attribute given real physical meaning (Low/Normal/
+   Extra/Max map to 20/35/50/65 minutes of drying), driving a 2-phase
+   Drying-then-Cooldown cycle — the unheated Cooldown tail is standard
+   real tumble-dryer behavior (reduces wrinkling and hot-lint fire risk),
+   not invented for this file. See its own repository-layout entry above
+   for the complete detail. Build-verified in Docker — clean on the first
+   attempt, the direct payoff of researching firmware/laundry-washer/'s
+   and firmware/dishwasher/'s own hard-won OperationalState/
+   TemperatureControl lessons proactively before writing any code; not
+   hardware-tested (no relay/DS18B20/reed-switch hardware for this device
+   type physically available when written).
+2. Implement Matter **OTA** — partially done. All thirty-one firmware
    types ship `CONFIG_ENABLE_OTA_REQUESTOR=y`, which adds the OTA Requestor
    cluster to the root node endpoint entirely via Kconfig — esp-matter's
    own core startup (`esp_matter_core.cpp`) calls
    `esp_matter_ota_requestor_init()`/`_start()` automatically once that
    flag is on, so no app code was needed. Confirmed on real hardware for
    `firmware/contact-sensor/` and `firmware/switch/` (clean boot, cluster
-   registered, zero errors); the other twenty-eight build identically since
+   registered, zero errors); the other twenty-nine build identically since
    the code path is generic to every device type, not device-specific.
 
    Still open: a real OTA **transfer** needs an OTA Provider node
@@ -5077,7 +5240,7 @@ SECURITY.md               flash encryption / secure boot / signed OTA guidance
    later in `app_main()`, after `esp_matter::start()` has completed.
 
    Quick-power-cycle factory reset is Docker build-verified across all
-   thirty device types — not yet hardware-tested. The wizard
+   thirty-one device types — not yet hardware-tested. The wizard
    (`tools/product-wizard/`) has a static "Factory reset" info box
    rendered directly under the Configuration summary sidebar on every
    device type (wrapped together in a `.config-sidebar-stack` flex
