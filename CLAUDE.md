@@ -3992,6 +3992,67 @@ firmware/heat-pump/       Heat Pump — thirty-third device type, and this
                            written).
   partitions.csv           same OTA + fctry layout as firmware/light/
   sdkconfig.defaults        same as firmware/light/
+firmware/flow-sensor/     Flow Sensor — thirty-fourth device type, back to
+                           this repo's simplest recent shape after firmware/
+                           heat-pump/'s own composition complexity: Identify
+                           + one mandatory cluster, same minimal XML shape
+                           firmware/pressure-sensor/'s own device type
+                           already established.
+  main/app_main.cpp        Confirmed directly against the CSA's own
+                           data_model/1.6/device_types/FlowSensor.xml:
+                           Identify + FlowMeasurement are the ONLY clusters
+                           listed, both mandatory. `endpoint::flow_sensor::
+                           create()` confirmed complete/ready-to-use by
+                           reading `esp_matter_endpoint.cpp`'s own
+                           `flow_sensor::add()` directly. FlowMeasurement
+                           confirmed to be a "code-driven" cluster class
+                           (a real `flow_measurement/` folder exists under
+                           `data_model_provider/clusters/`), same category
+                           as PressureMeasurement/TemperatureMeasurement —
+                           `SetMeasuredValue()` via the registry, same
+                           pattern. MeasuredValue's own unit (m3/h,
+                           resolution 0.1 m3/h) isn't spelled out in
+                           Matter's own machine-readable cluster XML (same
+                           gap firmware/pressure-sensor/'s own header
+                           comment already documents for
+                           PressureMeasurement) — confirmed instead against
+                           the same real, independent source already used
+                           for that file: Home Assistant's own Matter
+                           integration (`sensor.py`'s FlowMeasurement
+                           discovery schema divides the raw value by 10 and
+                           reports m3/h), rather than assumed.
+                           `FLOW_SENSOR_PULSE_GPIO` counts rising edges via
+                           a GPIO ISR — the same pulse-counting technique
+                           firmware/outlet/'s own BL0937/HLW8012/CSE7759
+                           power-monitor drivers already establish (a plain
+                           `volatile uint32_t` edge counter incremented
+                           from an `IRAM_ATTR` ISR, read and reset once per
+                           sampling window with no critical section needed).
+                           A Hall-effect pulse-output flow sensor
+                           (YF-S201-class — no single canonical datasheet,
+                           a widely cloned design, same "best available,
+                           cross-checked across multiple independent
+                           sources" standard already used in this repo for
+                           e.g. the contact sensor's reed switch) — the
+                           pulse characteristic `F(Hz) = 7.5 * Q(L/min)`
+                           and its 1-30 L/min rated range are both
+                           consistently documented across every independent
+                           source checked. Zero pulses in a window reports
+                           a real MeasuredValue of 0 (no flow) rather than
+                           null — unlike a bus-based sensor, a passive
+                           pulse GPIO has no way to distinguish "sensor
+                           absent" from "genuinely zero flow". Min/
+                           MaxMeasuredValue (1/18, i.e. 0.1/1.8 m3/h) come
+                           directly from the sensor's own rated 1-30 L/min
+                           range — same "use real hardware limits for
+                           Min/Max" precedent firmware/pressure-sensor/'s
+                           own BMP280 operating-range bounds already
+                           establish. Standard quick-power-cycle factory
+                           reset. Build-verified in Docker (clean first
+                           attempt); not hardware-tested (no YF-S201-class
+                           sensor physically available when written).
+  partitions.csv           same OTA + fctry layout as firmware/light/
+  sdkconfig.defaults        same as firmware/light/
 tools/
   dev.sh                  opens the Docker dev environment
   gen_factory.sh          local QR + factory partition generator
@@ -5498,14 +5559,42 @@ SECURITY.md               flash encryption / secure boot / signed OTA guidance
    despite the composition complexity; not hardware-tested (no relay/
    DS18B20 hardware for this device type physically available when
    written).
-2. Implement Matter **OTA** — partially done. All thirty-three firmware
+
+   A thirty-fourth device type, `firmware/flow-sensor/` (FlowMeasurement),
+   followed heat-pump — the user's choice from a short AskUserQuestion list
+   (Flow Sensor had already come up as a recommended-but-unchosen option
+   twice before, during firmware/room-air-conditioner/'s and firmware/
+   heat-pump/'s own rounds). Back to this repo's simplest recent shape
+   after firmware/heat-pump/'s own composition complexity — the same
+   minimal Identify+one-mandatory-cluster XML shape firmware/
+   pressure-sensor/'s own device type already established, and confirmed
+   FlowMeasurement is the same "code-driven" cluster category (registry-
+   lookup `SetMeasuredValue()`) as PressureMeasurement/
+   TemperatureMeasurement. MeasuredValue's own m3/h-times-10 encoding
+   wasn't spelled out in Matter's own machine-readable cluster XML (same
+   gap firmware/pressure-sensor/'s own header comment already documents)
+   — confirmed instead against the same real source already used for that
+   file, Home Assistant's own Matter integration source, rather than
+   assumed. The sensor itself — a Hall-effect pulse-output flow sensor,
+   YF-S201-class — reuses firmware/outlet/'s own GPIO-ISR pulse-counting
+   technique (already established there for its BL0937/HLW8012/CSE7759
+   power-monitor drivers) rather than introducing a new pattern; its own
+   pulse characteristic (`F(Hz) = 7.5 * Q(L/min)`) was cross-checked across
+   multiple independent sources, since — like several other widely cloned
+   hobbyist modules already in this repo (the contact sensor's reed
+   switch, the occupancy sensor's PIR module) — no single canonical
+   datasheet exists for it. See its own repository-layout entry above for
+   the complete detail. Build-verified in Docker (clean first attempt); not
+   hardware-tested (no YF-S201-class sensor physically available when
+   written).
+2. Implement Matter **OTA** — partially done. All thirty-four firmware
    types ship `CONFIG_ENABLE_OTA_REQUESTOR=y`, which adds the OTA Requestor
    cluster to the root node endpoint entirely via Kconfig — esp-matter's
    own core startup (`esp_matter_core.cpp`) calls
    `esp_matter_ota_requestor_init()`/`_start()` automatically once that
    flag is on, so no app code was needed. Confirmed on real hardware for
    `firmware/contact-sensor/` and `firmware/switch/` (clean boot, cluster
-   registered, zero errors); the other thirty-one build identically since
+   registered, zero errors); the other thirty-two build identically since
    the code path is generic to every device type, not device-specific.
 
    Still open: a real OTA **transfer** needs an OTA Provider node
@@ -5575,7 +5664,7 @@ SECURITY.md               flash encryption / secure boot / signed OTA guidance
    later in `app_main()`, after `esp_matter::start()` has completed.
 
    Quick-power-cycle factory reset is Docker build-verified across all
-   thirty-three device types — not yet hardware-tested. The wizard
+   thirty-four device types — not yet hardware-tested. The wizard
    (`tools/product-wizard/`) has a static "Factory reset" info box
    rendered directly under the Configuration summary sidebar on every
    device type (wrapped together in a `.config-sidebar-stack` flex
