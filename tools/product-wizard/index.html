@@ -2729,6 +2729,57 @@ const DEVICE_TYPES = [
       defaultsByModule: { esp32: 2, esp32c2: 2, esp32c3: 2, esp32c5: 2, esp32c6: 2, esp32c61: 2, esp32s3: 2, esp32h2: 2 },
     },
   },
+  {
+    id: "room-air-conditioner",
+    name: "Room Air Conditioner",
+    desc: "Matter Room Air Conditioner: Thermostat (Cooling only) drives a real compressor relay through a hysteresis loop against a DS18B20 room-air reading, while FanControl drives a separate PWM fan-speed output — independently, so a controller can run the fan alone. The mandatory On/Off cluster (DeadFrontOnOff feature — a cosmetic \"is the unit's display lit\" flag, not a real power switch) has no GPIO of its own. Reference device in firmware/room-air-conditioner/.",
+    shortDesc: "Compressor relay + fan PWM, Cool-only thermostat.",
+    // Matches project(matter_room_air_conditioner) in
+    // firmware/room-air-conditioner/CMakeLists.txt. Three fixed GPIO
+    // fields (driver + 2 extraButtons) — same "fixed set, not a variable
+    // count" shape firmware/laundry-dryer/'s own entry already
+    // established.
+    binName: "matter_room_air_conditioner.bin",
+    driverLabel: "Compressor Relay",
+    driver: {
+      summary: "Compressor relay · GPIO (digital output, active-LOW)",
+      fieldLabel: "Compressor relay GPIO pin",
+      blockTitle: "Compressor relay · digital output",
+      filePath: "firmware/room-air-conditioner/main/app_main.cpp",
+      defineName: "ROOM_AC_COMPRESSOR_RELAY_GPIO",
+      currentGpio: 16,
+      defaultsByModule: { esp32: 16, esp32c2: 16, esp32c3: 16, esp32c5: 16, esp32c6: 16, esp32c61: 16, esp32s3: 16, esp32h2: 16 },
+    },
+    extraButtons: [
+      {
+        label: "Fan PWM",
+        fieldLabel: "Fan PWM GPIO pin",
+        blockTitle: "Fan PWM · digital output (LEDC, to speed controller/MOSFET)",
+        filePath: "firmware/room-air-conditioner/main/app_main.cpp",
+        defineName: "ROOM_AC_FAN_PWM_GPIO",
+        currentGpio: 17,
+        defaultsByModule: { esp32: 17, esp32c2: 17, esp32c3: 17, esp32c5: 17, esp32c6: 17, esp32c61: 17, esp32s3: 17, esp32h2: 17 },
+      },
+      {
+        label: "Room Air Sensor",
+        fieldLabel: "Room-air DS18B20 sensor GPIO pin",
+        blockTitle: "Room-air sensor · 1-Wire (DS18B20)",
+        filePath: "firmware/room-air-conditioner/main/app_main.cpp",
+        defineName: "ROOM_AC_SENSOR_GPIO",
+        currentGpio: 21,
+        defaultsByModule: { esp32: 21, esp32c2: 21, esp32c3: 21, esp32c5: 21, esp32c6: 21, esp32c61: 21, esp32s3: 21, esp32h2: 21 },
+      },
+    ],
+    identify: {
+      summary: "GPIO (digital output)",
+      fieldLabel: "Identify LED GPIO pin",
+      blockTitle: "Identify LED · digital output",
+      filePath: "firmware/room-air-conditioner/main/app_main.cpp",
+      defineName: "IDENTIFY_LED_GPIO",
+      currentGpio: 2,
+      defaultsByModule: { esp32: 2, esp32c2: 2, esp32c3: 2, esp32c5: 2, esp32c6: 2, esp32c61: 2, esp32s3: 2, esp32h2: 2 },
+    },
+  },
 ];
 
 function findDeviceType(id) {
@@ -3219,6 +3270,20 @@ const DEVICE_TYPE_ICONS = {
     <circle cx="24" cy="29" r="10"/>
     <path d="M20 34c1.5-2 1.5-4.5 0-6.5c1.5 0.6 2.8 0.2 3.5-1c0.4 2.3-0.4 4.9-1.5 7.5"/>
     <path d="M27 34c1.5-2 1.5-4.5 0-6.5c1.5 0.6 2.8 0.2 3.5-1c0.4 2.3-0.4 4.9-1.5 7.5"/>
+  </svg>`,
+  // A wide wall-mounted unit body (not a tall appliance silhouette, unlike
+  // every laundry/kitchen device type's own icon here) with two horizontal
+  // vent-slat lines and three wavy cool-air streams flowing down from its
+  // underside — the real, recognizable shape of a split-system room AC
+  // unit, distinct from extractor-hood's own rising-steam motif by showing
+  // air flowing DOWN and OUT rather than up and in.
+  "room-air-conditioner": `<svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+    <rect x="4" y="12" width="40" height="14" rx="3"/>
+    <path d="M10 18h28"/>
+    <path d="M10 22h28"/>
+    <path d="M14 26c-2 4 2 6 0 10"/>
+    <path d="M24 26c-2 4 2 6 0 10"/>
+    <path d="M34 26c-2 4 2 6 0 10"/>
   </svg>`,
 };
 

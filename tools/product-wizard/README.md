@@ -44,9 +44,10 @@ open tools/product-wizard/index.html
   Switch" (`firmware/generic-switch/`), "Refrigerator"
   (`firmware/refrigerator/`), "Dishwasher"
   (`firmware/dishwasher/`), "Laundry Washer"
-  (`firmware/laundry-washer/`), "Pump" (`firmware/pump/`), or "Laundry
-  Dryer" (`firmware/laundry-dryer/`). All
-  thirty are real, buildable
+  (`firmware/laundry-washer/`), "Pump" (`firmware/pump/`), "Laundry
+  Dryer" (`firmware/laundry-dryer/`), or "Room Air Conditioner"
+  (`firmware/room-air-conditioner/`). All
+  thirty-one are real, buildable
   firmware, not just UI placeholders (`firmware/camera/`, this repo's
   twelfth device type, is deliberately NOT offered here — see its own
   section further down for why: its two-chip/two-firmware/external-SDK
@@ -933,6 +934,23 @@ robot-vacuum/`'s and every other fixed-`extraButtons` device type's own
 verification already relies on) — then those exact commands run for real
 against a copy of the actual `app_main.cpp` and diffed against the
 original, a byte-for-byte match. All checks passed.
+
+`firmware/room-air-conditioner/` followed — again zero new wizard
+mechanism: `driver` (Compressor Relay) + `extraButtons` (Fan PWM, Room Air
+Sensor — a fixed set of 2) + `identify`, the same shape `firmware/
+laundry-dryer/`'s own entry already established. Plus a new hand-drawn
+icon — a wide wall-mounted unit body (not a tall appliance silhouette,
+unlike every laundry/kitchen device type's own icon here) with two
+horizontal vent-slat lines and three wavy cool-air streams flowing down
+from its underside, the real recognizable shape of a split-system room AC
+unit. Verified the same way: `findDeviceType` lookup, the icon's presence
+in `DEVICE_TYPE_ICONS`, `renderConfigureDevice` output containing all four
+field labels, `isProductComplete` before and after render, the exact
+generated sed commands for all four `#define`s (same call-order
+requirement as `firmware/laundry-dryer/`'s own fixed-`extraButtons`
+verification) — then those exact commands run for real against a copy of
+the actual `app_main.cpp` and diffed against the original, a byte-for-byte
+match. All checks passed.
 
 ## Known limitations
 
