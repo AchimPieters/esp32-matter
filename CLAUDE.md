@@ -3855,6 +3855,143 @@ firmware/room-air-conditioner/  Room Air Conditioner — thirty-second device
                            physically available when written).
   partitions.csv           same OTA + fctry layout as firmware/light/
   sdkconfig.defaults        same as firmware/light/
+firmware/heat-pump/       Heat Pump — thirty-third device type, and this
+                           repo's second genuinely composed, multi-endpoint
+                           device after firmware/refrigerator/ — but
+                           composed very differently, and against real,
+                           conflicting guidance from three separate sources
+                           that had to be weighed against each other before
+                           writing any code.
+  main/app_main.cpp        Confirmed directly against the CSA's own
+                           data_model/1.6/device_types/HeatPump.xml: the
+                           ROOT endpoint itself is nearly empty — just
+                           Identify (optionalConform) and a CLIENT-side
+                           Thermostat binding (optionalConform). All the
+                           real substance is in two `composedDeviceTypes`
+                           entries: an Electrical Sensor (0x0510,
+                           ElectricalPowerMeasurement +
+                           ElectricalEnergyMeasurement both
+                           mandatoryConform) and a Thermostat (0x0301, with
+                           an EXTRA mandatoryConform User Label cluster
+                           layered on top of that device type's own normal
+                           requirements). esp-matter's own `endpoint::
+                           heat_pump::create()` (confirmed by reading
+                           `esp_matter_endpoint.cpp`'s own `heat_pump::
+                           add()` directly) does NOT follow that structure
+                           literally: it composes PowerSource +
+                           ElectricalSensor (EPM+EEM) + DeviceEnergyManagement
+                           [PowerAdjustment] all onto the SAME root
+                           endpoint — confirmed by reading `electrical_
+                           sensor::add()` itself, which calls
+                           `add_device_type()` on whatever endpoint it's
+                           handed rather than creating a child — a
+                           genuinely different composition style from
+                           firmware/refrigerator/'s own child-endpoint
+                           pattern for Temperature Controlled Cabinet. It
+                           implements NO Thermostat composition at all.
+                           Cross-checked against connectedhomeip's own chef
+                           reference device (`rootnode_heatpump_
+                           87ivjRAECh.matter`, fetched and read directly),
+                           which CONFIRMS esp-matter's own same-endpoint
+                           composition choice for PowerSource/
+                           ElectricalSensor/DeviceEnergyManagement — but for
+                           temperature sensing uses two entirely separate
+                           `ma_tempsensor` (Temperature Sensor, 0x0302)
+                           child endpoints instead of a composed Thermostat
+                           device type at all, an older/alternate
+                           interpretation that doesn't match the current
+                           ratified XML's own explicit composed-Thermostat-
+                           with-UserLabel requirement. With three real
+                           sources disagreeing, this file follows the
+                           CURRENT ratified 1.6 XML's own stated intent (a
+                           composed Thermostat child) rather than chef's
+                           older reference — implemented as a genuine CHILD
+                           endpoint via `esp_matter::set_parent_endpoint
+                           (child, parent)`, the same API firmware/
+                           refrigerator/'s own Fridge/Freezer children
+                           already establish — while keeping esp-matter's
+                           own proven, tested same-endpoint composition for
+                           the Electrical Sensor part (confirmed correct by
+                           both esp-matter's own implementation AND the
+                           independent chef reference agreeing on that
+                           specific point). A UserLabel cluster is added
+                           manually onto the Thermostat child endpoint
+                           (confirmed `cluster::user_label::create()` uses
+                           a trivial empty `common::config_t`, no special
+                           setup needed).
+
+                           Root endpoint: `endpoint::heat_pump::create()`
+                           handles PowerSource (wired feature),
+                           ElectricalSensor (both EPM+EEM enabled via
+                           `config->electrical_sensor.optional_clusters_mask`
+                           — mandatory per the XML; the helper itself sets
+                           ElectricalPowerMeasurement's own
+                           AlternatingCurrent feature bit internally), and
+                           DeviceEnergyManagement[PowerAdjustment] — all
+                           with zero extra app code needed. Deliberately
+                           NOT driven by any real sensor: both clusters'
+                           legacy `cluster::create()` functions tolerate a
+                           null `delegate` (confirmed by reading
+                           `esp_matter_cluster.cpp` directly — no
+                           `VerifyOrDie`), so both exist and report their
+                           static/zero default values with no crash risk —
+                           same "no sensor, no fabricated data" honesty
+                           precedent firmware/evse/'s own always-NoError
+                           FaultState already establishes; a real product
+                           wanting genuine power telemetry here would want
+                           firmware/outlet/'s own hand-written
+                           ElectricalPowerMeasurement::Instance/Delegate
+                           pair (or one of its 6 real power-monitor chip
+                           drivers) instead. Identify is added manually
+                           onto the root (the top-level helper doesn't
+                           auto-add it).
+
+                           Thermostat child endpoint: Heat+Cool (unlike
+                           firmware/room-air-conditioner/'s own deliberately
+                           Cool-only scope — a heat pump's entire point is
+                           doing both), ControlSequenceOfOperation is
+                           CoolingAndHeating, and the hysteresis control
+                           loop is reused near-verbatim from firmware/
+                           thermostat/'s own (including its default
+                           setpoints — 20.00 degC heat / 26.00 degC cool —
+                           and 0.3 degC hysteresis band).
+                           `HEAT_PUMP_SENSOR_GPIO` reuses the exact DS18B20
+                           1-Wire driver this repo's other appliance/HVAC
+                           device types already establish verbatim.
+
+                           Output: `HEAT_PUMP_COMPRESSOR_RELAY_GPIO`
+                           (active-LOW) runs whenever either heat or cool
+                           demand is active — a real heat pump's compressor
+                           runs in both modes, only the refrigerant flow
+                           direction differs. `HEAT_PUMP_REVERSING_VALVE_
+                           RELAY_GPIO` (active-LOW) tracks SystemMode
+                           directly (energized only in Cool), independent
+                           of the compressor's own on/off cycling — a real
+                           reversing valve is pre-positioned for the
+                           commanded mode before the compressor ever
+                           starts, not toggled per hysteresis cycle. The
+                           energized-in-Cool convention matches common "O"
+                           terminal wiring, but real heat pump systems are
+                           NOT universal here — some use a "B" terminal
+                           convention (energized-in-Heat) instead; flagged
+                           explicitly, same disclaimer this repo's other
+                           relay-polarity choices already carry.
+                           Explicitly, deliberately NOT implemented: any
+                           defrost cycle or auxiliary/backup electric-heat-
+                           strip logic — real cold-climate heat pumps need
+                           outdoor coil temperature sensing and real timing
+                           logic this hobby-scale single-sensor build
+                           doesn't have, same "smallest reasonable next
+                           step" scope cut firmware/robot-vacuum/'s own
+                           skipped real navigation already establishes.
+                           Standard quick-power-cycle factory reset.
+                           Build-verified in Docker — clean on the first
+                           attempt despite the composition complexity; not
+                           hardware-tested (no relay/DS18B20 hardware for
+                           this device type physically available when
+                           written).
+  partitions.csv           same OTA + fctry layout as firmware/light/
+  sdkconfig.defaults        same as firmware/light/
 tools/
   dev.sh                  opens the Docker dev environment
   gen_factory.sh          local QR + factory partition generator
@@ -5319,14 +5456,56 @@ SECURITY.md               flash encryption / secure boot / signed OTA guidance
    the complete detail. Build-verified in Docker — clean on the first
    attempt; not hardware-tested (no relay/DS18B20/fan-driver hardware for
    this device type physically available when written).
-2. Implement Matter **OTA** — partially done. All thirty-two firmware
+
+   A thirty-third device type, `firmware/heat-pump/` (Heat Pump root +
+   Thermostat[Heat+Cool] child endpoint), followed room-air-conditioner —
+   the user's choice from a short AskUserQuestion list (Heat Pump / Flow
+   Sensor / Humidity Sensor; Heat Pump had already come up as a
+   recommended-but-unchosen option during firmware/room-air-conditioner/'s
+   own round). This repo's second genuinely composed, multi-endpoint device
+   after firmware/refrigerator/, but composed very differently — and
+   against real, conflicting guidance from three separate sources
+   (the current ratified CSA XML, esp-matter's own `heat_pump::add()`
+   implementation, and connectedhomeip's own chef reference device) that
+   genuinely disagreed with each other on how a heat pump's own temperature-
+   control surface should be modeled, resolved by following the ratified
+   XML's own stated intent (a composed Thermostat child endpoint) while
+   keeping esp-matter's own proven same-endpoint composition for the
+   Electrical Sensor part (confirmed correct by BOTH esp-matter's own
+   implementation and the independent chef reference agreeing on that one
+   specific point). A real, previously-undocumented composition style was
+   found and confirmed: unlike firmware/refrigerator/'s own child-endpoint
+   pattern, `electrical_sensor::add()` calls `add_device_type()` on
+   whatever endpoint it's handed rather than creating a child — meaning a
+   single endpoint's own DeviceTypeList can legitimately carry more than
+   one device type when the spec calls for it, a genuinely different, valid
+   composition style this repo hadn't used before. The Thermostat child
+   endpoint reuses firmware/thermostat/'s own Heat+Cool hysteresis control
+   loop closely (unlike firmware/room-air-conditioner/'s own deliberately
+   Cool-only scope) — a heat pump's whole point is doing both — driving a
+   compressor relay (runs in either mode) and a separate reversing-valve
+   relay (tracks SystemMode directly, independent of the compressor's own
+   on/off cycling, matching how a real reversing valve is pre-positioned
+   before the compressor starts rather than toggled per hysteresis cycle).
+   PowerSource/ElectricalSensor/DeviceEnergyManagement are all left
+   structurally present but not driven by any real sensor (both
+   ElectricalPowerMeasurement's and ElectricalEnergyMeasurement's own
+   legacy `cluster::create()` functions confirmed to tolerate a null
+   delegate with no crash risk) — same "no sensor, no fabricated data"
+   honesty precedent firmware/evse/'s own always-NoError FaultState
+   already establishes. See its own repository-layout entry above for the
+   complete detail. Build-verified in Docker — clean on the first attempt
+   despite the composition complexity; not hardware-tested (no relay/
+   DS18B20 hardware for this device type physically available when
+   written).
+2. Implement Matter **OTA** — partially done. All thirty-three firmware
    types ship `CONFIG_ENABLE_OTA_REQUESTOR=y`, which adds the OTA Requestor
    cluster to the root node endpoint entirely via Kconfig — esp-matter's
    own core startup (`esp_matter_core.cpp`) calls
    `esp_matter_ota_requestor_init()`/`_start()` automatically once that
    flag is on, so no app code was needed. Confirmed on real hardware for
    `firmware/contact-sensor/` and `firmware/switch/` (clean boot, cluster
-   registered, zero errors); the other thirty build identically since
+   registered, zero errors); the other thirty-one build identically since
    the code path is generic to every device type, not device-specific.
 
    Still open: a real OTA **transfer** needs an OTA Provider node
@@ -5396,7 +5575,7 @@ SECURITY.md               flash encryption / secure boot / signed OTA guidance
    later in `app_main()`, after `esp_matter::start()` has completed.
 
    Quick-power-cycle factory reset is Docker build-verified across all
-   thirty-two device types — not yet hardware-tested. The wizard
+   thirty-three device types — not yet hardware-tested. The wizard
    (`tools/product-wizard/`) has a static "Factory reset" info box
    rendered directly under the Configuration summary sidebar on every
    device type (wrapped together in a `.config-sidebar-stack` flex
