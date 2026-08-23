@@ -3004,6 +3004,38 @@ const DEVICE_TYPES = [
       defaultsByModule: { esp32: 4, esp32c2: 4, esp32c3: 4, esp32c5: 4, esp32c6: 4, esp32c61: 4, esp32s3: 4, esp32h2: 4 },
     },
   },
+  {
+    id: "rain-sensor",
+    name: "Rain Sensor",
+    desc: "Matter Rain Sensor: a probe-style rain sensor module (e.g. an FC-37/YL-83-style LM393 board) reports rain/dry via the Boolean State cluster — StateValue=true means rain IS detected. Confirmed to be literally the same physical module firmware/water-leak-detector/ uses, just mounted for a different purpose. Reference device in firmware/rain-sensor/.",
+    shortDesc: "Rain sensor probe, rain/dry.",
+    // Matches project(matter_rain_sensor) in firmware/rain-sensor/CMakeLists.txt.
+    // Same single-GPIO-plus-identify shape as firmware/water-leak-detector/'s
+    // own entry — no componentOptions here either, since this device type
+    // has exactly one sensor style documented so far.
+    binName: "matter_rain_sensor.bin",
+    driver: {
+      summary: "GPIO (digital input, active-low = raining)",
+      fieldLabel: "Rain sensor DO GPIO pin",
+      blockTitle: "Rain sensor DO · digital GPIO input",
+      filePath: "firmware/rain-sensor/main/app_main.cpp",
+      defineName: "RAIN_SENSOR_GPIO",
+      // Reference wiring: module VCC -> 3.3V, GND -> GND, DO -> this GPIO
+      // (the module actively drives DO itself — no internal pull-up
+      // needed, unlike a passive reed switch).
+      currentGpio: 4,
+      defaultsByModule: { esp32: 4, esp32c2: 4, esp32c3: 4, esp32c5: 4, esp32c6: 4, esp32c61: 4, esp32s3: 4, esp32h2: 4 },
+    },
+    identify: {
+      summary: "GPIO (digital output)",
+      fieldLabel: "Identify LED GPIO pin",
+      blockTitle: "Identify LED · digital output",
+      filePath: "firmware/rain-sensor/main/app_main.cpp",
+      defineName: "IDENTIFY_LED_GPIO",
+      currentGpio: 2,
+      defaultsByModule: { esp32: 2, esp32c2: 2, esp32c3: 2, esp32c5: 2, esp32c6: 2, esp32c61: 2, esp32s3: 2, esp32h2: 2 },
+    },
+  },
 ];
 
 function findDeviceType(id) {
@@ -3382,6 +3414,17 @@ const DEVICE_TYPE_ICONS = {
     <rect x="6" y="6" width="36" height="36" rx="9"/>
     <path d="M24 14v20"/>
     <circle cx="24" cy="26" r="3.2" fill="currentColor" stroke="none"/>
+  </svg>`,
+  // The exact same cloud outline as humidity-sensor's own icon (both are
+  // weather-related), but with three diagonal rain streaks below it
+  // instead of a single droplet+sprout — the classic weather-app "rain"
+  // pictogram, clearly distinct from humidity's own "ambient moisture"
+  // framing and from water-leak's plain single droplet.
+  "rain-sensor": `<svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M13 24a7 7 0 0 1 0-14a8 8 0 0 1 15-3a6 6 0 0 1 6 6a6 6 0 0 1-2 12H13Z"/>
+    <path d="M16 30l-3 6"/>
+    <path d="M24 30l-3 6"/>
+    <path d="M32 30l-3 6"/>
   </svg>`,
   // A rounded body (the purifier's own housing, distinct from fan's bare
   // blade icon) with the same three-blade motif inside, plus short

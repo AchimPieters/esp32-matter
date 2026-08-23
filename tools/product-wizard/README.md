@@ -50,9 +50,10 @@ open tools/product-wizard/index.html
   (`firmware/heat-pump/`), "Flow Sensor" (`firmware/flow-sensor/`),
   "Humidity Sensor" (`firmware/humidity-sensor/`), "Water Freeze
   Detector" (`firmware/water-freeze-detector/`), "Soil Sensor"
-  (`firmware/soil-sensor/`), or "Dimmable Plug-In Unit"
-  (`firmware/dimmable-plug/`). All
-  thirty-seven are real, buildable
+  (`firmware/soil-sensor/`), "Dimmable Plug-In Unit"
+  (`firmware/dimmable-plug/`), or "Rain Sensor" (`firmware/rain-sensor/`).
+  All
+  thirty-eight are real, buildable
   firmware, not just UI placeholders (`firmware/camera/`, this repo's
   twelfth device type, is deliberately NOT offered here — see its own
   section further down for why: its two-chip/two-firmware/external-SDK
@@ -1050,6 +1051,19 @@ containing both field labels, `isProductComplete` before and after render,
 the exact generated sed commands for both `#define`s — then those exact
 commands run for real against a copy of the actual `app_main.cpp` and
 diffed against the original, a byte-for-byte match. All checks passed.
+
+`firmware/rain-sensor/` followed — a single `driver` (the sensor's DO pin)
+plus `identify`, the same shape `firmware/water-leak-detector/`'s own
+entry already uses, since this device type is confirmed to use literally
+the same physical sensor module. Plus a new hand-drawn icon (the exact
+same cloud outline as `humidity-sensor`'s own icon, with three diagonal
+rain streaks below it instead of a single droplet+sprout — the classic
+weather-app "rain" pictogram). Verified the same way: `findDeviceType`
+lookup, the icon's presence in `DEVICE_TYPE_ICONS`, `renderConfigureDevice`
+output containing both field labels, `isProductComplete` before and after
+render, the exact generated sed commands for both `#define`s — then those
+exact commands run for real against a copy of the actual `app_main.cpp`
+and diffed against the original, a byte-for-byte match. All checks passed.
 
 ## Known limitations
 
