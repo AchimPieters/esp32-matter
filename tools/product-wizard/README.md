@@ -45,9 +45,10 @@ open tools/product-wizard/index.html
   (`firmware/refrigerator/`), "Dishwasher"
   (`firmware/dishwasher/`), "Laundry Washer"
   (`firmware/laundry-washer/`), "Pump" (`firmware/pump/`), "Laundry
-  Dryer" (`firmware/laundry-dryer/`), or "Room Air Conditioner"
-  (`firmware/room-air-conditioner/`). All
-  thirty-one are real, buildable
+  Dryer" (`firmware/laundry-dryer/`), "Room Air Conditioner"
+  (`firmware/room-air-conditioner/`), or "Heat Pump"
+  (`firmware/heat-pump/`). All
+  thirty-two are real, buildable
   firmware, not just UI placeholders (`firmware/camera/`, this repo's
   twelfth device type, is deliberately NOT offered here — see its own
   section further down for why: its two-chip/two-firmware/external-SDK
@@ -951,6 +952,26 @@ requirement as `firmware/laundry-dryer/`'s own fixed-`extraButtons`
 verification) — then those exact commands run for real against a copy of
 the actual `app_main.cpp` and diffed against the original, a byte-for-byte
 match. All checks passed.
+
+`firmware/heat-pump/` followed — again zero new wizard mechanism: `driver`
+(Compressor Relay) + `extraButtons` (Reversing Valve Relay, Room Air
+Sensor — a fixed set of 2) + `identify`, the same shape `firmware/
+room-air-conditioner/`'s own entry already established. The firmware
+itself builds two Matter endpoints (a Heat Pump root plus a child
+Thermostat endpoint via `set_parent_endpoint()`) but that's invisible to
+the wizard, which only ever tracks `#define` GPIO pins, not endpoint
+topology. Plus a new hand-drawn icon (an outdoor condenser-unit body with
+a circular fan grille, plus a bidirectional vertical arrow beside it
+representing the reversing valve's own two-way flow — the one visual idea
+that distinguishes a heat pump from `firmware/room-air-conditioner/`'s own
+cooling-only icon). Verified the same way: `findDeviceType` lookup, the
+icon's presence in `DEVICE_TYPE_ICONS`, `renderConfigureDevice` output
+containing all four field labels, `isProductComplete` before and after
+render, the exact generated sed commands for all four `#define`s (same
+call-order requirement as every other fixed-`extraButtons` device type's
+own verification) — then those exact commands run for real against a copy
+of the actual `app_main.cpp` and diffed against the original, a
+byte-for-byte match. All checks passed.
 
 ## Known limitations
 

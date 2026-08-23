@@ -2780,6 +2780,59 @@ const DEVICE_TYPES = [
       defaultsByModule: { esp32: 2, esp32c2: 2, esp32c3: 2, esp32c5: 2, esp32c6: 2, esp32c61: 2, esp32s3: 2, esp32h2: 2 },
     },
   },
+  {
+    id: "heat-pump",
+    name: "Heat Pump",
+    desc: "Matter Heat Pump: a Heat Pump root endpoint (PowerSource + Electrical Sensor + Device Energy Management, structurally present but not driven by any real sensor) plus a child Thermostat endpoint (Heat+Cool) drives a compressor relay through a hysteresis loop against a DS18B20 reading, plus a separate reversing-valve relay that tracks the commanded mode directly (energized in Cool, common \"O\" terminal convention — always check your own unit's wiring). No defrost-cycle or auxiliary-heat-strip logic. Reference device in firmware/heat-pump/.",
+    shortDesc: "Compressor + reversing-valve relays, Heat+Cool thermostat.",
+    // Matches project(matter_heat_pump) in firmware/heat-pump/CMakeLists.txt.
+    // Three fixed GPIO fields (driver + 2 extraButtons) — same "fixed set,
+    // not a variable count" shape firmware/room-air-conditioner/'s own
+    // entry already established. The firmware itself builds two Matter
+    // endpoints (a Heat Pump root + a child Thermostat endpoint via
+    // set_parent_endpoint()) but that's invisible to the wizard — it only
+    // ever cares about #define GPIO pins, not endpoint topology.
+    binName: "matter_heat_pump.bin",
+    driverLabel: "Compressor Relay",
+    driver: {
+      summary: "Compressor relay · GPIO (digital output, active-LOW)",
+      fieldLabel: "Compressor relay GPIO pin",
+      blockTitle: "Compressor relay · digital output",
+      filePath: "firmware/heat-pump/main/app_main.cpp",
+      defineName: "HEAT_PUMP_COMPRESSOR_RELAY_GPIO",
+      currentGpio: 16,
+      defaultsByModule: { esp32: 16, esp32c2: 16, esp32c3: 16, esp32c5: 16, esp32c6: 16, esp32c61: 16, esp32s3: 16, esp32h2: 16 },
+    },
+    extraButtons: [
+      {
+        label: "Reversing Valve Relay",
+        fieldLabel: "Reversing valve relay GPIO pin",
+        blockTitle: "Reversing valve relay · digital output (active-LOW, energized = Cool)",
+        filePath: "firmware/heat-pump/main/app_main.cpp",
+        defineName: "HEAT_PUMP_REVERSING_VALVE_RELAY_GPIO",
+        currentGpio: 17,
+        defaultsByModule: { esp32: 17, esp32c2: 17, esp32c3: 17, esp32c5: 17, esp32c6: 17, esp32c61: 17, esp32s3: 17, esp32h2: 17 },
+      },
+      {
+        label: "Room Air Sensor",
+        fieldLabel: "Room-air DS18B20 sensor GPIO pin",
+        blockTitle: "Room-air sensor · 1-Wire (DS18B20)",
+        filePath: "firmware/heat-pump/main/app_main.cpp",
+        defineName: "HEAT_PUMP_SENSOR_GPIO",
+        currentGpio: 21,
+        defaultsByModule: { esp32: 21, esp32c2: 21, esp32c3: 21, esp32c5: 21, esp32c6: 21, esp32c61: 21, esp32s3: 21, esp32h2: 21 },
+      },
+    ],
+    identify: {
+      summary: "GPIO (digital output)",
+      fieldLabel: "Identify LED GPIO pin",
+      blockTitle: "Identify LED · digital output",
+      filePath: "firmware/heat-pump/main/app_main.cpp",
+      defineName: "IDENTIFY_LED_GPIO",
+      currentGpio: 2,
+      defaultsByModule: { esp32: 2, esp32c2: 2, esp32c3: 2, esp32c5: 2, esp32c6: 2, esp32c61: 2, esp32s3: 2, esp32h2: 2 },
+    },
+  },
 ];
 
 function findDeviceType(id) {
@@ -3284,6 +3337,23 @@ const DEVICE_TYPE_ICONS = {
     <path d="M14 26c-2 4 2 6 0 10"/>
     <path d="M24 26c-2 4 2 6 0 10"/>
     <path d="M34 26c-2 4 2 6 0 10"/>
+  </svg>`,
+  // An outdoor condenser-unit body with a circular fan grille (a circle
+  // plus a cross of blade lines) — the same real hardware shape a split-
+  // system's outdoor unit has — plus a bidirectional vertical arrow beside
+  // it representing the reversing valve's own two-way flow, the one visual
+  // idea that distinguishes a heat pump from a plain air conditioner (room-
+  // air-conditioner's own icon has no such arrow, since it only ever cools).
+  "heat-pump": `<svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+    <rect x="4" y="8" width="30" height="32" rx="3"/>
+    <circle cx="19" cy="24" r="10"/>
+    <path d="M19 17v14"/>
+    <path d="M12 24h14"/>
+    <path d="M40 14v20"/>
+    <path d="M40 14l-4 5"/>
+    <path d="M40 14l4 5"/>
+    <path d="M40 34l-4-5"/>
+    <path d="M40 34l4-5"/>
   </svg>`,
 };
 
