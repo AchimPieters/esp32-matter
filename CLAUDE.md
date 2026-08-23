@@ -3737,6 +3737,124 @@ firmware/laundry-dryer/    Laundry Dryer — thirty-first device type, and the
                            physically available when written).
   partitions.csv           same OTA + fctry layout as firmware/light/
   sdkconfig.defaults        same as firmware/light/
+firmware/room-air-conditioner/  Room Air Conditioner — thirty-second device
+                           type, and this repo's first to combine
+                           firmware/thermostat/'s own Thermostat control-
+                           loop pattern with firmware/fan/'s own FanControl
+                           Delegate pattern on a single endpoint.
+                           Recommended twice before (during firmware/evse/'s
+                           and firmware/water-heater/'s own AskUserQuestion
+                           rounds) but not chosen until now.
+  main/app_main.cpp        Confirmed directly against the CSA's own
+                           data_model/1.6/device_types/
+                           RoomAirConditioner.xml: Identify, On/Off
+                           (DeadFrontOnOff feature), and Thermostat are all
+                           `<mandatoryConform/>` — Groups, Scenes
+                           Management, FanControl, Thermostat User
+                           Interface Configuration, HEPA/Activated Carbon
+                           Filter Monitoring, Temperature Measurement, and
+                           Relative Humidity Measurement are all
+                           `<optionalConform/>`.
+                           `endpoint::room_air_conditioner::create()`
+                           confirmed complete/ready-to-use by reading
+                           `esp_matter_endpoint.cpp`'s own
+                           `room_air_conditioner::add()` directly: Identify
+                           + OnOff (DeadFrontOnOff feature added, On +
+                           Toggle commands explicitly created — Off is
+                           already part of the base OnOff cluster, same as
+                           firmware/pump/'s own On/Off) + Thermostat (with
+                           the Cooling feature force-added via
+                           `config->thermostat.feature_flags |=
+                           feature::cooling::get_id()` inside `add()`
+                           itself), auto-Descriptor via `common::
+                           create<T>()`. A real, previously-unseen spec
+                           detail in this repo: unlike every appliance
+                           device type here (Dishwasher/Laundry Washer/
+                           Laundry Dryer), where On/Off's DeadFrontOnOff
+                           feature is optionalConform and simply left out,
+                           this device type makes BOTH that On/Off cluster
+                           AND a separate Thermostat SystemMode
+                           mandatoryConform at once — two genuinely
+                           different concepts of "on" coexist on the same
+                           endpoint. No GPIO is tied to the OnOff/
+                           DeadFrontOnOff attribute at all (left exactly as
+                           the top-level helper wires it — a cosmetic
+                           "is the unit's own display lit" flag with no
+                           physical effect in this hobby build); the actual
+                           cooling output is driven entirely by
+                           Thermostat's own SystemMode further down.
+                           ControlSequenceOfOperation is CoolingOnly (0x00)
+                           — SystemMode is therefore only ever meaningfully
+                           Off or Cool, any other value treated as Off
+                           rather than guessed at, same scope cut
+                           firmware/thermostat/'s own SystemMode handling
+                           already uses. LocalTemperature/SystemMode/
+                           OccupiedCoolingSetpoint are all plain ember
+                           attributes (no `thermostat/` folder under
+                           `data_model_provider/clusters/`, the same check
+                           firmware/thermostat/'s own header comment
+                           documents in full) — same `attribute::
+                           PRE_UPDATE` + `attribute::update()` pattern used
+                           throughout this repo. `ROOM_AC_SENSOR_GPIO`
+                           reuses the exact DS18B20 1-Wire driver firmware/
+                           laundry-dryer/'s (itself firmware/thermostat/'s/
+                           firmware/water-heater/'s) own DS18B20 path
+                           already establishes verbatim — deliberately just
+                           this one sensor rather than firmware/
+                           thermostat/'s full 7-chip `SENSOR_TYPE` library,
+                           same "smallest reasonable next step" scope cut
+                           firmware/water-heater/'s own tank-probe choice
+                           already applies. `ROOM_AC_HYSTERESIS_
+                           CENTIDEGREES` (0.3 degC) matches firmware/
+                           thermostat/'s own default.
+
+                           FanControl is `<optionalConform/>` here (unlike
+                           firmware/fan/'s/firmware/air-purifier/'s/
+                           firmware/extractor-hood/'s own device types,
+                           where it's mandatory and auto-wired by their own
+                           top-level helpers) — `room_air_conditioner::
+                           config_t` has no `fan_control` field at all,
+                           confirmed by reading the header directly, so
+                           this file adds it manually via the lower-level
+                           `cluster::fan_control::create()` free function
+                           instead, the usual "add extra clusters onto an
+                           already-correct endpoint" pattern. That cluster-
+                           level `config_t` DOES expose its own `delegate`
+                           field (wired via `set_delegate_and_init_
+                           callback()` at create time) — but this file
+                           deliberately does NOT rely on that, following
+                           firmware/air-purifier/'s and firmware/
+                           extractor-hood/'s own proven-correct convention
+                           instead: `config.delegate` stays null at create
+                           time, and the real Delegate is attached
+                           afterward via connectedhomeip's own
+                           `FanControl::SetDefaultDelegate()` free
+                           function, called only AFTER `esp_matter::
+                           start()` — see firmware/fan/'s own header
+                           comment for the full, hard-won story of why
+                           calling it any earlier is a silent no-op.
+                           `HandleStep()`/`OnFanDriveStateChanged()`/the
+                           PercentSetting-only scope/the `OffLowMedHigh`
+                           FanModeSequence choice are all reused verbatim
+                           from firmware/fan/. The fan's own PercentSetting
+                           is deliberately NOT coupled to Thermostat's own
+                           cool demand — a controller can run the fan alone
+                           (real room ACs commonly support this).
+
+                           `ROOM_AC_COMPRESSOR_RELAY_GPIO` (active-LOW) is
+                           gated purely by the Cool-only hysteresis loop —
+                           a real compressor contactor/relay module, not
+                           the mandatory OnOff/DeadFrontOnOff attribute.
+                           `ROOM_AC_FAN_PWM_GPIO` is real PWM via ESP-IDF's
+                           driver/ledc.h, the same LEDC peripheral
+                           firmware/fan/'s own output already uses.
+                           Standard quick-power-cycle factory reset.
+                           Build-verified in Docker — clean on the first
+                           attempt; not hardware-tested (no relay/DS18B20/
+                           fan-driver hardware for this device type
+                           physically available when written).
+  partitions.csv           same OTA + fctry layout as firmware/light/
+  sdkconfig.defaults        same as firmware/light/
 tools/
   dev.sh                  opens the Docker dev environment
   gen_factory.sh          local QR + factory partition generator
@@ -5163,14 +5281,52 @@ SECURITY.md               flash encryption / secure boot / signed OTA guidance
    TemperatureControl lessons proactively before writing any code; not
    hardware-tested (no relay/DS18B20/reed-switch hardware for this device
    type physically available when written).
-2. Implement Matter **OTA** — partially done. All thirty-one firmware
+
+   A thirty-second device type, `firmware/room-air-conditioner/`
+   (Thermostat[Cooling only] + On/Off[DeadFrontOnOff] + FanControl),
+   followed laundry-dryer — the user's choice from a short AskUserQuestion
+   list (Room Air Conditioner had already come up as a recommended-but-
+   unchosen option twice before, during firmware/evse/'s and firmware/
+   water-heater/'s own rounds). This repo's first device type to combine
+   firmware/thermostat/'s own Thermostat control-loop pattern with
+   firmware/fan/'s own FanControl Delegate pattern on a single endpoint.
+   A real, previously-unseen spec detail was found before writing any
+   code: unlike every appliance device type built so far (Dishwasher/
+   Laundry Washer/Laundry Dryer), where On/Off's DeadFrontOnOff feature is
+   optionalConform and simply left out, Room Air Conditioner makes BOTH
+   that On/Off cluster AND a separate Thermostat SystemMode
+   mandatoryConform at once — two genuinely different concepts of "on"
+   coexist on the same endpoint for the first time in this repo. Resolved
+   with a deliberate, documented choice: no GPIO is tied to the OnOff/
+   DeadFrontOnOff attribute at all (left exactly as the top-level helper
+   wires it — a cosmetic "is the unit's own display lit" flag with no
+   physical effect in this hobby build); the actual compressor relay is
+   driven entirely by Thermostat's own SystemMode/hysteresis loop instead,
+   a Cool-only subset of firmware/thermostat/'s own control loop (no Heat
+   branch at all, since ControlSequenceOfOperation is CoolingOnly).
+   FanControl itself is optionalConform here (unlike firmware/fan/'s/
+   firmware/air-purifier/'s/firmware/extractor-hood/'s own device types,
+   where it's mandatory and auto-wired by their own top-level helpers) —
+   added manually via the lower-level `cluster::fan_control::create()`
+   free function instead, with its Delegate deliberately registered via
+   connectedhomeip's own `FanControl::SetDefaultDelegate()` free function
+   AFTER `esp_matter::start()` rather than through that same function's
+   own `config->delegate` field, following firmware/air-purifier/'s and
+   firmware/extractor-hood/'s own proven-correct convention (not the
+   cluster-level config_t's own delegate field, which this repo's history
+   with firmware/fan/'s own ordering bug already taught not to trust
+   without re-confirming). See its own repository-layout entry above for
+   the complete detail. Build-verified in Docker — clean on the first
+   attempt; not hardware-tested (no relay/DS18B20/fan-driver hardware for
+   this device type physically available when written).
+2. Implement Matter **OTA** — partially done. All thirty-two firmware
    types ship `CONFIG_ENABLE_OTA_REQUESTOR=y`, which adds the OTA Requestor
    cluster to the root node endpoint entirely via Kconfig — esp-matter's
    own core startup (`esp_matter_core.cpp`) calls
    `esp_matter_ota_requestor_init()`/`_start()` automatically once that
    flag is on, so no app code was needed. Confirmed on real hardware for
    `firmware/contact-sensor/` and `firmware/switch/` (clean boot, cluster
-   registered, zero errors); the other twenty-nine build identically since
+   registered, zero errors); the other thirty build identically since
    the code path is generic to every device type, not device-specific.
 
    Still open: a real OTA **transfer** needs an OTA Provider node
@@ -5240,7 +5396,7 @@ SECURITY.md               flash encryption / secure boot / signed OTA guidance
    later in `app_main()`, after `esp_matter::start()` has completed.
 
    Quick-power-cycle factory reset is Docker build-verified across all
-   thirty-one device types — not yet hardware-tested. The wizard
+   thirty-two device types — not yet hardware-tested. The wizard
    (`tools/product-wizard/`) has a static "Factory reset" info box
    rendered directly under the Configuration summary sidebar on every
    device type (wrapped together in a `.config-sidebar-stack` flex
