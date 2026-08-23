@@ -2909,6 +2909,36 @@ const DEVICE_TYPES = [
       defaultsByModule: { esp32: 2, esp32c2: 2, esp32c3: 2, esp32c5: 2, esp32c6: 2, esp32c61: 2, esp32s3: 2, esp32h2: 2 },
     },
   },
+  {
+    id: "water-freeze-detector",
+    name: "Water Freeze Detector",
+    desc: "Matter Water Freeze Detector: a DS18B20 temperature reading drives a plain adjustable threshold + hysteresis classifier via the Boolean State cluster — StateValue=true means a freeze condition IS detected, the same alarm direction as Water Leak Detector. Reference device in firmware/water-freeze-detector/.",
+    shortDesc: "DS18B20 + threshold, freeze/normal.",
+    // Matches project(matter_water_freeze_detector) in
+    // firmware/water-freeze-detector/CMakeLists.txt. Same single-GPIO-
+    // plus-identify shape as firmware/water-leak-detector/'s own entry —
+    // no componentOptions here either, since this device type has exactly
+    // one sensor (DS18B20) documented so far.
+    binName: "matter_water_freeze_detector.bin",
+    driver: {
+      summary: "GPIO (1-Wire, DS18B20)",
+      fieldLabel: "DS18B20 DATA GPIO pin",
+      blockTitle: "DS18B20 · 1-Wire input",
+      filePath: "firmware/water-freeze-detector/main/app_main.cpp",
+      defineName: "WATER_FREEZE_DETECTOR_SENSOR_GPIO",
+      currentGpio: 4,
+      defaultsByModule: { esp32: 4, esp32c2: 4, esp32c3: 4, esp32c5: 4, esp32c6: 4, esp32c61: 4, esp32s3: 4, esp32h2: 4 },
+    },
+    identify: {
+      summary: "GPIO (digital output)",
+      fieldLabel: "Identify LED GPIO pin",
+      blockTitle: "Identify LED · digital output",
+      filePath: "firmware/water-freeze-detector/main/app_main.cpp",
+      defineName: "IDENTIFY_LED_GPIO",
+      currentGpio: 2,
+      defaultsByModule: { esp32: 2, esp32c2: 2, esp32c3: 2, esp32c5: 2, esp32c6: 2, esp32c61: 2, esp32s3: 2, esp32h2: 2 },
+    },
+  },
 ];
 
 function findDeviceType(id) {
@@ -3255,6 +3285,17 @@ const DEVICE_TYPE_ICONS = {
   // set uses a teardrop silhouette).
   "water-leak": `<svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
     <path d="M24 6c7 10 12 17.5 12 24a12 12 0 0 1-24 0c0-6.5 5-14 12-24Z"/>
+  </svg>`,
+  // The exact same droplet silhouette as water-leak's own icon, with a
+  // 6-ray snowflake asterisk centered in its lower/wider body — the real
+  // visual link (still water, still a threshold alarm) plus the one clear
+  // difference (ice, not a leak) between this device type and its closest
+  // sibling.
+  "water-freeze-detector": `<svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M24 6c7 10 12 17.5 12 24a12 12 0 0 1-24 0c0-6.5 5-14 12-24Z"/>
+    <path d="M24 24v12"/>
+    <path d="M29.2 27l-10.4 6"/>
+    <path d="M18.8 27l10.4 6"/>
   </svg>`,
   // A rounded body (the purifier's own housing, distinct from fan's bare
   // blade icon) with the same three-blade motif inside, plus short

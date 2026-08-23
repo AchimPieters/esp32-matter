@@ -47,9 +47,10 @@ open tools/product-wizard/index.html
   (`firmware/laundry-washer/`), "Pump" (`firmware/pump/`), "Laundry
   Dryer" (`firmware/laundry-dryer/`), "Room Air Conditioner"
   (`firmware/room-air-conditioner/`), "Heat Pump"
-  (`firmware/heat-pump/`), "Flow Sensor" (`firmware/flow-sensor/`), or
-  "Humidity Sensor" (`firmware/humidity-sensor/`). All
-  thirty-four are real, buildable
+  (`firmware/heat-pump/`), "Flow Sensor" (`firmware/flow-sensor/`),
+  "Humidity Sensor" (`firmware/humidity-sensor/`), or "Water Freeze
+  Detector" (`firmware/water-freeze-detector/`). All
+  thirty-five are real, buildable
   firmware, not just UI placeholders (`firmware/camera/`, this repo's
   twelfth device type, is deliberately NOT offered here — see its own
   section further down for why: its two-chip/two-firmware/external-SDK
@@ -1008,6 +1009,20 @@ option list, `isProductComplete` before and after render, the exact
 generated sed commands for all four `#define`s — then those exact
 commands run for real against a copy of the actual `app_main.cpp` and
 diffed against the original, a byte-for-byte match. All checks passed.
+
+`firmware/water-freeze-detector/` followed — the simplest wizard entry
+alongside `firmware/flow-sensor/`'s own: a single `driver` (the DS18B20's
+DATA pin) plus `identify`, the same shape `firmware/water-leak-detector/`'s
+own entry already uses. Plus a new hand-drawn icon (the exact same
+droplet silhouette as `water-leak`'s own icon, with a 6-ray snowflake
+asterisk centered in its lower/wider body — the real visual link plus the
+one clear difference between the two closely related device types).
+Verified the same way: `findDeviceType` lookup, the icon's presence in
+`DEVICE_TYPE_ICONS`, `renderConfigureDevice` output containing both field
+labels, `isProductComplete` before and after render, the exact generated
+sed commands for both `#define`s — then those exact commands run for real
+against a copy of the actual `app_main.cpp` and diffed against the
+original, a byte-for-byte match. All checks passed.
 
 ## Known limitations
 
