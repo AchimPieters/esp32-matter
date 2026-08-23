@@ -4322,6 +4322,56 @@ firmware/dimmable-plug/   Dimmable Plug-In Unit — thirty-eighth device
                            type physically available when written).
   partitions.csv           same OTA + fctry layout as firmware/light/
   sdkconfig.defaults        same as firmware/light/
+firmware/rain-sensor/     Rain Sensor — thirty-ninth device type, and the
+                           third sibling in this repo's BooleanState family
+                           after firmware/water-leak-detector/ and
+                           firmware/water-freeze-detector/ — same cluster,
+                           same real esp-matter FeatureMap gap and fix, and
+                           — confirmed, not assumed — literally the SAME
+                           physical sensor module as firmware/
+                           water-leak-detector/'s own probe, just mounted
+                           and marketed for a different purpose.
+  main/app_main.cpp        Confirmed directly via esp-matter's own
+                           `rain_sensor::add()`: identical structure to
+                           `water_leak_detector::add()`/
+                           `water_freeze_detector::add()`/
+                           `contact_sensor::add()` (Identify + BooleanState
+                           + StateChange event) — matches the CSA's own
+                           data_model/1.6/device_types/RainSensor.xml
+                           exactly. StateValue confirmed to use "true =
+                           rain detected" (confirmed against Espressif's
+                           own `MatterRainSensor` Arduino-ESP32 class,
+                           `setRain(bool)`) — the same "true = the sensed
+                           condition is present" direction firmware/
+                           water-leak-detector/'s own StateValue already
+                           uses, though rain itself isn't inherently a
+                           hazard the way a leak or a freeze is, closer in
+                           spirit to OccupancySensing's own true=occupied.
+                           The same real, documented esp-matter FeatureMap
+                           gap firmware/water-leak-detector/'s and
+                           firmware/water-freeze-detector/'s own header
+                           comments already document in full
+                           (`boolean_state::create()` hardcodes FeatureMap
+                           to 0, never setting the ChangeEvent feature bit
+                           this device type's own spec makes mandatory)
+                           gets the identical fix. The sensor module itself
+                           is confirmed — via multiple independent sources,
+                           not assumed from the name alone — to be
+                           literally the same board hardware as firmware/
+                           water-leak-detector/'s own probe (a set of
+                           parallel PCB traces feeding an LM393 comparator,
+                           DO pin), sold interchangeably as either a
+                           "water sensor" or "rain sensor" depending on
+                           mounting; the debounce/edge-handling logic (GPIO
+                           ISR + FreeRTOS queue, ANYEDGE, ~40ms consistent-
+                           level debounce) is reused verbatim from that
+                           file's own `water_leak_task()`. Standard
+                           quick-power-cycle factory reset. Build-verified
+                           in Docker (clean first attempt); not
+                           hardware-tested (no rain sensor module
+                           physically available when written).
+  partitions.csv           same OTA + fctry layout as firmware/light/
+  sdkconfig.defaults        same as firmware/light/
 tools/
   dev.sh                  opens the Docker dev environment
   gen_factory.sh          local QR + factory partition generator
@@ -5962,14 +6012,36 @@ SECURITY.md               flash encryption / secure boot / signed OTA guidance
    entry above for the complete detail. Build-verified in Docker (clean
    first attempt); not hardware-tested (no MOSFET/dimmer-module hardware
    for this device type physically available when written).
-2. Implement Matter **OTA** — partially done. All thirty-eight firmware
+
+   A thirty-ninth device type, `firmware/rain-sensor/` (BooleanState),
+   followed dimmable-plug — the user's choice from a short AskUserQuestion
+   list (Rain Sensor had already come up as a recommended-but-unchosen
+   option before). The third sibling in this repo's BooleanState family
+   after firmware/water-leak-detector/ and firmware/water-freeze-detector/
+   — same cluster, same real esp-matter FeatureMap gap and fix (see those
+   two files' own header comments, and now this one's, for the full
+   detail). A real, worth-remembering finding: this device type's own
+   sensor module is confirmed, via multiple independent sources rather
+   than assumed from the name alone, to be literally the SAME physical
+   board as firmware/water-leak-detector/'s own probe — a widely cloned
+   LM393-comparator design sold interchangeably as either a "water
+   sensor" or "rain sensor" depending on mounting — so this file reuses
+   that earlier file's own GPIO-ISR debounce logic verbatim rather than
+   writing anything new. StateValue direction ("true = rain detected")
+   was confirmed against Espressif's own `MatterRainSensor` Arduino-ESP32
+   class directly, the same verification rigor already applied to the
+   other two BooleanState siblings' own StateValue directions. See its
+   own repository-layout entry above for the complete detail.
+   Build-verified in Docker (clean first attempt); not hardware-tested
+   (no rain sensor module physically available when written).
+2. Implement Matter **OTA** — partially done. All thirty-nine firmware
    types ship `CONFIG_ENABLE_OTA_REQUESTOR=y`, which adds the OTA Requestor
    cluster to the root node endpoint entirely via Kconfig — esp-matter's
    own core startup (`esp_matter_core.cpp`) calls
    `esp_matter_ota_requestor_init()`/`_start()` automatically once that
    flag is on, so no app code was needed. Confirmed on real hardware for
    `firmware/contact-sensor/` and `firmware/switch/` (clean boot, cluster
-   registered, zero errors); the other thirty-six build identically since
+   registered, zero errors); the other thirty-seven build identically since
    the code path is generic to every device type, not device-specific.
 
    Still open: a real OTA **transfer** needs an OTA Provider node
@@ -6039,7 +6111,7 @@ SECURITY.md               flash encryption / secure boot / signed OTA guidance
    later in `app_main()`, after `esp_matter::start()` has completed.
 
    Quick-power-cycle factory reset is Docker build-verified across all
-   thirty-eight device types — not yet hardware-tested. The wizard
+   thirty-nine device types — not yet hardware-tested. The wizard
    (`tools/product-wizard/`) has a static "Factory reset" info box
    rendered directly under the Configuration summary sidebar on every
    device type (wrapped together in a `.config-sidebar-stack` flex
