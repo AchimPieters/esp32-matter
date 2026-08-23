@@ -4173,6 +4173,86 @@ firmware/water-freeze-detector/  Water Freeze Detector — thirty-sixth
                            available when written).
   partitions.csv           same OTA + fctry layout as firmware/light/
   sdkconfig.defaults        same as firmware/light/
+firmware/soil-sensor/     Soil Sensor — thirty-seventh device type, and this
+                           repo's first over the Soil Measurement cluster —
+                           which hid a genuinely new, more severe class of
+                           esp-matter gap than anything found in this repo
+                           before: skip the one required app-level call
+                           this file makes and the device doesn't misbehave
+                           quietly, it hard-crashes at startup.
+  main/app_main.cpp        Confirmed against the CSA's own data_model/1.6/
+                           device_types/SoilSensor.xml: Identify and
+                           SoilMeasurement are mandatory; an optional
+                           TemperatureMeasurement cluster is listed but not
+                           implemented — real cheap capacitive soil-
+                           moisture probes don't carry a temperature
+                           element at all, same "smallest reasonable next
+                           step" scope cut applied elsewhere.
+                           `endpoint::soil_sensor::create()` confirmed
+                           complete/ready-to-use by reading
+                           `esp_matter_endpoint.cpp`'s own `soil_sensor::
+                           add()` directly. `soil_measurement::config_t`
+                           is a literally empty `common::config_t`, and
+                           `create()` only ever creates a plain, data-less
+                           ember-attribute shell for
+                           SoilMoistureMeasurementLimits before registering
+                           an init callback that fires later, during
+                           `esp_matter::start()`. Reading THAT callback's
+                           own source directly
+                           (`data_model_provider/clusters/soil_measurement/
+                           integration.cpp`) is where the real severity
+                           shows up: a literal `VerifyOrDieWithMsg
+                           (gLimits.find(endpointId) != gLimits.end(),
+                           ...)` — if the app doesn't call the free
+                           function `SoilMeasurement::
+                           SetSoilMoistureLimits()` for this endpoint
+                           BEFORE `esp_matter::start()` runs, the device
+                           aborts the whole firmware outright, not a
+                           silent gap the way every prior FeatureMap-class
+                           gap in this repo has been. This file calls it
+                           right after building the endpoint, passing a
+                           real `Globals::Structs::
+                           MeasurementAccuracyStruct::Type` (measurementType
+                           = `MeasurementTypeEnum::kSoilMoisture`, confirmed
+                           against connectedhomeip's own generated shared
+                           Enums.h; min/maxMeasuredValue = 0/100, matching
+                           SoilMoistureMeasuredValue's own `percent` type).
+                           `SetSoilMoistureMeasuredValue()` is the real
+                           setter used to report readings afterward —
+                           reached via esp-matter's own ready-made free
+                           function rather than this repo's usual
+                           registry-lookup-and-cast pattern, the same
+                           "esp-matter's own integration.cpp provides a
+                           convenience free function" category firmware/
+                           air-purifier/'s own `ResourceMonitoring::
+                           GetClusterInstance()` already established.
+                           Sensor: a cheap capacitive soil-moisture probe
+                           (analog output, dry = higher voltage, wet =
+                           lower voltage — the opposite direction from a
+                           simple resistive probe's own DC behavior), read
+                           via the same `esp_adc/adc_oneshot.h` +
+                           `esp_adc/adc_cali.h` ADC1 pattern firmware/
+                           light-sensor/'s own LDR driver already
+                           establishes. Unlike that LDR's real datasheet-
+                           grounded characteristic curve, this sensor's
+                           voltage-to-moisture mapping is NOT chip-
+                           datasheet-driven at all — real-world use
+                           universally involves a two-point field
+                           calibration (dry air = 0%, submerged in water =
+                           100%) instead, so `SOIL_SENSOR_DRY_MV`/
+                           `SOIL_SENSOR_WET_MV` are explicitly adjustable
+                           placeholder defaults, not a measured
+                           calibration — same "adjustable, not a
+                           calibrated reading" honesty precedent firmware/
+                           smoke-co-alarm/'s and firmware/
+                           air-quality-sensor/'s own threshold classifiers
+                           already establish. Standard quick-power-cycle
+                           factory reset. Build-verified in Docker (clean
+                           first attempt); not hardware-tested (no
+                           capacitive soil-moisture sensor physically
+                           available when written).
+  partitions.csv           same OTA + fctry layout as firmware/light/
+  sdkconfig.defaults        same as firmware/light/
 tools/
   dev.sh                  opens the Docker dev environment
   gen_factory.sh          local QR + factory partition generator
@@ -5756,14 +5836,49 @@ SECURITY.md               flash encryption / secure boot / signed OTA guidance
    repository-layout entry above for the complete detail. Build-verified
    in Docker (clean first attempt); not hardware-tested (no DS18B20
    hardware for this device type physically available when written).
-2. Implement Matter **OTA** — partially done. All thirty-six firmware
+
+   A thirty-seventh device type, `firmware/soil-sensor/` (Soil
+   Measurement), followed water-freeze-detector — the user's choice from
+   a short AskUserQuestion list (Soil Sensor had already come up as a
+   recommended-but-unchosen option twice before). This repo's first over
+   the Soil Measurement cluster, and one that surfaced a genuinely new,
+   more severe class of esp-matter gap than anything found in this repo
+   before: `soil_measurement::create()`'s own config_t is a literally
+   empty struct, and reading the real init callback its `create()`
+   registers (`data_model_provider/clusters/soil_measurement/
+   integration.cpp`) directly — not assumed complete from the header
+   alone — found a literal `VerifyOrDieWithMsg(gLimits.find(endpointId)
+   != gLimits.end(), ...)`: skip the one required
+   `SoilMeasurement::SetSoilMoistureLimits()` call before
+   `esp_matter::start()` and the device doesn't misbehave quietly like
+   every prior FeatureMap-class gap this repo has catalogued — it hard-
+   crashes the whole firmware at startup. Worth remembering as a new
+   category for any future code-driven cluster whose real construction is
+   deferred to an init callback: read that callback's own source
+   directly, since a missing call isn't always a silent gap the way it
+   has been every other time so far. `SetSoilMoistureMeasuredValue()`
+   itself, by contrast, is reached via esp-matter's own ready-made free
+   function — the same "convenience free function" category firmware/
+   air-purifier/'s own `ResourceMonitoring::GetClusterInstance()` already
+   established, just for a cluster this repo hadn't used before. The
+   sensor itself (a cheap capacitive soil-moisture probe, analog output)
+   reuses firmware/light-sensor/'s own ADC1 + calibration-scheme driver
+   pattern, but — unlike that sensor's real datasheet-grounded
+   characteristic curve — needs a plain two-point field calibration
+   instead (dry air = 0%, submerged in water = 100%), documented as
+   adjustable placeholder defaults rather than a measured calibration.
+   See its own repository-layout entry above for the complete detail.
+   Build-verified in Docker (clean first attempt, despite the genuinely
+   new cluster integration); not hardware-tested (no capacitive soil-
+   moisture sensor physically available when written).
+2. Implement Matter **OTA** — partially done. All thirty-seven firmware
    types ship `CONFIG_ENABLE_OTA_REQUESTOR=y`, which adds the OTA Requestor
    cluster to the root node endpoint entirely via Kconfig — esp-matter's
    own core startup (`esp_matter_core.cpp`) calls
    `esp_matter_ota_requestor_init()`/`_start()` automatically once that
    flag is on, so no app code was needed. Confirmed on real hardware for
    `firmware/contact-sensor/` and `firmware/switch/` (clean boot, cluster
-   registered, zero errors); the other thirty-four build identically since
+   registered, zero errors); the other thirty-five build identically since
    the code path is generic to every device type, not device-specific.
 
    Still open: a real OTA **transfer** needs an OTA Provider node
@@ -5833,7 +5948,7 @@ SECURITY.md               flash encryption / secure boot / signed OTA guidance
    later in `app_main()`, after `esp_matter::start()` has completed.
 
    Quick-power-cycle factory reset is Docker build-verified across all
-   thirty-six device types — not yet hardware-tested. The wizard
+   thirty-seven device types — not yet hardware-tested. The wizard
    (`tools/product-wizard/`) has a static "Factory reset" info box
    rendered directly under the Configuration summary sidebar on every
    device type (wrapped together in a `.config-sidebar-stack` flex
