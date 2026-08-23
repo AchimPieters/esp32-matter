@@ -4253,6 +4253,75 @@ firmware/soil-sensor/     Soil Sensor — thirty-seventh device type, and this
                            available when written).
   partitions.csv           same OTA + fctry layout as firmware/light/
   sdkconfig.defaults        same as firmware/light/
+firmware/dimmable-plug/   Dimmable Plug-In Unit — thirty-eighth device
+                           type, and the natural combination of two device
+                           types already in this repo: firmware/outlet/'s
+                           own plug-in framing and firmware/
+                           dimmable-light/'s own LevelControl/PWM output —
+                           reused directly rather than reinvented.
+  main/app_main.cpp        `endpoint::dimmable_plug_in_unit::create()`
+                           confirmed complete/ready-to-use by reading
+                           `esp_matter_endpoint.cpp`'s own
+                           `dimmable_plug_in_unit::add()` directly:
+                           Identify (with TriggerEffect command) + Groups +
+                           OnOff (Lighting feature, On + Toggle commands) +
+                           LevelControl (OnOff + Lighting features) +
+                           ScenesManagement (with CopyScene/CopyScene-
+                           response commands), auto-Descriptor via
+                           `common::create<T>()`. Confirmed against the
+                           CSA's own data_model/1.6/device_types/
+                           DimmablePlug-InUnit.xml: those clusters are
+                           exactly what's listed (all mandatory,
+                           client-side OccupancySensing optionalConform
+                           and not implemented). `config_t` confirmed to
+                           simply inherit `on_off_plug_in_unit::config_t`
+                           and add `level_control`/`level_control_lighting`
+                           fields — the exact same relationship firmware/
+                           dimmable-light/'s own `dimmable_light::config_t`
+                           has to `on_off_light::config_t`, just for the
+                           plug-in-unit family instead of the light family.
+                           A genuine physical honesty point, not just a
+                           style choice: unlike firmware/outlet/'s own
+                           default RELAY output, a relay physically CANNOT
+                           dim anything — a real AC-mains dimmable plug
+                           needs a TRIAC/phase-control dimmer circuit, real
+                           safety-relevant power electronics outside what
+                           this repo's "read the datasheet, drive the
+                           GPIO" style should attempt without real hardware
+                           to validate against (same reasoning firmware/
+                           evse/'s own safety note already applies). This
+                           file instead drives real PWM via
+                           `driver/ledc.h` — the exact same LEDC
+                           peripheral/settings firmware/dimmable-light/'s
+                           own output already uses — appropriate for
+                           either a DC load through a MOSFET, or a real
+                           commercial AC dimmer module's own PWM/analog
+                           dimming-control input, gating an existing
+                           dimmer's own control input rather than
+                           attempting to switch mains current directly —
+                           same "gate an existing device's own control
+                           input" framing firmware/thermostat/'s RELAY
+                           output and firmware/evse/'s own relay already
+                           establish. LevelControl's CurrentLevel confirmed
+                           to be a plain ember attribute here too (no
+                           `level_control/` folder under
+                           `data_model_provider/clusters/`), same
+                           `attribute::PRE_UPDATE` pattern as OnOff.
+                           `OnLevel` deliberately left null (via
+                           `nullable<uint8_t>()`) rather than a concrete
+                           level — reusing firmware/dimmable-light/'s own
+                           already-found-and-hardware-confirmed real bug
+                           fix (a concrete OnLevel forces CurrentLevel back
+                           to that fixed value on every plain OnOff::On,
+                           discarding whatever brightness a controller last
+                           set). Boots off, same convention every other
+                           device type here follows. Standard quick-power-
+                           cycle factory reset. Build-verified in Docker
+                           (clean first attempt); not hardware-tested (no
+                           MOSFET/dimmer-module hardware for this device
+                           type physically available when written).
+  partitions.csv           same OTA + fctry layout as firmware/light/
+  sdkconfig.defaults        same as firmware/light/
 tools/
   dev.sh                  opens the Docker dev environment
   gen_factory.sh          local QR + factory partition generator
@@ -5871,14 +5940,36 @@ SECURITY.md               flash encryption / secure boot / signed OTA guidance
    Build-verified in Docker (clean first attempt, despite the genuinely
    new cluster integration); not hardware-tested (no capacitive soil-
    moisture sensor physically available when written).
-2. Implement Matter **OTA** — partially done. All thirty-seven firmware
+
+   A thirty-eighth device type, `firmware/dimmable-plug/`
+   (DimmablePlug-InUnit — OnOff + LevelControl on a plug-in-unit endpoint),
+   followed soil-sensor — the user's choice from a short AskUserQuestion
+   list (Dimmable Plug-In Unit had already come up as a recommended-but-
+   unchosen option twice before). The natural combination of two device
+   types already in this repo — firmware/outlet/'s own plug-in framing and
+   firmware/dimmable-light/'s own LevelControl/PWM output — reused
+   directly rather than reinvented, right down to the exact LEDC settings
+   and the OnLevel-null bug fix that firmware/dimmable-light/'s own
+   hardware testing already confirmed correct. The one genuine judgment
+   call: unlike firmware/outlet/'s own default RELAY output, a relay
+   physically cannot dim anything, so this device type's output is real
+   PWM (a DC load through a MOSFET, or a real commercial AC dimmer
+   module's own PWM/analog dimming-control input) rather than a relay —
+   explicitly NOT an attempt to switch mains current directly, the same
+   "gate an existing device's own control input" framing firmware/
+   thermostat/'s and firmware/evse/'s own relay outputs already establish
+   for their own mains-adjacent hardware. See its own repository-layout
+   entry above for the complete detail. Build-verified in Docker (clean
+   first attempt); not hardware-tested (no MOSFET/dimmer-module hardware
+   for this device type physically available when written).
+2. Implement Matter **OTA** — partially done. All thirty-eight firmware
    types ship `CONFIG_ENABLE_OTA_REQUESTOR=y`, which adds the OTA Requestor
    cluster to the root node endpoint entirely via Kconfig — esp-matter's
    own core startup (`esp_matter_core.cpp`) calls
    `esp_matter_ota_requestor_init()`/`_start()` automatically once that
    flag is on, so no app code was needed. Confirmed on real hardware for
    `firmware/contact-sensor/` and `firmware/switch/` (clean boot, cluster
-   registered, zero errors); the other thirty-five build identically since
+   registered, zero errors); the other thirty-six build identically since
    the code path is generic to every device type, not device-specific.
 
    Still open: a real OTA **transfer** needs an OTA Provider node
@@ -5948,7 +6039,7 @@ SECURITY.md               flash encryption / secure boot / signed OTA guidance
    later in `app_main()`, after `esp_matter::start()` has completed.
 
    Quick-power-cycle factory reset is Docker build-verified across all
-   thirty-seven device types — not yet hardware-tested. The wizard
+   thirty-eight device types — not yet hardware-tested. The wizard
    (`tools/product-wizard/`) has a static "Factory reset" info box
    rendered directly under the Configuration summary sidebar on every
    device type (wrapped together in a `.config-sidebar-stack` flex
