@@ -4474,6 +4474,181 @@ firmware/color-temperature-light/  Color Temperature Light — fortieth device
                            device type physically available when written).
   partitions.csv           same OTA + fctry layout as firmware/light/
   sdkconfig.defaults        same as firmware/light/
+firmware/closure/         Closure (garage door / roller shutter / awning) —
+                           forty-first device type, and this repo's first
+                           over the Closure Control cluster — a brand-new
+                           (Matter 1.6) cluster family, not yet used
+                           anywhere else in this repo.
+  main/app_main.cpp        Confirmed directly against the CSA's own
+                           data_model/1.6/device_types/Closure.xml (device
+                           type 0x0230): Identify + Closure Control are the
+                           only two clusters, both mandatoryConform — Window
+                           Covering and Closure Dimension are both
+                           explicitly `<disallowConform/>` on this device
+                           type (they belong to the separate ClosurePanel
+                           child-endpoint device type, 0x0231, for closures
+                           with more than one independently-controlled
+                           panel — not implemented here; single-panel is the
+                           common garage-door/roller-shutter/awning case).
+                           `endpoint::closure::create()` confirmed complete/
+                           ready-to-use (Identify + ClosureControl, auto-
+                           Descriptor via `common::create<T>()`) by reading
+                           esp-matter's own legacy `closure::add()`
+                           directly. ClosureControl's own cluster XML
+                           defines nine optional features; Positioning (PS)
+                           and MotionLatching (LT) form a real "at least one
+                           of these two" choice group — confirmed both in
+                           the XML's own conform markers and in esp-matter's
+                           own `closure_control::create()`, which calls
+                           `VALIDATE_FEATURES_AT_LEAST_ONE("Positioning,
+                           MotionLatching", ...)`, the same "choice, at
+                           least 1" constraint class firmware/
+                           occupancy-sensor/'s OccupancySensing already
+                           established. This file enables Positioning only
+                           — same "smallest reasonable next step" scoping
+                           firmware/window-covering/'s own Lift-only choice
+                           already applies — mapping directly onto a simple
+                           two-relay (open/close) motor with no position
+                           sensor: FullyClosed/FullyOpened/PartiallyOpened
+                           are the only CurrentPositionEnum values ever
+                           reported (OpenedForPedestrian/OpenedForVentilation
+                           need PD/VT, not enabled; OpenedAtSignature is
+                           spec-mandatory with no feature gate at all, but
+                           has no real meaning on this hardware, so it's
+                           simply never used).
+
+                           A genuinely new, eighth "how do I wire up a
+                           code-driven cluster's real implementation from
+                           app code" pattern for this repo (after: plain
+                           registry-lookup setter; a Delegate whose own
+                           reporting call happens to be a working generic
+                           free-function proxy; the `chip::app::…
+                           registry().Get()`-based fallback for
+                           `DefaultServerCluster`-derived clusters; a
+                           cluster-family-specific convenience free
+                           function; a direct FeatureMap `attribute::
+                           update()` override; `get_delegate_managed_
+                           instance()` for a legacy-ember-style cluster with
+                           a delegate-managed live instance; and a
+                           `SetDefaultDelegate()`/`SetDelegate()`-style free
+                           function/method called AFTER `esp_matter::
+                           start()`) — and, unlike all seven of those, the
+                           OPPOSITE ordering: ClosureControl's delegate must
+                           be registered BEFORE `esp_matter::start()`.
+                           Confirmed by reading BOTH esp-matter's own
+                           `data_model_provider/clusters/closure_control/
+                           integration.cpp` AND connectedhomeip's own
+                           `ClosureControlCluster::Config` constructor
+                           directly: `Config` takes
+                           `ClosureControlClusterDelegate & delegate` as a
+                           mandatory reference, not an optional pointer
+                           supplied later, so the cluster object cannot be
+                           constructed without one — and esp-matter's own
+                           `ESPMatterClosureControlClusterServerInitCallback`
+                           (registered as this cluster's plain
+                           `init_callback`, run by `invoke_init_callbacks_
+                           internal()` as part of `esp_matter::start()`,
+                           BEFORE that same per-cluster pass's own
+                           `delegate_init_callback` step that
+                           `config->closure_control.delegate` would
+                           otherwise wire up automatically) refuses to
+                           construct the cluster at all if no delegate has
+                           been registered for that endpoint yet — its own
+                           source literally logs "delegate not set for ep
+                           %u (call MatterClosureControlSetDelegate first)"
+                           and returns. `config->closure_control.delegate`
+                           is therefore left null here; the real delegate
+                           is registered explicitly via `chip::app::
+                           Clusters::ClosureControl::
+                           MatterClosureControlSetDelegate(endpoint_id,
+                           delegate)` (declared in `data_model_provider/
+                           clusters/closure_control/integration.h`) BEFORE
+                           the `esp_matter::start()` call in `app_main()` —
+                           the opposite placement from firmware/valve/'s
+                           and firmware/fan/'s own delegate registration.
+                           This finding is sourced entirely from reading
+                           esp-matter's/connectedhomeip's own code
+                           directly, same discipline as every other
+                           runtime-ordering conclusion in this repo, but —
+                           like firmware/fan/'s own `SetDefaultDelegate()`
+                           ordering bug before it was hardware-confirmed —
+                           has not itself been confirmed against real
+                           runtime behavior yet (no hardware for this
+                           device type was available when written).
+
+                           What the cluster does automatically vs. what
+                           this file does, confirmed by reading
+                           `ClosureControlCluster.cpp`'s own `HandleMoveTo()`/
+                           `HandleStop()`/`HandleCalibrate()`/`SetMainState()`
+                           directly: the cluster validates commands against
+                           MainState/FeatureMap conformance, calls the
+                           delegate, and — only on success — sets MainState
+                           and OverallTargetState itself, plus pulls
+                           `GetMovingCountdownTime()`/etc. from the delegate
+                           to republish CountdownTime and generates the
+                           mandatory EngageStateChanged event on any
+                           Disengaged transition (never reached here). What
+                           it does NOT do automatically — same "the app
+                           should trigger the state change" responsibility
+                           firmware/door-lock/'s LockState and firmware/
+                           valve/'s CurrentState already establish — is
+                           anything about the *ongoing* physical movement:
+                           reporting live OverallCurrentState/SecureState as
+                           the motor travels, deciding when travel is
+                           complete, transitioning MainState back to
+                           Stopped, and firing MovementCompleted/
+                           SecureStateChanged. All of that is this file's
+                           own `closure_task`, built on the same time-based
+                           position-estimation technique (no position
+                           sensor assumed) firmware/window-covering/'s own
+                           `movement_task` already established — the
+                           difference here is that ClosureControl only
+                           exposes three coarse discrete position states,
+                           not a continuous percentage attribute, so this
+                           file estimates a continuous 0-100 "percent open"
+                           value purely internally (for arrival detection
+                           and the CountdownTime countdown) and only ever
+                           reports the three coarse enum states a
+                           controller can actually see. SecureState is this
+                           file's own reasonable, documented interpretation
+                           — ClosureControl is new enough (Matter 1.6) that
+                           no equivalent to e.g. Espressif's own
+                           `MatterWaterLeakDetector` Arduino-ESP32 class
+                           exists yet to confirm a "true" direction against
+                           the way firmware/water-leak-detector/'s and
+                           firmware/rain-sensor/'s own StateValue directions
+                           were: true (securing against unauthorized entry)
+                           exactly when FullyClosed, false otherwise — the
+                           natural reading of the spec's own field
+                           description, not a confirmed universal
+                           convention. `SetOverallCurrentState()`'s first
+                           call (seeding a real initial state, required
+                           before `HandleMoveTo()` will accept any MoveTo
+                           command at all — confirmed by reading it
+                           directly) happens right after `esp_matter::
+                           start()` returns, via the same registry-lookup-
+                           and-cast pattern (`chip::app::…registry().Get()`
+                           + `static_cast<ClosureControlCluster*>`)
+                           firmware/valve/'s own `get_valve_cluster()`
+                           already establishes, since ClosureControl has no
+                           `GetClusterInstance()`-style convenience free
+                           function. Boots assumed FullyClosed (0% open) —
+                           the safer default for something whose whole
+                           purpose is "closure", matching firmware/valve/'s
+                           own boot-closed convention; an assumption, not a
+                           measurement, until the first real movement, same
+                           caveat firmware/window-covering/'s own boot-open
+                           assumption already carries. Two relay outputs
+                           (open/close, active-LOW), same GPIO 4/5 defaults
+                           firmware/window-covering/'s own two-relay output
+                           already uses — same hardware shape, different
+                           device type. Standard quick-power-cycle factory
+                           reset. Build-verified in Docker (clean first
+                           attempt); not hardware-tested (no garage-door/
+                           roller-shutter motor+relay hardware for this
+                           device type physically available when written).
+  partitions.csv           same OTA + fctry layout as firmware/light/
+  sdkconfig.defaults        same as firmware/light/
 tools/
   dev.sh                  opens the Docker dev environment
   gen_factory.sh          local QR + factory partition generator
@@ -6166,14 +6341,49 @@ SECURITY.md               flash encryption / secure boot / signed OTA guidance
    (one real, quickly-caught compile error — `fminf`/`fmaxf` need
    `<cmath>` — fixed); not hardware-tested (no cool-white/warm-white LED/
    driver board for this device type physically available when written).
-2. Implement Matter **OTA** — partially done. All forty firmware
+
+   A forty-first device type, `firmware/closure/` (Closure Control —
+   garage door / roller shutter / awning), followed — the user's choice
+   from a short AskUserQuestion list (Closure / Microwave Oven / Doorbell).
+   This repo's first over the Closure Control cluster, a brand-new
+   (Matter 1.6) cluster family. Confirmed directly against the CSA's own
+   Closure.xml (0x0230) that Window Covering and Closure Dimension are
+   both explicitly disallowed on this device type (they belong to a
+   separate ClosurePanel child-endpoint device type instead, for
+   multi-panel closures — not implemented here). `endpoint::closure::
+   create()` confirmed complete/ready-to-use. Positioning-only scope, same
+   "smallest reasonable next step" precedent as firmware/window-covering/'s
+   own Lift-only choice — maps directly onto a simple two-relay motor with
+   no position sensor. The real find here: a genuinely new, EIGHTH
+   "how do I wire up a code-driven cluster's real implementation from app
+   code" pattern for this repo, and the first one requiring the OPPOSITE
+   ordering from every prior Delegate-based cluster — ClosureControl's own
+   `Config` constructor takes its delegate as a mandatory reference, so
+   esp-matter's own cluster-construction init callback (which runs as part
+   of `esp_matter::start()`) fails outright unless the delegate was already
+   registered via `MatterClosureControlSetDelegate()` BEFORE that call —
+   confirmed by reading esp-matter's own `data_model_provider/clusters/
+   closure_control/integration.cpp` and connectedhomeip's own
+   `ClosureControlCluster::Config` constructor directly, not assumed. This
+   finding, like firmware/fan/'s own `SetDefaultDelegate()`-ordering bug
+   before it, is sourced from reading source directly and hasn't itself
+   been hardware-confirmed yet. See its own repository-layout entry above
+   for the complete detail, including what the cluster's own `HandleMoveTo()`/
+   `SetMainState()` already do automatically vs. what this file's own
+   `closure_task` has to do (live position/SecureState reporting, deciding
+   when travel completes, firing MovementCompleted/SecureStateChanged).
+   Build-verified in Docker (clean first attempt, despite the ordering
+   subtlety above); not hardware-tested (no garage-door/roller-shutter
+   motor+relay hardware for this device type physically available when
+   written).
+2. Implement Matter **OTA** — partially done. All forty-one firmware
    types ship `CONFIG_ENABLE_OTA_REQUESTOR=y`, which adds the OTA Requestor
    cluster to the root node endpoint entirely via Kconfig — esp-matter's
    own core startup (`esp_matter_core.cpp`) calls
    `esp_matter_ota_requestor_init()`/`_start()` automatically once that
    flag is on, so no app code was needed. Confirmed on real hardware for
    `firmware/contact-sensor/` and `firmware/switch/` (clean boot, cluster
-   registered, zero errors); the other thirty-eight build identically since
+   registered, zero errors); the other thirty-nine build identically since
    the code path is generic to every device type, not device-specific.
 
    Still open: a real OTA **transfer** needs an OTA Provider node
@@ -6243,7 +6453,7 @@ SECURITY.md               flash encryption / secure boot / signed OTA guidance
    later in `app_main()`, after `esp_matter::start()` has completed.
 
    Quick-power-cycle factory reset is Docker build-verified across all
-   forty device types — not yet hardware-tested. The wizard
+   forty-one device types — not yet hardware-tested. The wizard
    (`tools/product-wizard/`) has a static "Factory reset" info box
    rendered directly under the Configuration summary sidebar on every
    device type (wrapped together in a `.config-sidebar-stack` flex
