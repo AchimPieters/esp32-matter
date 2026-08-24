@@ -4372,6 +4372,108 @@ firmware/rain-sensor/     Rain Sensor — thirty-ninth device type, and the
                            physically available when written).
   partitions.csv           same OTA + fctry layout as firmware/light/
   sdkconfig.defaults        same as firmware/light/
+firmware/color-temperature-light/  Color Temperature Light — fortieth device
+                           type, and this repo's first tunable-white bulb:
+                           cool-white + warm-white channels only, no RGB at
+                           all, matching real "tunable white"/"CCT" smart-
+                           bulb products.
+  main/app_main.cpp        Confirmed directly against the CSA's own
+                           data_model/1.6/device_types/
+                           ColorTemperatureLight.xml (device type 0x010C,
+                           classification "superset: Dimmable Light"):
+                           Identify + Groups + OnOff[Lighting] +
+                           LevelControl[OnOff+Lighting] + ScenesManagement +
+                           ColorControl are all mandatoryConform, but
+                           ColorControl only requires its ColorTemperature
+                           (CT) feature — HueSaturation and XY are not part
+                           of this device type's cluster requirements at
+                           all, unlike ExtendedColorLight (0x010D, what
+                           firmware/color-light/ and firmware/
+                           addressable-light/ both implement), which
+                           mandates all three color features. This is the
+                           correct, spec-conformant device type for
+                           hardware that genuinely only does cool/warm
+                           white blending, rather than declaring
+                           ExtendedColorLight and only half-implementing
+                           its mandatory color surface.
+                           `endpoint::color_temperature_light::create()`
+                           confirmed to be a COMPLETE top-level helper by
+                           reading esp-matter's own legacy
+                           `color_temperature_light::add()` directly —
+                           unlike firmware/color-light/'s and firmware/
+                           addressable-light/'s own hand-assembled
+                           ExtendedColorLight endpoints (built that way
+                           specifically to get HueSaturation, which
+                           esp-matter's own extended_color_light helper
+                           never wires up), this device type's helper
+                           already builds exactly what the CSA XML
+                           requires — including the mandatory RemainingTime
+                           attribute — and, via the same shared
+                           `common::create<T>()` template every complete
+                           top-level helper in this repo uses, creates the
+                           endpoint's Descriptor cluster automatically too.
+                           This sidesteps BOTH real bugs found and fixed on
+                           color-light's/addressable-light's own hand-
+                           assembled endpoints during real Apple Home
+                           hardware testing (missing Descriptor cluster;
+                           missing mandatory ColorControl features/
+                           attributes — see CLAUDE.md's "Open next steps"
+                           for the full debugging story) — nothing to work
+                           around here. Also, unlike those two files' own
+                           RGBWW/RGBCCT modes, no color-space interlock is
+                           needed: this device type has exactly one color
+                           feature (ColorTemperature), so there is nothing
+                           to interlock between — ColorTemperatureMireds is
+                           the only color input, always rendered straight
+                           to the cool/warm channels.
+                           OnOff/LevelControl/ColorTemperatureMireds all
+                           confirmed to be plain ember attributes (no
+                           `color_control/` or `level_control/` folder
+                           under `data_model_provider/clusters/`, the same
+                           check every prior light device type in this
+                           repo already applies) — same `attribute::
+                           PRE_UPDATE` + `attribute::update()` pattern as
+                           firmware/dimmable-light/'s and firmware/
+                           color-light/'s own outputs. `mireds_to_cw_ww()`
+                           is copied unchanged from firmware/color-light/'s
+                           own RGBWW-mode function of the same name (itself
+                           ported from ESPHome's real `light_call.cpp`) —
+                           clamp into range, linearly interpolate the warm
+                           fraction, then normalize both fractions by
+                           whichever is larger so at least one channel
+                           always reaches full strength at any color
+                           temperature. COLOR_TEMPERATURE_LIGHT_COOL_WHITE_
+                           KELVIN/_WARM_WHITE_KELVIN default to 6500K/2700K,
+                           the same two most common LED bin ratings
+                           firmware/color-light/'s own header comment
+                           already documents — explicitly adjustable per
+                           your actual LEDs' rated color temperature.
+                           OnLevel is left null (`nullable<uint8_t>()`),
+                           reusing the same real, hardware-confirmed bug
+                           fix firmware/dimmable-light/'s and firmware/
+                           color-light/'s own LevelControl configs already
+                           apply (a concrete OnLevel would force
+                           CurrentLevel back to a fixed value on every
+                           plain OnOff::On instead of restoring the last
+                           brightness). Two LEDC PWM channels (cool white
+                           on GPIO 2, warm white on GPIO 4 — the same
+                           "GPIO2 first output, GPIO4 second" pattern
+                           firmware/dimmable-light/ already establishes for
+                           a single channel, extended to two here), plus an
+                           Identify LED on GPIO 15 (same default firmware/
+                           color-light/'s own identify LED already uses).
+                           Boots off, same convention every device type in
+                           this repo follows. Standard quick-power-cycle
+                           factory reset. Build-verified in Docker (one
+                           real, quickly-caught compile error: `fminf`/
+                           `fmaxf` need `<cmath>`, not pulled in
+                           transitively the way it apparently is in
+                           firmware/color-light/ — fixed by adding the
+                           include directly); not hardware-tested (no
+                           cool-white/warm-white LED/driver board for this
+                           device type physically available when written).
+  partitions.csv           same OTA + fctry layout as firmware/light/
+  sdkconfig.defaults        same as firmware/light/
 tools/
   dev.sh                  opens the Docker dev environment
   gen_factory.sh          local QR + factory partition generator
@@ -6034,14 +6136,44 @@ SECURITY.md               flash encryption / secure boot / signed OTA guidance
    own repository-layout entry above for the complete detail.
    Build-verified in Docker (clean first attempt); not hardware-tested
    (no rain sensor module physically available when written).
-2. Implement Matter **OTA** — partially done. All thirty-nine firmware
+
+   A fortieth device type, `firmware/color-temperature-light/`
+   (ColorTemperatureLight — OnOff + LevelControl + ColorControl[CT only]),
+   was scaffolded (root/main CMakeLists.txt, partitions.csv,
+   sdkconfig.defaults) but interrupted by a power outage before
+   `main/app_main.cpp` existed; resumed and completed in the next session.
+   This repo's first tunable-white bulb: cool-white + warm-white channels
+   only, no RGB at all. Confirmed directly against the CSA's own
+   ColorTemperatureLight.xml (0x010C) that, unlike ExtendedColorLight
+   (0x010D, what firmware/color-light/ and firmware/addressable-light/
+   both implement), only the ColorTemperature feature is mandatory for
+   ColorControl — HueSaturation/XY aren't part of this device type's
+   requirements at all, so `endpoint::color_temperature_light::create()`
+   is a genuinely simpler, more correct fit for hardware that only does
+   cool/warm blending. Confirmed by reading esp-matter's own legacy
+   `color_temperature_light::add()` directly that — unlike color-light's/
+   addressable-light's own hand-assembled ExtendedColorLight endpoints —
+   this is a COMPLETE top-level helper (correct mandatory clusters/
+   features/attributes, auto-created Descriptor cluster via the shared
+   `common::create<T>()` template), sidestepping both real bugs those two
+   files needed fixed after real Apple Home hardware testing. No
+   color-space interlock needed either, unlike color-light's RGBWW mode —
+   this device type has exactly one color feature, so there's nothing to
+   interlock between. `mireds_to_cw_ww()`, the OnLevel-null fix, and the
+   6500K/2700K cool/warm default Kelvin values are all reused verbatim
+   from firmware/color-light/'s own RGBWW mode. See its own repository-
+   layout entry above for the complete detail. Build-verified in Docker
+   (one real, quickly-caught compile error — `fminf`/`fmaxf` need
+   `<cmath>` — fixed); not hardware-tested (no cool-white/warm-white LED/
+   driver board for this device type physically available when written).
+2. Implement Matter **OTA** — partially done. All forty firmware
    types ship `CONFIG_ENABLE_OTA_REQUESTOR=y`, which adds the OTA Requestor
    cluster to the root node endpoint entirely via Kconfig — esp-matter's
    own core startup (`esp_matter_core.cpp`) calls
    `esp_matter_ota_requestor_init()`/`_start()` automatically once that
    flag is on, so no app code was needed. Confirmed on real hardware for
    `firmware/contact-sensor/` and `firmware/switch/` (clean boot, cluster
-   registered, zero errors); the other thirty-seven build identically since
+   registered, zero errors); the other thirty-eight build identically since
    the code path is generic to every device type, not device-specific.
 
    Still open: a real OTA **transfer** needs an OTA Provider node
@@ -6111,7 +6243,7 @@ SECURITY.md               flash encryption / secure boot / signed OTA guidance
    later in `app_main()`, after `esp_matter::start()` has completed.
 
    Quick-power-cycle factory reset is Docker build-verified across all
-   thirty-nine device types — not yet hardware-tested. The wizard
+   forty device types — not yet hardware-tested. The wizard
    (`tools/product-wizard/`) has a static "Factory reset" info box
    rendered directly under the Configuration summary sidebar on every
    device type (wrapped together in a `.config-sidebar-stack` flex
