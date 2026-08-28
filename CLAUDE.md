@@ -7197,6 +7197,74 @@ SECURITY.md               flash encryption / secure boot / signed OTA guidance
    diffed against the original — a byte-for-byte match.
    `tools/product-wizard/README.md`'s own device-type list and count
    were updated to match (forty-three → forty-four).
+
+   A forty-sixth device type, `firmware/electrical-meter/` (Electrical
+   Power Measurement + Electrical Energy Measurement), followed — the
+   user's choice from a short AskUserQuestion list (Electrical Meter /
+   Oven / Mode Select), after checking the Matter 1.6 device type library
+   a third time for real remaining gaps. Reuses firmware/outlet/'s own
+   6-chip power-monitoring subsystem verbatim as this device's whole
+   purpose rather than a bonus feature — a single-endpoint device via the
+   complete `endpoint::electrical_meter::create()` top-level helper,
+   simpler than outlet's own two-endpoint composition. A real question
+   was checked before writing any code, prompted directly by this
+   session's own doorbell/chime correction: does
+   `ElectricalPowerMeasurementDelegateInitCB`'s automatic `config->
+   delegate` construction path (confirmed to genuinely exist, unlike
+   Chime before its own correction) mean firmware/outlet/'s own manual
+   `Instance` construction is ALSO a missed shortcut? Reading esp-matter's
+   own official reference example
+   (`examples/all_device_types_app/main/electrical_measurement/`)
+   directly confirmed it uses the identical manual-construction pattern
+   outlet already follows — so this is reference-grounded, not a second
+   research gap. Wizard integration followed in the same sitting: six new
+   `METER_CHIP_*` COMPONENT_LIBRARY entries (same chips/pins/citations as
+   outlet's own `POWER_*` entries, duplicated rather than reused since
+   each needs its own `defineValue` matching this device type's
+   `ELECTRICAL_METER_CHIP_*` naming, not outlet's `OUTLET_POWER_MONITOR_*`)
+   plus one `extraPickers` entry and a new dial-with-needle icon. This is
+   also the first device type in this repo with an `extraPickers` entry
+   but NO `driver` field at all (every GPIO comes from whichever chip is
+   picked) — confirmed safe by actually running the sandboxed regression
+   check rather than assuming, since no prior device type had tested that
+   combination. Both build-verified in Docker, clean first attempt.
+
+   A forty-seventh device type, `firmware/dimmer-switch/` (client-side
+   On/Off + LevelControl + Identify), followed — the user's choice from a
+   short AskUserQuestion list (Dimmer Switch / Oven / Mode Select).
+   `endpoint::dimmer_switch::create()` is a complete top-level helper
+   needing zero manual cluster-creation code — the simplest client-side
+   endpoint construction in this repo so far. The real, substantial new
+   finding: every prior client-invoke command in this repo (`OnOff::
+   Toggle`, `Chime::PlayChimeSound` with its ChimeID omitted) has sent an
+   empty `"{}"` JSON payload — this device type's own `LevelControl::Step`
+   and `Identify::Identify` commands both need real field values, the
+   first time this repo has needed to. Confirmed the exact
+   `"<field-id>:<type-tag>"` JSON-to-TLV schema by reading esp-matter's
+   own `utils/jsontlv/element_types.h` and `json_to_tlv.cpp` directly
+   (not guessed from the one field esp-matter's own `examples/
+   light_switch/` reference happens to encode) — including that a
+   nullable field needs the `NULL` type tag for a genuine TLV null, which
+   `LevelControl::Step`'s own `TransitionTime` field needs. Field IDs for
+   both commands confirmed directly against connectedhomeip's own
+   generated `Commands.h` for each cluster. Reuses firmware/thermostat/'s
+   own quadrature-decoding rotary-encoder technique and firmware/generic-
+   switch/'s own short/long-press debounce timing verbatim. Wizard
+   integration followed in the same sitting: the rotary encoder's two
+   channels reuse the existing fixed-`extraButtons` mechanism firmware/
+   color-light/'s own Green/Blue channels already establish (no new
+   mechanism needed), plus a new rotary-knob-over-button icon. Both new
+   device types verified with the same Node.js sandboxed regression check
+   this wizard's own history already establishes (19/19 passed across
+   both), then the generated sed commands run for real against copies of
+   both actual `app_main.cpp` files and diffed against the originals — a
+   byte-for-byte match on both. `tools/product-wizard/README.md`'s own
+   device-type list and count were updated to match (forty-four →
+   forty-six). Build-verified in Docker, clean first attempt; not
+   hardware-tested (no rotary encoder/pushbutton hardware physically
+   available when written — and, unlike every server-side device type in
+   this repo, testing this one for real also needs a second, already-
+   commissioned bindable target device on the same fabric).
 2. Implement Matter **OTA** — partially done. All forty-seven firmware
    types ship `CONFIG_ENABLE_OTA_REQUESTOR=y`, which adds the OTA Requestor
    cluster to the root node endpoint entirely via Kconfig — esp-matter's

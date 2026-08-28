@@ -946,6 +946,44 @@ const COMPONENT_LIBRARY = {
     { key: "sda", label: "SDA", defineName: "ADE7953_SDA_GPIO", defaultsByModule: { esp32: 21, esp32c3: 21, esp32c6: 21, esp32s3: 21, esp32h2: 21 } },
     { key: "scl", label: "SCL", defineName: "ADE7953_SCL_GPIO", defaultsByModule: { esp32: 22, esp32c3: 22, esp32c6: 22, esp32s3: 22, esp32h2: 22 } },
   ] },
+  // Electrical Meter's own chip picker — same 6 chips, same real per-chip
+  // pins/protocols/citations as outlet's own Power Monitoring entries
+  // above (firmware/electrical-meter/'s own app_main.cpp reuses that
+  // exact driver code verbatim) — duplicated here rather than reused
+  // because each entry's `defineValue` has to match THIS device type's
+  // own #define name (`ELECTRICAL_METER_CHIP_*`, not outlet's
+  // `OUTLET_POWER_MONITOR_*`); the pins' own `defineName`s are identical
+  // strings either way, since both files declare the exact same chip
+  // driver #defines. No "None" option here — unlike outlet's power
+  // monitoring (a bonus feature on a plug-in outlet), a meter with no
+  // chip selected would be a non-functional device, so BL0942 (the most
+  // accurate of the six) is this device type's own shipped default.
+  METER_CHIP_BL0942: { name: "BL0942", category: "meter-chip", bus: "UART", verified: false, defineValue: "ELECTRICAL_METER_CHIP_BL0942", pins: [
+    { key: "rx", label: "UART RX", defineName: "BL0942_UART_RX_GPIO", defaultsByModule: { esp32: 16, esp32c2: 16, esp32c3: 16, esp32c5: 16, esp32c6: 16, esp32c61: 16, esp32s3: 16, esp32h2: 16 } },
+    { key: "tx", label: "UART TX", defineName: "BL0942_UART_TX_GPIO", defaultsByModule: { esp32: 17, esp32c2: 17, esp32c3: 17, esp32c5: 17, esp32c6: 17, esp32c61: 17, esp32s3: 17, esp32h2: 17 } },
+  ] },
+  METER_CHIP_BL0937: { name: "BL0937", category: "meter-chip", bus: "GPIO (pulse)", verified: false, defineValue: "ELECTRICAL_METER_CHIP_BL0937", pins: [
+    { key: "sel", label: "SEL", defineName: "PULSE_METER_SEL_GPIO", defaultsByModule: { esp32: 25, esp32c2: 25, esp32c3: 25, esp32c5: 25, esp32c6: 25, esp32c61: 25, esp32s3: 25, esp32h2: 25 } },
+    { key: "cf", label: "CF (power pulse)", defineName: "PULSE_METER_CF_GPIO", defaultsByModule: { esp32: 26, esp32c2: 26, esp32c3: 26, esp32c5: 26, esp32c6: 26, esp32c61: 26, esp32s3: 26, esp32h2: 26 } },
+    { key: "cf1", label: "CF1 (V/I pulse)", defineName: "PULSE_METER_CF1_GPIO", defaultsByModule: { esp32: 27, esp32c2: 27, esp32c3: 27, esp32c5: 27, esp32c6: 27, esp32c61: 27, esp32s3: 27, esp32h2: 27 } },
+  ] },
+  METER_CHIP_HLW8012: { name: "HLW8012", category: "meter-chip", bus: "GPIO (pulse)", verified: false, defineValue: "ELECTRICAL_METER_CHIP_HLW8012", pins: [
+    { key: "sel", label: "SEL", defineName: "PULSE_METER_SEL_GPIO", defaultsByModule: { esp32: 25, esp32c2: 25, esp32c3: 25, esp32c5: 25, esp32c6: 25, esp32c61: 25, esp32s3: 25, esp32h2: 25 } },
+    { key: "cf", label: "CF (power pulse)", defineName: "PULSE_METER_CF_GPIO", defaultsByModule: { esp32: 26, esp32c2: 26, esp32c3: 26, esp32c5: 26, esp32c6: 26, esp32c61: 26, esp32s3: 26, esp32h2: 26 } },
+    { key: "cf1", label: "CF1 (V/I pulse)", defineName: "PULSE_METER_CF1_GPIO", defaultsByModule: { esp32: 27, esp32c2: 27, esp32c3: 27, esp32c5: 27, esp32c6: 27, esp32c61: 27, esp32s3: 27, esp32h2: 27 } },
+  ] },
+  METER_CHIP_CSE7759: { name: "CSE7759", category: "meter-chip", bus: "GPIO (pulse)", verified: false, defineValue: "ELECTRICAL_METER_CHIP_CSE7759", note: "Assumed to share HLW8012's formula (same chip family) per a secondary source — not independently confirmed against CSE7759's own datasheet.", pins: [
+    { key: "sel", label: "SEL", defineName: "PULSE_METER_SEL_GPIO", defaultsByModule: { esp32: 25, esp32c2: 25, esp32c3: 25, esp32c5: 25, esp32c6: 25, esp32c61: 25, esp32s3: 25, esp32h2: 25 } },
+    { key: "cf", label: "CF (power pulse)", defineName: "PULSE_METER_CF_GPIO", defaultsByModule: { esp32: 26, esp32c2: 26, esp32c3: 26, esp32c5: 26, esp32c6: 26, esp32c61: 26, esp32s3: 26, esp32h2: 26 } },
+    { key: "cf1", label: "CF1 (V/I pulse)", defineName: "PULSE_METER_CF1_GPIO", defaultsByModule: { esp32: 27, esp32c2: 27, esp32c3: 27, esp32c5: 27, esp32c6: 27, esp32c61: 27, esp32s3: 27, esp32h2: 27 } },
+  ] },
+  METER_CHIP_CSE7766: { name: "CSE7766", category: "meter-chip", bus: "UART", verified: false, defineValue: "ELECTRICAL_METER_CHIP_CSE7766", pins: [
+    { key: "rx", label: "UART RX", defineName: "CSE7766_UART_RX_GPIO", defaultsByModule: { esp32: 16, esp32c2: 16, esp32c3: 16, esp32c5: 16, esp32c6: 16, esp32c61: 16, esp32s3: 16, esp32h2: 16 } },
+  ] },
+  METER_CHIP_ADE7953: { name: "ADE7953", category: "meter-chip", bus: "I2C", verified: false, defineValue: "ELECTRICAL_METER_CHIP_ADE7953", note: "Least-certain of the six power-monitor drivers — only partially confirmed against Analog Devices' own datasheet across several attempts; double-check before relying on it.", pins: [
+    { key: "sda", label: "SDA", defineName: "ADE7953_SDA_GPIO", defaultsByModule: { esp32: 21, esp32c2: 21, esp32c3: 21, esp32c5: 21, esp32c6: 21, esp32c61: 21, esp32s3: 21, esp32h2: 21 } },
+    { key: "scl", label: "SCL", defineName: "ADE7953_SCL_GPIO", defaultsByModule: { esp32: 22, esp32c2: 22, esp32c3: 22, esp32c5: 22, esp32c6: 22, esp32c61: 22, esp32s3: 22, esp32h2: 22 } },
+  ] },
   // Outlet's Power Monitoring picker's `pins` mechanism (chip choice ->
   // extra GPIO fields) turns out to fit firmware/color-light/'s color-mode
   // choice just as well: RGB vs RGBW vs RGBWW isn't a variable-count or
@@ -3258,6 +3296,88 @@ const DEVICE_TYPES = [
       defaultsByModule: { esp32: 2, esp32c2: 2, esp32c3: 2, esp32c5: 2, esp32c6: 2, esp32c61: 2, esp32s3: 2, esp32h2: 2 },
     },
   },
+  {
+    id: "electrical-meter",
+    name: "Electrical Meter",
+    desc: "Matter Electrical Meter: a standalone whole-circuit/whole-home energy meter — Electrical Power Measurement + Electrical Energy Measurement, reusing firmware/outlet/'s own 6-chip power-monitoring subsystem (BL0942/BL0937/HLW8012/CSE7759/CSE7766/ADE7953) verbatim as this device's primary function. Reference device in firmware/electrical-meter/.",
+    shortDesc: "Whole-circuit power/energy meter, 6 chip choices.",
+    // Matches project(matter_electrical_meter) in
+    // firmware/electrical-meter/CMakeLists.txt. No separate `driver`
+    // field at all — unlike firmware/outlet/'s own entry (a relay output
+    // plus an optional Power Monitoring extraPicker), every GPIO this
+    // device type needs comes from whichever chip is picked here, since
+    // metering is this device's entire purpose, not a bonus feature.
+    extraPickers: [
+      {
+        key: "meterChip",
+        label: "Power Monitor Chip",
+        prompt: "Pick the chip your board actually has wired up",
+        options: ["METER_CHIP_BL0942", "METER_CHIP_BL0937", "METER_CHIP_HLW8012", "METER_CHIP_CSE7759", "METER_CHIP_CSE7766", "METER_CHIP_ADE7953"],
+        defineName: "ELECTRICAL_METER_CHIP",
+      },
+    ],
+    identify: {
+      summary: "GPIO (digital output)",
+      fieldLabel: "Identify LED GPIO pin",
+      blockTitle: "Identify LED · digital output",
+      filePath: "firmware/electrical-meter/main/app_main.cpp",
+      defineName: "IDENTIFY_LED_GPIO",
+      currentGpio: 2,
+      defaultsByModule: { esp32: 2, esp32c2: 2, esp32c3: 2, esp32c5: 2, esp32c6: 2, esp32c61: 2, esp32s3: 2, esp32h2: 2 },
+    },
+  },
+  {
+    id: "dimmer-switch",
+    name: "Dimmer Switch",
+    desc: "Matter Dimmer Switch: a client-side remote dimmer — a short button press sends On/Off::Toggle, a long press sends Identify to the bound target, and a rotary encoder sends LevelControl::Step (brightness) per detent. Requires a controller (e.g. Home Assistant) to set up a Binding-cluster entry to an actual light first. Reference device in firmware/dimmer-switch/.",
+    shortDesc: "Button + rotary encoder remote dimmer.",
+    // Matches project(matter_dimmer_switch) in
+    // firmware/dimmer-switch/CMakeLists.txt. Three GPIOs, none optional —
+    // the on/off button (driver), and the rotary encoder's two quadrature
+    // channels via a fixed 1-entry extraButtons array (same "fixed set,
+    // not a variable count" mode firmware/color-light/'s own Green/Blue
+    // channels already establish for hasVariableButtonCount-less
+    // extraButtons) — plus identify.
+    binName: "matter_dimmer_switch.bin",
+    driver: {
+      summary: "GPIO (digital input, active-low)",
+      fieldLabel: "On/off button GPIO pin",
+      blockTitle: "On/off button · digital GPIO input",
+      filePath: "firmware/dimmer-switch/main/app_main.cpp",
+      defineName: "DIMMER_SWITCH_BUTTON_GPIO",
+      currentGpio: 4,
+      defaultsByModule: { esp32: 4, esp32c2: 4, esp32c3: 4, esp32c5: 4, esp32c6: 4, esp32c61: 4, esp32s3: 4, esp32h2: 4 },
+    },
+    extraButtons: [
+      {
+        label: "Rotary Encoder Channel A",
+        fieldLabel: "Rotary encoder channel A GPIO pin",
+        blockTitle: "Rotary encoder · channel A (digital input)",
+        filePath: "firmware/dimmer-switch/main/app_main.cpp",
+        defineName: "ROTARY_ENCODER_A_GPIO",
+        currentGpio: 16,
+        defaultsByModule: { esp32: 16, esp32c2: 16, esp32c3: 16, esp32c5: 16, esp32c6: 16, esp32c61: 16, esp32s3: 16, esp32h2: 16 },
+      },
+      {
+        label: "Rotary Encoder Channel B",
+        fieldLabel: "Rotary encoder channel B GPIO pin",
+        blockTitle: "Rotary encoder · channel B (digital input)",
+        filePath: "firmware/dimmer-switch/main/app_main.cpp",
+        defineName: "ROTARY_ENCODER_B_GPIO",
+        currentGpio: 17,
+        defaultsByModule: { esp32: 17, esp32c2: 17, esp32c3: 17, esp32c5: 17, esp32c6: 17, esp32c61: 17, esp32s3: 17, esp32h2: 17 },
+      },
+    ],
+    identify: {
+      summary: "GPIO (digital output)",
+      fieldLabel: "Identify LED GPIO pin",
+      blockTitle: "Identify LED · digital output",
+      filePath: "firmware/dimmer-switch/main/app_main.cpp",
+      defineName: "IDENTIFY_LED_GPIO",
+      currentGpio: 2,
+      defaultsByModule: { esp32: 2, esp32c2: 2, esp32c3: 2, esp32c5: 2, esp32c6: 2, esp32c61: 2, esp32s3: 2, esp32h2: 2 },
+    },
+  },
 ];
 
 function findDeviceType(id) {
@@ -3920,6 +4040,26 @@ const DEVICE_TYPE_ICONS = {
     <path d="M24 30v-8"/>
     <path d="M24 22q9-7 16 2" stroke-width="2"/>
     <path d="M24 22q-9-7-16 2" stroke-width="2"/>
+  </svg>`,
+  // A utility-meter dial face (circle + a single sweeping needle) — the
+  // classic analog power-meter pictogram, distinct from outlet's own
+  // bare-circle-plus-dots plug motif and from pressure-sensor's own gauge
+  // (needle here reads a fixed "mid-scale" angle, not evocative of a
+  // pressure gauge's own full sweep range).
+  "electrical-meter": `<svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+    <circle cx="24" cy="24" r="17"/>
+    <path d="M24 24l8-8" stroke-width="3"/>
+    <circle cx="24" cy="24" r="2.5" fill="currentColor" stroke="none"/>
+  </svg>`,
+  // A rotary knob (circle with a pointer tick) above a small pushbutton
+  // bar — the two real controls this device actually has (turn to dim,
+  // press to toggle), distinct from generic-switch's own plain button
+  // and from dimmable-light's own bulb-plus-slider (this icon shows the
+  // physical remote control itself, not the light it controls).
+  "dimmer-switch": `<svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+    <circle cx="24" cy="18" r="11"/>
+    <path d="M24 18V9"/>
+    <rect x="15" y="35" width="18" height="7" rx="3.5"/>
   </svg>`,
 };
 
