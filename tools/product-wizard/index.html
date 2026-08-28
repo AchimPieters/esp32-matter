@@ -3036,6 +3036,126 @@ const DEVICE_TYPES = [
       defaultsByModule: { esp32: 2, esp32c2: 2, esp32c3: 2, esp32c5: 2, esp32c6: 2, esp32c61: 2, esp32s3: 2, esp32h2: 2 },
     },
   },
+  {
+    id: "color-temperature-light",
+    name: "Color Temperature Light",
+    desc: "Matter tunable-white light: On/Off + LevelControl (brightness) + ColorControl (ColorTemperature only — no Hue/Saturation or XY at all, the correct, spec-conformant device type for hardware that only blends cool/warm white, unlike firmware/color-light/'s/firmware/addressable-light/'s own ExtendedColorLight). Two PWM channels (cool white + warm white) drive the output. Reference device in firmware/color-temperature-light/.",
+    shortDesc: "Tunable white, cool + warm PWM channels.",
+    // Matches project(matter_color_temperature_light) in
+    // firmware/color-temperature-light/CMakeLists.txt. Same driver+
+    // secondary+identify shape as firmware/window-covering/'s own entry
+    // (two main GPIOs, not a relay pair here but two LEDC PWM channels) —
+    // no componentOptions/extraPickers needed, since this device type has
+    // exactly one hardware shape (cool + warm white channels), not a chip
+    // choice. See its own app_main.cpp header comment for why
+    // endpoint::color_temperature_light::create() is a complete top-level
+    // helper here, unlike color-light's/addressable-light's own
+    // hand-assembled ExtendedColorLight endpoints.
+    binName: "matter_color_temperature_light.bin",
+    driver: {
+      summary: "GPIO (PWM output, LEDC)",
+      fieldLabel: "Cool white channel GPIO pin",
+      blockTitle: "Cool white · PWM output (LEDC)",
+      filePath: "firmware/color-temperature-light/main/app_main.cpp",
+      defineName: "COLOR_TEMPERATURE_LIGHT_COOL_WHITE_GPIO",
+      currentGpio: 2,
+      defaultsByModule: { esp32: 2, esp32c2: 2, esp32c3: 2, esp32c5: 2, esp32c6: 2, esp32c61: 2, esp32s3: 2, esp32h2: 2 },
+    },
+    secondary: {
+      label: "Warm white channel",
+      summary: "GPIO (PWM output, LEDC)",
+      fieldLabel: "Warm white channel GPIO pin",
+      blockTitle: "Warm white · PWM output (LEDC)",
+      filePath: "firmware/color-temperature-light/main/app_main.cpp",
+      defineName: "COLOR_TEMPERATURE_LIGHT_WARM_WHITE_GPIO",
+      currentGpio: 4,
+      defaultsByModule: { esp32: 4, esp32c2: 4, esp32c3: 4, esp32c5: 4, esp32c6: 4, esp32c61: 4, esp32s3: 4, esp32h2: 4 },
+    },
+    identify: {
+      summary: "GPIO (digital output)",
+      fieldLabel: "Identify LED GPIO pin",
+      blockTitle: "Identify LED · digital output",
+      filePath: "firmware/color-temperature-light/main/app_main.cpp",
+      defineName: "IDENTIFY_LED_GPIO",
+      currentGpio: 15,
+      defaultsByModule: { esp32: 15, esp32c2: 15, esp32c3: 15, esp32c5: 15, esp32c6: 15, esp32c61: 15, esp32s3: 15, esp32h2: 15 },
+    },
+  },
+  {
+    id: "closure",
+    name: "Closure",
+    desc: "Matter Closure (garage door / roller shutter / awning): two relay outputs (open/close) driving a reversing motor, with time-based position tracking (no position sensor assumed) — this repo's first device type over the Closure Control cluster (Matter 1.6). Positioning-only scope: reports FullyClosed/FullyOpened/PartiallyOpened, the same \"smallest reasonable next step\" scope firmware/window-covering/'s own Lift-only choice already established. Reference device in firmware/closure/.",
+    shortDesc: "Two relays drive a garage door / roller shutter motor.",
+    // Matches project(matter_closure) in firmware/closure/CMakeLists.txt.
+    // Same driver+secondary+identify shape as firmware/window-covering/'s
+    // own entry (two relay GPIOs — driver = open, secondary = close — plus
+    // identify) — no componentOptions/extraPickers needed, same reasoning
+    // as window-covering's own entry: the 2-relay wiring isn't a real
+    // choice. See this device type's own app_main.cpp header comment for
+    // the real, OPPOSITE-of-usual delegate-registration-ordering
+    // requirement ClosureControl needs (before esp_matter::start(), not
+    // after) — a firmware-only detail, no wizard-side implication.
+    binName: "matter_closure.bin",
+    driver: {
+      summary: "GPIO (relay, active-LOW)",
+      fieldLabel: "Open relay GPIO pin",
+      blockTitle: "Open relay · digital output",
+      filePath: "firmware/closure/main/app_main.cpp",
+      defineName: "CLOSURE_OPEN_GPIO",
+      currentGpio: 4,
+      defaultsByModule: { esp32: 4, esp32c2: 4, esp32c3: 4, esp32c5: 4, esp32c6: 4, esp32c61: 4, esp32s3: 4, esp32h2: 4 },
+    },
+    secondary: {
+      label: "Close relay",
+      summary: "GPIO (relay, active-LOW)",
+      fieldLabel: "Close relay GPIO pin",
+      blockTitle: "Close relay · digital output",
+      filePath: "firmware/closure/main/app_main.cpp",
+      defineName: "CLOSURE_CLOSE_GPIO",
+      currentGpio: 5,
+      defaultsByModule: { esp32: 5, esp32c2: 5, esp32c3: 5, esp32c5: 5, esp32c6: 5, esp32c61: 5, esp32s3: 5, esp32h2: 5 },
+    },
+    identify: {
+      summary: "GPIO (digital output)",
+      fieldLabel: "Identify LED GPIO pin",
+      blockTitle: "Identify LED · digital output",
+      filePath: "firmware/closure/main/app_main.cpp",
+      defineName: "IDENTIFY_LED_GPIO",
+      currentGpio: 2,
+      defaultsByModule: { esp32: 2, esp32c2: 2, esp32c3: 2, esp32c5: 2, esp32c6: 2, esp32c61: 2, esp32s3: 2, esp32h2: 2 },
+    },
+  },
+  {
+    id: "microwave-oven",
+    name: "Microwave Oven",
+    desc: "Matter Microwave Oven: MicrowaveOvenMode (Normal/Defrost) + MicrowaveOvenControl (cook time + power level, PowerAsNumber) + OperationalState with a real live countdown, all layered on top of a single relay output driven as a duty cycle over a repeating window (the same on/off-cycling technique real consumer microwaves use for \"power level\"). The relay is meant to gate an already-certified OEM/commercial cooking module's own external enable input — never a consumer microwave's own high-voltage/interlock internals directly; see firmware/microwave-oven/main/app_main.cpp's own prominent safety note. Reference device in firmware/microwave-oven/.",
+    shortDesc: "Relay-gated cook module, timed + power-level cook cycle.",
+    // Matches project(matter_microwave_oven) in
+    // firmware/microwave-oven/CMakeLists.txt. Same single-GPIO-plus-
+    // identify shape as firmware/generic-switch/'s/firmware/rain-sensor/'s
+    // own entries — the cook-cycle state machine (countdown, duty-cycle
+    // timing) is all in-firmware logic with no GPIOs of its own beyond the
+    // one relay.
+    binName: "matter_microwave_oven.bin",
+    driver: {
+      summary: "GPIO (relay, active-LOW)",
+      fieldLabel: "Cook relay GPIO pin",
+      blockTitle: "Cook relay · digital output",
+      filePath: "firmware/microwave-oven/main/app_main.cpp",
+      defineName: "MICROWAVE_COOK_RELAY_GPIO",
+      currentGpio: 4,
+      defaultsByModule: { esp32: 4, esp32c2: 4, esp32c3: 4, esp32c5: 4, esp32c6: 4, esp32c61: 4, esp32s3: 4, esp32h2: 4 },
+    },
+    identify: {
+      summary: "GPIO (digital output)",
+      fieldLabel: "Identify LED GPIO pin",
+      blockTitle: "Identify LED · digital output",
+      filePath: "firmware/microwave-oven/main/app_main.cpp",
+      defineName: "IDENTIFY_LED_GPIO",
+      currentGpio: 2,
+      defaultsByModule: { esp32: 2, esp32c2: 2, esp32c3: 2, esp32c5: 2, esp32c6: 2, esp32c61: 2, esp32s3: 2, esp32h2: 2 },
+    },
+  },
 ];
 
 function findDeviceType(id) {
@@ -3622,6 +3742,50 @@ const DEVICE_TYPE_ICONS = {
   "humidity-sensor": `<svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
     <path d="M13 24a7 7 0 0 1 0-14a8 8 0 0 1 15-3a6 6 0 0 1 6 6a6 6 0 0 1-2 12H13Z"/>
     <path d="M24 28c3 3.5 3 7.5 0 11c-3-3.5-3-7.5 0-11Z" fill="currentColor" stroke="none"/>
+  </svg>`,
+  // Same bulb-plus-base shape as dimmable-light's own icon (visual family:
+  // "a light, but with one more control"), but with the slider thumb
+  // centered on its track instead of parked at one end — a brightness
+  // slider only ever has one meaningful rest position (fully bright, at
+  // the far end); a color-temperature slider's natural rest position is
+  // the middle (neutral white, between warm and cool), which is exactly
+  // what distinguishes this icon from dimmable-light's at a glance.
+  "color-temperature-light": `<svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+    <circle cx="24" cy="15" r="8.5"/>
+    <path d="M19.5 25.5h9"/>
+    <path d="M20.5 29h7"/>
+    <path d="M10 39h28"/>
+    <circle cx="24" cy="39" r="3" fill="currentColor" stroke="none"/>
+  </svg>`,
+  // A garage-door/roller-shutter body (fewer, thicker panel lines than
+  // window-covering's own 3 thin blind-slat lines, so the two read as
+  // different hardware at a glance) plus heat-pump's own up/down
+  // double-arrow motif, reused here for the same reason it works there —
+  // a real, physical bidirectional motor — rather than window-covering's
+  // own arrow-free treatment (that device type's own icon predates this
+  // motif being introduced).
+  closure: `<svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+    <rect x="5" y="8" width="26" height="32" rx="4"/>
+    <path d="M5 18h26" stroke-width="2"/>
+    <path d="M5 28h26" stroke-width="2"/>
+    <path d="M40 14v20"/>
+    <path d="M40 14l-4 5"/>
+    <path d="M40 14l4 5"/>
+    <path d="M40 34l-4-5"/>
+    <path d="M40 34l4-5"/>
+  </svg>`,
+  // An oven body with a door window and two wavy lines standing in for
+  // the actual microwave radiation inside it — the one visual idea unique
+  // to this device type — plus two small control-panel dots outside the
+  // window, distinct from outlet's own bare-circle-plus-dots motif by the
+  // surrounding oven-body rectangle.
+  "microwave-oven": `<svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+    <rect x="4" y="10" width="40" height="28" rx="4"/>
+    <rect x="8" y="14" width="26" height="20" rx="2"/>
+    <path d="M13 20q3-4 6 0t6 0t6 0" stroke-width="2"/>
+    <path d="M13 27q3-4 6 0t6 0t6 0" stroke-width="2"/>
+    <circle cx="39" cy="19" r="1.8" fill="currentColor" stroke="none"/>
+    <circle cx="39" cy="27" r="1.8" fill="currentColor" stroke="none"/>
   </svg>`,
 };
 

@@ -51,9 +51,12 @@ open tools/product-wizard/index.html
   "Humidity Sensor" (`firmware/humidity-sensor/`), "Water Freeze
   Detector" (`firmware/water-freeze-detector/`), "Soil Sensor"
   (`firmware/soil-sensor/`), "Dimmable Plug-In Unit"
-  (`firmware/dimmable-plug/`), or "Rain Sensor" (`firmware/rain-sensor/`).
+  (`firmware/dimmable-plug/`), "Rain Sensor" (`firmware/rain-sensor/`),
+  "Color Temperature Light" (`firmware/color-temperature-light/`),
+  "Closure" (`firmware/closure/`), or "Microwave Oven"
+  (`firmware/microwave-oven/`).
   All
-  thirty-eight are real, buildable
+  forty-one are real, buildable
   firmware, not just UI placeholders (`firmware/camera/`, this repo's
   twelfth device type, is deliberately NOT offered here — see its own
   section further down for why: its two-chip/two-firmware/external-SDK

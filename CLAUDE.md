@@ -4769,11 +4769,12 @@ firmware/microwave-oven/  Microwave Oven — forty-second device type, and this
                            this device type physically available when
                            written — see the safety note above for why a
                            typical consumer microwave isn't a substitute).
-                           Not yet integrated into `tools/product-wizard/` —
-                           see "Open next steps" below; firmware/
-                           color-temperature-light/ and firmware/closure/
-                           (the two device types immediately before this one)
-                           are in the same un-integrated state.
+                           Integrated into `tools/product-wizard/` in the
+                           same pass that closed out this device type's own
+                           wizard-integration debt alongside firmware/
+                           color-temperature-light/'s and firmware/closure/'s
+                           — see "Open next steps" below for the full detail
+                           on all three at once.
   partitions.csv           same OTA + fctry layout as firmware/light/
   sdkconfig.defaults        same as firmware/light/
 tools/
@@ -6547,11 +6548,53 @@ SECURITY.md               flash encryption / secure boot / signed OTA guidance
    assembling a ModeBase option table with string-literal labels. Build-
    verified in Docker; not hardware-tested (no OEM microwave cooking module
    or relay hardware for this device type physically available when
-   written). Not yet wired into `tools/product-wizard/` — neither is
-   firmware/color-temperature-light/ or firmware/closure/, the two device
-   types immediately before it; all three are real, accumulated wizard-
-   integration debt to close in a future session, not a gap specific to
-   this one.
+   written).
+
+   Wizard integration for all three un-wired device types
+   (firmware/color-temperature-light/, firmware/closure/, and firmware/
+   microwave-oven/ itself) was closed out in one pass immediately after,
+   rather than left as debt: none needed any new wizard mechanism — each
+   fits an existing `driver`/`secondary`/`identify` shape this wizard
+   already has entries for. Color Temperature Light and Closure both
+   reuse firmware/window-covering/'s own `driver`+`secondary`+`identify`
+   shape (two independent GPIOs — cool/warm PWM channels for the former,
+   open/close relays for the latter — plus identify); Microwave Oven
+   reuses the simpler `driver`+`identify` shape firmware/generic-switch/'s
+   and firmware/rain-sensor/'s own entries already use (one relay, no
+   second pin). Each also got its own hand-drawn line-art icon: Color
+   Temperature Light reuses Dimmable Light's own bulb-plus-slider motif
+   but with the slider thumb centered rather than parked at one end (a
+   color-temperature slider's natural rest position is neutral white, in
+   the middle — the detail that tells the two icons apart at a glance);
+   Closure reuses Heat Pump's own up/down double-arrow motif (a real,
+   physical bidirectional motor) on a garage-door-style panelled body,
+   deliberately fewer/thicker panel lines than Window Covering's own thin
+   blind-slat lines so the two read as different hardware; Microwave Oven
+   is an oven body with a door window and two wavy lines standing in for
+   the actual microwave radiation, plus two small control-panel dots.
+   Verified with a Node.js sandboxed regression check (device-type lookup
+   for all three; `isProductComplete` both before any render and after
+   `renderConfigureDevice`'s own default-fill; `renderConfigureDevice`
+   output containing every field's own label; the exact generated sed
+   commands for all 7 `#define`s across the three device types) — one
+   real bug was caught and fixed in the *check itself*, not the wizard: an
+   early pass used the product object's `module` field, which doesn't
+   exist on this wizard's own `state.currentProduct` shape (the real field
+   is `target`), so every "after default-fill" assertion falsely failed
+   against a hardcoded generic 2/4/4 fallback rather than each device
+   type's real per-module defaults — corrected before trusting any of the
+   check's results. Those exact sed commands were then run for real
+   against copies of all three actual `app_main.cpp` files and diffed
+   against the originals — a byte-for-byte match on all three (every GPIO
+   already shipped at its wizard default, confirming a correct no-op
+   rather than a rewrite). No headless-Chromium screenshot pass this
+   time (none was available in this environment) — judged acceptable
+   since all three reuse mechanisms already screenshot-verified when
+   first built (the `driver`/`secondary`/`identify` shape itself, and the
+   icon-reuse precedents named above), rather than introducing a new
+   visual shape of their own. `tools/product-wizard/README.md`'s own
+   device-type list and buildable-firmware count were updated to match
+   (thirty-eight → forty-one).
 2. Implement Matter **OTA** — partially done. All forty-two firmware
    types ship `CONFIG_ENABLE_OTA_REQUESTOR=y`, which adds the OTA Requestor
    cluster to the root node endpoint entirely via Kconfig — esp-matter's
