@@ -55,9 +55,10 @@ open tools/product-wizard/index.html
   "Color Temperature Light" (`firmware/color-temperature-light/`),
   "Closure" (`firmware/closure/`), "Microwave Oven"
   (`firmware/microwave-oven/`), "Doorbell" (`firmware/doorbell/`), or
-  "Chime" (`firmware/chime/`).
+  "Chime" (`firmware/chime/`), or "Irrigation System"
+  (`firmware/irrigation-system/`).
   All
-  forty-three are real, buildable
+  forty-four are real, buildable
   firmware, not just UI placeholders (`firmware/camera/`, this repo's
   twelfth device type, is deliberately NOT offered here — see its own
   section further down for why: its two-chip/two-firmware/external-SDK

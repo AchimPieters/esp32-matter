@@ -7071,6 +7071,19 @@ SECURITY.md               flash encryption / secure boot / signed OTA guidance
    source before writing any code, rather than discovering either by a
    failed build; not hardware-tested (no relay/YF-S201-class sensor
    hardware for this device type physically available when written).
+
+   Wizard integration followed immediately after — no new wizard
+   mechanism needed: the same `driver`+`secondary`+`identify` shape
+   firmware/window-covering/'s own entry already uses (valve relay +
+   flow-sensor pulse pin + identify). New icon: a pop-up sprinkler head
+   spraying two curved water arcs — the standard garden-irrigation
+   pictogram, distinct from Flow Sensor's own in-line-pipe-plus-turbine
+   motif and Valve's own pipe-TEE shape. Verified with the same Node.js
+   sandboxed regression check (9/9 passed), then the generated sed
+   commands run for real against a copy of the actual `app_main.cpp` and
+   diffed against the original — a byte-for-byte match.
+   `tools/product-wizard/README.md`'s own device-type list and count
+   were updated to match (forty-three → forty-four).
 2. Implement Matter **OTA** — partially done. All forty-five firmware
    types ship `CONFIG_ENABLE_OTA_REQUESTOR=y`, which adds the OTA Requestor
    cluster to the root node endpoint entirely via Kconfig — esp-matter's

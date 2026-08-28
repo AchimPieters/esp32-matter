@@ -3217,6 +3217,47 @@ const DEVICE_TYPES = [
       defaultsByModule: { esp32: 2, esp32c2: 2, esp32c3: 2, esp32c5: 2, esp32c6: 2, esp32c61: 2, esp32s3: 2, esp32h2: 2 },
     },
   },
+  {
+    id: "irrigation-system",
+    name: "Irrigation System",
+    desc: "Matter Irrigation System: a single-zone sprinkler/garden-watering valve controller — OperationalState (Start/Stop/Pause/Resume, same generic cluster as dishwasher/laundry washer/laundry dryer, with a real live countdown) + Flow Measurement, reusing firmware/flow-sensor/'s own YF-S201-class pulse-counting driver verbatim. Reference device in firmware/irrigation-system/.",
+    shortDesc: "Relay-driven valve + flow sensor, timed watering cycle.",
+    // Matches project(matter_irrigation_system) in
+    // firmware/irrigation-system/CMakeLists.txt. Same driver+secondary+
+    // identify shape as firmware/window-covering/'s own entry (two
+    // independent GPIOs — the valve relay and the flow sensor's pulse
+    // input — plus identify) — no componentOptions/extraPickers needed,
+    // since this device type has exactly one hardware shape.
+    binName: "matter_irrigation_system.bin",
+    driver: {
+      summary: "GPIO (relay, active-LOW)",
+      fieldLabel: "Valve relay GPIO pin",
+      blockTitle: "Valve relay · digital output",
+      filePath: "firmware/irrigation-system/main/app_main.cpp",
+      defineName: "IRRIGATION_VALVE_RELAY_GPIO",
+      currentGpio: 4,
+      defaultsByModule: { esp32: 4, esp32c2: 4, esp32c3: 4, esp32c5: 4, esp32c6: 4, esp32c61: 4, esp32s3: 4, esp32h2: 4 },
+    },
+    secondary: {
+      label: "Flow sensor pulse input",
+      summary: "GPIO (digital input, pulse counting)",
+      fieldLabel: "Flow sensor pulse GPIO pin",
+      blockTitle: "Flow sensor pulse · digital GPIO input",
+      filePath: "firmware/irrigation-system/main/app_main.cpp",
+      defineName: "IRRIGATION_FLOW_SENSOR_GPIO",
+      currentGpio: 5,
+      defaultsByModule: { esp32: 5, esp32c2: 5, esp32c3: 5, esp32c5: 5, esp32c6: 5, esp32c61: 5, esp32s3: 5, esp32h2: 5 },
+    },
+    identify: {
+      summary: "GPIO (digital output)",
+      fieldLabel: "Identify LED GPIO pin",
+      blockTitle: "Identify LED · digital output",
+      filePath: "firmware/irrigation-system/main/app_main.cpp",
+      defineName: "IDENTIFY_LED_GPIO",
+      currentGpio: 2,
+      defaultsByModule: { esp32: 2, esp32c2: 2, esp32c3: 2, esp32c5: 2, esp32c6: 2, esp32c61: 2, esp32s3: 2, esp32h2: 2 },
+    },
+  },
 ];
 
 function findDeviceType(id) {
@@ -3867,6 +3908,18 @@ const DEVICE_TYPE_ICONS = {
     <path d="M20 35a4 4 0 0 0 8 0"/>
     <path d="M38 16q3 4 3 8t-3 8" stroke-width="2"/>
     <path d="M8 16q-3 4-3 8t3 8" stroke-width="2"/>
+  </svg>`,
+  // A pop-up sprinkler head (a small body on the ground line with a
+  // vertical riser) spraying two curved water arcs — the standard garden-
+  // irrigation pictogram, distinct from flow-sensor's own in-line-pipe-
+  // plus-turbine motif (this device is the valve/sprinkler end, not an
+  // in-line flow meter) and from valve's own pipe-TEE-with-handle shape.
+  "irrigation-system": `<svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M6 38h36" stroke-width="2"/>
+    <rect x="19" y="30" width="10" height="8" rx="2"/>
+    <path d="M24 30v-8"/>
+    <path d="M24 22q9-7 16 2" stroke-width="2"/>
+    <path d="M24 22q-9-7-16 2" stroke-width="2"/>
   </svg>`,
 };
 
