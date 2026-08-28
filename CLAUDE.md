@@ -4649,6 +4649,133 @@ firmware/closure/         Closure (garage door / roller shutter / awning) —
                            device type physically available when written).
   partitions.csv           same OTA + fctry layout as firmware/light/
   sdkconfig.defaults        same as firmware/light/
+firmware/microwave-oven/  Microwave Oven — forty-second device type, and this
+                           repo's first over the MicrowaveOvenMode +
+                           MicrowaveOvenControl clusters, layered on top of the
+                           same generic OperationalState cluster firmware/
+                           dishwasher/, firmware/laundry-washer/, and firmware/
+                           laundry-dryer/ already established.
+  main/app_main.cpp        *** Ships with a prominent safety note at the top
+                           of the file, worth repeating here: this firmware
+                           does NOT implement, control, or interface with a
+                           real consumer microwave's own high-voltage
+                           magnetron/transformer or door-interlock safety-
+                           switch system — that machinery stays entirely
+                           internal to a certified appliance. `MICROWAVE_
+                           COOK_RELAY_GPIO` is designed to gate an ALREADY-
+                           BUILT, already-certified OEM/commercial cooking
+                           MODULE's own external remote-start/enable input
+                           (the kind sold for vending machines/restaurant
+                           equipment/commercial retrofit kits) — same "gate
+                           an existing device's own control input, never its
+                           unsafe internals directly" framing firmware/
+                           thermostat/'s boiler RELAY output and firmware/
+                           evse/'s own relay already establish. A typical
+                           countertop consumer microwave has no such external
+                           control input and is explicitly NOT what this
+                           firmware is meant to be wired into. ***
+                           Confirmed directly against the CSA's own
+                           data_model/1.6/device_types/MicrowaveOven.xml
+                           (0x0079): Identify is only optionalConform (added
+                           manually, same as firmware/dishwasher/'s/firmware/
+                           water-heater/'s own device types);
+                           MicrowaveOvenMode + MicrowaveOvenControl +
+                           OperationalState are all mandatoryConform — and,
+                           unlike the base OperationalState cluster (where
+                           CountdownTime is merely optional, hence firmware/
+                           dishwasher/'s own documented null-stub
+                           `GetCountdownTime()`), this device type makes
+                           CountdownTime itself mandatoryConform too, so this
+                           file implements a real, live countdown instead.
+                           `endpoint::microwave_oven::create()` confirmed
+                           complete/ready-to-use by reading esp-matter's own
+                           legacy `microwave_oven::add()` directly —
+                           Descriptor (via `common::create<T>()`) +
+                           OperationalState (CountdownTime + OperationCompletion
+                           pre-registered) + MicrowaveOvenMode +
+                           MicrowaveOvenControl, all from ONE `config_t`.
+                           `PowerAsNumber` (a plain 1-100% power setting) is
+                           chosen over `PowerInWatts` — confirmed via the
+                           cluster XML's own `VALIDATE_FEATURES_EXACT_ONE
+                           ("PowerAsNumber,PowerInWatts", ...)` that these are
+                           a real, exactly-one choice, and PowerInWatts (plus
+                           the SupportedWatts/SelectedWattIndex attributes it
+                           would need) is marked `provisionalConform` in the
+                           XML — not implementable against a real certified
+                           product yet, and a worse fit for the duty-cycle-
+                           driven relay output below anyway.
+                           `endpoint::microwave_oven::create()`'s own delegate
+                           wiring is a genuinely new, ninth pattern for this
+                           repo: unlike ClosureControl's OPPOSITE, before-
+                           `esp_matter::start()` ordering requirement
+                           (firmware/closure/'s own header comment), esp-
+                           matter's `MicrowaveOvenControlDelegateInitCB` is
+                           fully self-contained and self-healing regardless
+                           of cluster-init order — confirmed by reading it
+                           directly: it lazily constructs both the
+                           `OperationalState::Instance` and `ModeBase::
+                           Instance` from whichever delegates were set on the
+                           SAME `microwave_oven::config_t`, so the plain,
+                           ordinary "set all three delegates before create()"
+                           pattern (firmware/water-heater/'s WaterHeaterMode,
+                           firmware/robot-vacuum/'s RvcRunMode) is enough —
+                           no manual pre/post-`start()` calls needed here at
+                           all. Real power-level control is implemented as a
+                           duty cycle, not a variable-output magnetron (which
+                           doesn't exist in cheap consumer hardware) — a
+                           `MICROWAVE_DUTY_CYCLE_WINDOW_SEC` (10s) window,
+                           with the relay energized for whatever fraction of
+                           that window matches `PowerSetting`'s percentage —
+                           well-documented, general appliance-design
+                           knowledge, not something needing per-chip
+                           datasheet verification. Command flow (what
+                           `HandleSetCookingParametersCallback()`/
+                           `HandleModifyCookTimeSecondsCallback()` need to do,
+                           and that `startAfterSetting` should immediately
+                           transition to Running) is ported from
+                           connectedhomeip's own real reference
+                           (`examples/microwave-oven-app/microwave-oven-
+                           common/src/microwave-oven-device.cpp`, read end to
+                           end) — the same "port a real reference rather than
+                           guess the integration shape" precedent already
+                           used in this repo for SM2335EGH/APA102/OpenTherm/
+                           RVC — adapted from that reference's own manually-
+                           constructed `Instance` members (targeting
+                           connectedhomeip's generic Linux app framework, not
+                           esp-matter) to this repo's own registry-lookup-
+                           and-cast / `get_delegate_managed_instance()`
+                           accessors instead. MicrowaveOvenMode offers
+                           Normal/Defrost (`ModeTag::kNormal`/`kDefrost`,
+                           confirmed against connectedhomeip's own generated
+                           Enums.h — the only two tags this cluster actually
+                           defines beyond ModeBase's shared generic tags) —
+                           same "reject a mode change while running"
+                           business rule firmware/dishwasher/'s and firmware/
+                           laundry-washer/'s own Mode delegates already
+                           establish. A real, previously-seen compile error
+                           was caught and fixed by an actual Docker build,
+                           not guessed: the same `_span` string-literal-
+                           operator scoping issue firmware/robot-vacuum/'s
+                           and firmware/water-heater/'s own header comments
+                           already document (`using namespace chip::literals;`
+                           needed for the mode-option table's `"Normal"_span`/
+                           `"Defrost"_span`, not a blanket `using namespace
+                           chip;`) — this file's own build was interrupted by
+                           a power outage right as it reached this exact
+                           error; fixed and confirmed clean on the next
+                           build. Standard quick-power-cycle factory reset.
+                           Build-verified in Docker; not hardware-tested (no
+                           OEM microwave cooking module or relay hardware for
+                           this device type physically available when
+                           written — see the safety note above for why a
+                           typical consumer microwave isn't a substitute).
+                           Not yet integrated into `tools/product-wizard/` —
+                           see "Open next steps" below; firmware/
+                           color-temperature-light/ and firmware/closure/
+                           (the two device types immediately before this one)
+                           are in the same un-integrated state.
+  partitions.csv           same OTA + fctry layout as firmware/light/
+  sdkconfig.defaults        same as firmware/light/
 tools/
   dev.sh                  opens the Docker dev environment
   gen_factory.sh          local QR + factory partition generator
@@ -6376,14 +6503,63 @@ SECURITY.md               flash encryption / secure boot / signed OTA guidance
    subtlety above); not hardware-tested (no garage-door/roller-shutter
    motor+relay hardware for this device type physically available when
    written).
-2. Implement Matter **OTA** — partially done. All forty-one firmware
+
+   A forty-second device type, `firmware/microwave-oven/` (MicrowaveOvenMode
+   + MicrowaveOvenControl + OperationalState), followed closure — Microwave
+   Oven had already come up as a recommended-but-unchosen option during
+   firmware/closure/'s own AskUserQuestion round. This repo's first over the
+   MicrowaveOvenMode/MicrowaveOvenControl cluster pair, layered on the same
+   generic OperationalState cluster firmware/dishwasher/'s, firmware/
+   laundry-washer/'s, and firmware/laundry-dryer/'s own device types already
+   established — and, unlike those three, a device type whose own spec makes
+   CountdownTime itself mandatoryConform, so this file implements a real,
+   live countdown instead of the null-stub `GetCountdownTime()` firmware/
+   dishwasher/'s own header comment documents. `endpoint::microwave_oven::
+   create()`'s own delegate-construction callback turned out to be a
+   genuinely new, ninth pattern for this repo — fully self-contained and
+   self-healing regardless of cluster-init order (confirmed by reading
+   `MicrowaveOvenControlDelegateInitCB` directly), the OPPOSITE of
+   firmware/closure/'s own ClosureControl, which strictly requires its
+   delegate registered before `esp_matter::start()` — so this cluster needed
+   no special ordering at all, just the plain "set every delegate on one
+   config_t before create()" pattern already used elsewhere. Real power-
+   level control is a duty cycle over a 10-second window (a fixed-output
+   magnetron cycled on/off, the same technique real consumer microwaves
+   use — general appliance-design knowledge, not a per-chip datasheet
+   fact), and the command flow itself is ported from connectedhomeip's own
+   real reference (`examples/microwave-oven-app/`), the same "port a real
+   reference rather than guess the integration shape" precedent already
+   used for SM2335EGH/APA102/OpenTherm/RVC. This device type ships with a
+   prominent safety note at the top of `app_main.cpp` (repeated in its own
+   repository-layout entry above): the relay output gates an already-
+   certified OEM/commercial cooking module's own external enable input,
+   never a consumer microwave's own high-voltage/interlock internals
+   directly — the same "gate an existing device's own control input"
+   framing firmware/thermostat/'s and firmware/evse/'s own relay outputs
+   already establish. This device type's own build was the one actually
+   interrupted by the power outage that paused this session: it had reached
+   the exact same `_span` string-literal-operator compile error firmware/
+   robot-vacuum/'s and firmware/water-heater/'s own header comments already
+   document, and the fix (`using namespace chip::literals;`) was applied and
+   confirmed against a full, clean rebuild once power was back — worth
+   noting as this repo's third real occurrence of the identical gotcha, now
+   solidly a "check for this first" item for any future device type
+   assembling a ModeBase option table with string-literal labels. Build-
+   verified in Docker; not hardware-tested (no OEM microwave cooking module
+   or relay hardware for this device type physically available when
+   written). Not yet wired into `tools/product-wizard/` — neither is
+   firmware/color-temperature-light/ or firmware/closure/, the two device
+   types immediately before it; all three are real, accumulated wizard-
+   integration debt to close in a future session, not a gap specific to
+   this one.
+2. Implement Matter **OTA** — partially done. All forty-two firmware
    types ship `CONFIG_ENABLE_OTA_REQUESTOR=y`, which adds the OTA Requestor
    cluster to the root node endpoint entirely via Kconfig — esp-matter's
    own core startup (`esp_matter_core.cpp`) calls
    `esp_matter_ota_requestor_init()`/`_start()` automatically once that
    flag is on, so no app code was needed. Confirmed on real hardware for
    `firmware/contact-sensor/` and `firmware/switch/` (clean boot, cluster
-   registered, zero errors); the other thirty-nine build identically since
+   registered, zero errors); the other forty build identically since
    the code path is generic to every device type, not device-specific.
 
    Still open: a real OTA **transfer** needs an OTA Provider node
