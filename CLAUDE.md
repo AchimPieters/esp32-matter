@@ -4777,6 +4777,215 @@ firmware/microwave-oven/  Microwave Oven — forty-second device type, and this
                            on all three at once.
   partitions.csv           same OTA + fctry layout as firmware/light/
   sdkconfig.defaults        same as firmware/light/
+firmware/doorbell/        Doorbell — forty-third device type, and this
+                           repo's first over the Chime cluster family,
+                           built as a natural companion pair with
+                           firmware/chime/ (the forty-fourth): this
+                           device is the pushbutton at the front door,
+                           firmware/chime/ is the receiving buzzer/
+                           speaker unit a controller binds it to.
+                           "Doorbell" had already come up twice as a
+                           recommended-but-unchosen option (during
+                           firmware/closure/'s own round and a later one)
+                           before finally being picked.
+  main/app_main.cpp        Confirmed directly against the CSA's own
+                           data_model/1.6/device_types/Doorbell.xml
+                           (0x0148, revision 2): Identify (server) +
+                           Switch (server, MS feature only) + Chime
+                           (CLIENT side) are all mandatoryConform — the
+                           entire device type. Confirmed no
+                           `endpoint::doorbell::create()` top-level helper
+                           exists in esp-matter's legacy data model (the
+                           one this repo's sdkconfig actually compiles
+                           against — see firmware/refrigerator/'s own
+                           legacy-vs-generated distinction) — only in the
+                           NOT-enabled-here "generated" one — so this
+                           endpoint is hand-assembled from lower-level
+                           free functions, the same approach firmware/
+                           color-light/'s and firmware/addressable-light/'s
+                           own ExtendedColorLight endpoints already use,
+                           including their own hard-learned lesson:
+                           `cluster::descriptor::create()` is called
+                           explicitly, right after `endpoint::create()`,
+                           since `add_device_type()` alone never creates
+                           one (the real reason those two files' own
+                           endpoints were once rejected by Apple Home —
+                           see their own header comments for the full
+                           debugging story). Switch cluster enables only
+                           the `MS` (MomentarySwitch) feature — Doorbell's
+                           own XML doesn't mandate MSR/MSL/MSM the way
+                           firmware/generic-switch/'s own device type
+                           does, and a real doorbell button doesn't need
+                           long-press/multi-click semantics — so this file
+                           only ever calls `SwitchCluster::OnInitialPress()`,
+                           same "smallest reasonable next step" scoping
+                           as elsewhere in this repo; confirmed by reading
+                           `SwitchCluster.cpp` directly that each `OnXxx()`
+                           method independently checks its own required
+                           feature bit and safely no-ops otherwise, so
+                           nothing breaks by only implementing one.
+                           The mandatory client-side Chime cluster is what
+                           actually lets a press ring a real, physical
+                           chime once bound to one via a controller's own
+                           Binding-cluster UI (e.g. Home Assistant's
+                           "Bindings") — same controller-driven binding
+                           step firmware/switch/'s own buttons and
+                           firmware/thermostat/'s BINDING output mode
+                           already require. A real, previously-undiscovered
+                           gap was found and worked around: there is no
+                           `cluster::chime::create()` helper at ANY level
+                           in esp-matter's legacy data model (client or
+                           server) — Chime is new enough (Matter 1.5/1.6)
+                           that no per-cluster ember-shell wrapper exists
+                           for it at all yet. Fixed with esp-matter's own
+                           genuinely generic, cluster-agnostic primitive
+                           instead — `esp_matter::cluster::create(endpoint,
+                           cluster_id, flags)` (the same underlying
+                           function every named per-cluster helper is
+                           built from) — called directly with `Chime::Id`
+                           and `CLUSTER_FLAG_CLIENT`. A second, genuinely
+                           new finding while confirming this was safe:
+                           `ServerList`/`ClientList` visibility comes from
+                           the endpoint's own ember `cluster_t` linked
+                           list (confirmed by reading esp-matter's own
+                           `data_model_provider::ServerClusters()`/
+                           `ClientClusters()` directly — both walk that
+                           list looking for the right `CLUSTER_FLAG_*`
+                           bit), NOT from a live query against the data
+                           model provider's registry the way one might
+                           assume from how many other "code-driven"
+                           clusters in this repo are reached — the
+                           registry is only consulted afterward, for
+                           per-cluster metadata on entries that already
+                           exist in that ember list. Worth remembering for
+                           any future client-side or ember-shell-less
+                           cluster: the raw ember shell is still required
+                           for Descriptor visibility, even on clusters
+                           whose real attribute/command handling has
+                           moved entirely off ember.
+                           `client::interaction::invoke::send_request()`
+                           sends a real `Chime::Commands::PlayChimeSound`
+                           with an empty payload (no ChimeID field) to
+                           whatever the Binding cluster resolves to — the
+                           exact same `client::cluster_update()` +
+                           `client::set_request_callback()` pattern
+                           firmware/switch/'s own buttons and firmware/
+                           thermostat/'s BINDING output mode already
+                           establish — deliberately not selecting a
+                           specific ChimeID: which sound to actually play
+                           is the bound Chime device's own SelectedChime
+                           attribute to decide. Standard quick-power-cycle
+                           factory reset. Build-verified in Docker (clean
+                           first attempt after one real, quickly-caught
+                           compile error — `add_device_type()` needs
+                           `using namespace esp_matter::endpoint;` in
+                           scope, the same gotcha color-light's own header
+                           comment already documents); not hardware-tested
+                           (no separate chime/buzzer device to bind to was
+                           physically available when written).
+  partitions.csv           same OTA + fctry layout as firmware/light/
+  sdkconfig.defaults        same as firmware/light/
+firmware/chime/           Chime — forty-fourth device type, and the
+                           receiving half of the Doorbell + Chime pair
+                           firmware/doorbell/ starts: that file's
+                           pushbutton sends a real Chime::PlayChimeSound
+                           command (via a controller-configured Binding-
+                           cluster entry) to whatever real Chime device
+                           it's bound to — this device is that receiver,
+                           driving an actual buzzer/speaker.
+  main/app_main.cpp        Confirmed directly against the CSA's own
+                           data_model/1.6/device_types/Chime.xml (0x0146,
+                           revision 1): Identify (server) is only
+                           optionalConform, Chime (SERVER side) is the
+                           only mandatoryConform cluster — the whole
+                           device type. Same as firmware/doorbell/'s own
+                           endpoint, hand-assembled from lower-level free
+                           functions (no `endpoint::chime::create()`
+                           helper exists in esp-matter's legacy data
+                           model either), including the same
+                           `cluster::descriptor::create()`-first
+                           discipline. The Chime cluster itself is a
+                           genuinely new integration shape for this repo:
+                           confirmed by reading esp-matter's own
+                           `data_model_provider/clusters/chime/
+                           integration.h` directly that its real, live
+                           C++ object is a `chip::app::Clusters::Chime::
+                           ChimeServer` — esp-matter's own thin wrapper
+                           around connectedhomeip's real `ChimeCluster` —
+                           constructed directly by this file (endpoint id
+                           + a `ChimeDelegate&`) and `.Init()`'d, which
+                           internally registers it with the data model
+                           provider's own registry. Confirmed by reading
+                           `ESPMatterChimeClusterServerInitCallback()`
+                           that it's a literal empty stub — nothing about
+                           this cluster is auto-wired at all — so
+                           `ChimeServer::Init()` is called explicitly,
+                           placed AFTER `esp_matter::start()` in
+                           `app_main()`, matching the majority "construct
+                           the app's own registry-managed object once the
+                           Matter server is actually running" convention
+                           this repo already established for firmware/
+                           robot-vacuum/'s RvcOperationalState and
+                           firmware/valve/'s ValveConfigurationAndControl
+                           delegate — not required by anything Chime-
+                           specific (no ordering constraint was found
+                           reading the source, unlike firmware/closure/'s
+                           own ClosureControl, which genuinely does
+                           require the opposite), just consistency with
+                           the safer, more common pattern.
+                           `ChimeDelegate` has exactly three pure-virtual
+                           methods — `GetChimeSoundByIndex()`/
+                           `GetChimeIDByIndex()` (populate the mandatory
+                           InstalledChimeSounds list) and
+                           `PlayChimeSound(chimeID)` itself (confirmed the
+                           cluster validates ChimeID against that same
+                           list, via its own `IsSupportedChimeID()`,
+                           BEFORE ever calling this delegate — so by the
+                           time this file's own `PlayChimeSound()` runs,
+                           the ID is already known-good — and confirmed
+                           the cluster also generates the mandatory
+                           ChimeStartedPlaying event on a successful
+                           return, so no manual event-firing code is
+                           needed here either). Two real, distinct chime
+                           sounds are offered (ChimeID 0 "Ding-Dong", a
+                           classic descending two-tone doorbell pattern;
+                           ChimeID 1 "Chirp", a short double-beep) rather
+                           than one dummy entry, since InstalledChimeSounds
+                           requires at least 1 and SelectedChime/
+                           PlayChimeSound(ChimeID) both deserve something
+                           real to select between — both are plain,
+                           arbitrary tone patterns picked for this file,
+                           not sourced from or verified against any real
+                           commercial doorbell chime's actual sound (no
+                           datasheet or reference recording exists to
+                           check one against, unlike a sensor's own
+                           protocol). Driven as real audio-frequency PWM
+                           via ESP-IDF's `driver/ledc.h` — the same LEDC
+                           peripheral firmware/dimmable-light/'s and
+                           firmware/fan/'s own outputs already use, just
+                           with the frequency changed per note (via
+                           `ledc_set_freq()`) instead of held fixed, into
+                           a passive piezo buzzer (which needs an actual
+                           driven waveform at the desired pitch, unlike a
+                           simple active buzzer module). `PlayChimeSound()`
+                           only queues the requested ChimeID and returns
+                           immediately — the actual multi-hundred-
+                           millisecond tone sequence runs from a separate
+                           `chime_task`, since blocking for that long
+                           inside a Matter command handler (very likely
+                           running on the Matter event loop's own thread)
+                           would be poor practice. Standard quick-power-
+                           cycle factory reset. Build-verified in Docker
+                           (clean first attempt, the direct payoff of
+                           researching firmware/doorbell/'s own Chime-
+                           integration findings — the `esp_matter::
+                           endpoint` namespace gotcha included —
+                           proactively before writing this file); not
+                           hardware-tested (no passive piezo buzzer/
+                           speaker hardware for this device type
+                           physically available when written).
+  partitions.csv           same OTA + fctry layout as firmware/light/
+  sdkconfig.defaults        same as firmware/light/
 tools/
   dev.sh                  opens the Docker dev environment
   gen_factory.sh          local QR + factory partition generator
@@ -6595,14 +6804,71 @@ SECURITY.md               flash encryption / secure boot / signed OTA guidance
    visual shape of their own. `tools/product-wizard/README.md`'s own
    device-type list and buildable-firmware count were updated to match
    (thirty-eight → forty-one).
-2. Implement Matter **OTA** — partially done. All forty-two firmware
+
+   A forty-third and forty-fourth device type followed together:
+   `firmware/doorbell/` and `firmware/chime/` — the user's choice from a
+   short AskUserQuestion list (Doorbell + Chime / Irrigation System /
+   Electrical Meter), after checking the full Matter 1.6 device type
+   library in the SDK directly for what this repo hadn't built yet rather
+   than guessing from memory. This repo's first over the Chime cluster
+   family, and its first genuine two-device companion pair built together
+   in one sitting (a pushbutton that sends a real command to a bound
+   receiver device, not just two unrelated device types that happen to
+   share a session). Neither Doorbell nor Chime has a top-level
+   `endpoint::xxx::create()` helper in esp-matter's legacy data model (the
+   SDK's newer "generated" data model does have both, under
+   `data_model/generated/device_types/`, but — per firmware/refrigerator/'s
+   own established discipline — this repo reads and builds against
+   whichever data model its own sdkconfig actually compiles, which has
+   never enabled that flag) — both endpoints are hand-assembled from
+   lower-level free functions, reusing firmware/color-light/'s and
+   firmware/addressable-light/'s own hard-learned `cluster::descriptor::
+   create()`-first discipline from the start rather than rediscovering it.
+   The real, substantial new finding from this pair: Chime is new enough
+   (Matter 1.5/1.6) that esp-matter ships no `cluster::chime::create()`
+   ember-shell helper at all, client or server — the first cluster in this
+   repo with no per-cluster ember-shell wrapper of any kind. Worked around
+   on firmware/doorbell/'s own client side with esp-matter's genuinely
+   generic, cluster-agnostic `esp_matter::cluster::create(endpoint,
+   cluster_id, flags)` primitive (the same underlying function every named
+   per-cluster helper is built from) — confirmed safe only after also
+   confirming, by reading `data_model_provider::ServerClusters()`/
+   `ClientClusters()` directly, that `ServerList`/`ClientList` visibility
+   comes from the endpoint's own ember `cluster_t` linked list, not a live
+   registry query the way one might reasonably assume given how many other
+   "code-driven" clusters in this repo are reached — a real, previously-
+   undocumented distinction worth remembering for any future client-side
+   or ember-shell-less cluster. On firmware/chime/'s own server side, the
+   cluster's real C++ object is instead esp-matter's own `Chime::
+   ChimeServer` wrapper, constructed and `.Init()`'d directly by the app
+   (confirmed its own init callback is a literal empty stub — nothing
+   about this cluster auto-constructs), placed after `esp_matter::start()`
+   per this repo's own established majority convention for app-constructed
+   registry-managed objects. One real, quickly-caught compile error was
+   found and fixed by an actual Docker build on firmware/doorbell/ (missing
+   `using namespace esp_matter::endpoint;` for `add_device_type()` — the
+   same gotcha firmware/color-light/'s own header comment already
+   documents) and proactively avoided on firmware/chime/ by applying that
+   same fix before building it at all — firmware/chime/ built clean on its
+   first attempt as a direct result. See both files' own repository-layout
+   entries above for the complete detail, including firmware/chime/'s own
+   two arbitrary-but-real chime sounds (LEDC-driven audio-frequency tones
+   into a passive piezo buzzer, not a fixed-frequency brightness/speed PWM
+   the way every other LEDC output in this repo works). Both build-verified
+   in Docker; neither hardware-tested (no separate chime/buzzer hardware to
+   bind firmware/doorbell/ to, and no passive piezo buzzer for firmware/
+   chime/ itself, was physically available when written). Not yet wired
+   into `tools/product-wizard/` — left as a follow-up, same as every other
+   device type's own wizard-integration pass has been treated as separate
+   from the firmware itself landing and being build-verified.
+2. Implement Matter **OTA** — partially done. All forty-four firmware
    types ship `CONFIG_ENABLE_OTA_REQUESTOR=y`, which adds the OTA Requestor
    cluster to the root node endpoint entirely via Kconfig — esp-matter's
    own core startup (`esp_matter_core.cpp`) calls
    `esp_matter_ota_requestor_init()`/`_start()` automatically once that
    flag is on, so no app code was needed. Confirmed on real hardware for
    `firmware/contact-sensor/` and `firmware/switch/` (clean boot, cluster
-   registered, zero errors); the other forty build identically since
+   registered, zero errors); the other forty-two build identically since
    the code path is generic to every device type, not device-specific.
 
    Still open: a real OTA **transfer** needs an OTA Provider node
