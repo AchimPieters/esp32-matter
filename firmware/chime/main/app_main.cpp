@@ -19,8 +19,8 @@
  * `<optionalConform/>`, Chime (SERVER side) is the only `<mandatoryConform/>`
  * cluster — the whole device type is genuinely just those two. Same as
  * firmware/doorbell/'s own Doorbell endpoint, confirmed there is no
- * `endpoint::chime::create()` helper anywhere in esp-matter's legacy data
- * model (only in the NOT-enabled-here "generated" one, under
+ * `endpoint::chime::create()` TOP-LEVEL helper anywhere in esp-matter's
+ * legacy data model (only in the NOT-enabled-here "generated" one, under
  * `data_model/generated/device_types/chime_device/` — see firmware/
  * doorbell/'s own header comment for why that one is deliberately not
  * used), so this endpoint is hand-assembled from lower-level free
@@ -28,33 +28,47 @@
  * first discipline firmware/color-light/'s and firmware/addressable-light/'s
  * own header comments document the real bug class for skipping.
  *
- * --- The Chime cluster itself: a genuinely new integration shape --------
- * Confirmed by reading `esp-matter`'s own `data_model_provider/clusters/
- * chime/integration.h` directly: unlike every other "code-driven" cluster
- * in this repo so far, there is no `cluster::chime::create()` ember-shell
- * helper of ANY kind (see firmware/doorbell/'s own header comment for the
- * full detail on why, and on the resulting `esp_matter::cluster::create(
- * endpoint, Chime::Id, CLUSTER_FLAG_SERVER)` workaround this file uses for
- * the ember shell). The cluster's own real, live C++ object is instead a
- * `chip::app::Clusters::Chime::ChimeServer` — esp-matter's own thin
- * wrapper around connectedhomeip's real `ChimeCluster`
- * (`app/clusters/chime-server/ChimeCluster.h`) — constructed directly by
- * this file (`endpointId` + a `ChimeDelegate&`) and `.Init()`'d, which
- * internally calls `mCluster.Create(...)` then registers it with the data
- * model provider's own registry. Confirmed by reading
- * `ESPMatterChimeClusterServerInitCallback()` (esp-matter's own per-
- * cluster init hook, normally where a code-driven cluster gets lazily
- * constructed during `esp_matter::start()`) that it is a literal empty
- * stub here — nothing about this cluster is auto-wired at all, so
- * `ChimeServer::Init()` is called explicitly, deliberately placed AFTER
- * `esp_matter::start()` in `app_main()` below, matching the majority
- * "construct the app's own registry-managed object once the Matter server
- * is actually running" convention this repo already established for
- * firmware/robot-vacuum/'s RvcOperationalState and firmware/valve/'s
- * ValveConfigurationAndControl delegate — not required by anything Chime-
- * specific (no ordering constraint was found reading the source, unlike
- * firmware/closure/'s own ClosureControl, which genuinely does require the
- * opposite), just consistency with the safer, more common pattern.
+ * --- The Chime cluster itself: an ordinary config->delegate cluster,
+ * NOT the ember-shell-less special case an earlier draft concluded -------
+ * An earlier draft of this file concluded, from searching the wrong
+ * header directory (top-level `components/esp_matter/` headers instead of
+ * `components/esp_matter/data_model/legacy/`), that no `cluster::
+ * chime::create()`
+ * ember-shell helper existed at all — and, on that wrong premise, hand-
+ * built the raw ember shell via `esp_matter::cluster::create(endpoint,
+ * Chime::Id, CLUSTER_FLAG_SERVER)` plus a manually-constructed
+ * `chip::app::Clusters::Chime::ChimeServer` + `.Init()` call after
+ * `esp_matter::start()`. That code WORKED (it produces the exact same
+ * `ChimeServer` construction the real mechanism below does internally,
+ * so there was no double-registration bug) but wasn't the SDK's actual,
+ * intended path — found and corrected once esp-matter's own
+ * `doorbell::add()` (in `esp_matter_endpoint.cpp`) was read directly for
+ * an unrelated reason and turned out to call
+ * `cluster::chime::create(endpoint, NULL, CLUSTER_FLAG_CLIENT)` itself,
+ * immediately proving a real helper does exist. Reading
+ * `cluster::chime::create()`'s own body directly (in `data_model/legacy/
+ * esp_matter_cluster.cpp`) confirms Chime is actually an entirely
+ * ORDINARY `config->delegate` cluster, the same well-worn pattern
+ * firmware/water-heater/'s WaterHeaterMode and firmware/robot-vacuum/'s
+ * RvcRunMode already establish: `chime::config_t` is just `{ void
+ * *delegate; }`; when `CLUSTER_FLAG_SERVER` is set, `create()` requires a
+ * non-null `config->delegate` and wires it up via
+ * `set_delegate_and_init_callback(cluster, ChimeDelegateInitCB,
+ * config->delegate)` — `ChimeDelegateInitCB` (in
+ * `esp_matter_delegate_callbacks.cpp`) is what lazily does
+ * `new Chime::ChimeServer(endpoint_id, *delegate)` + `.Init()`,
+ * automatically, during `esp_matter::start()`'s own init-callback pass —
+ * no manual post-`start()` construction needed at all, unlike this file's
+ * own earlier (working, but non-idiomatic) draft. This file now simply
+ * sets `chime_config.delegate = &chime_delegate;` before calling
+ * `cluster::chime::create(endpoint, &chime_config, CLUSTER_FLAG_SERVER)`
+ * — no raw ember-shell call, no manual `ChimeServer`/`.Init()` code, no
+ * ordering awareness needed in `app_main()` at all. Worth remembering
+ * for any future less-common cluster search in this repo: a missing
+ * helper should be confirmed by grepping the SAME `data_model/legacy/`
+ * location every other per-cluster helper in this repo already lives in,
+ * not a plausible-looking top-level header path that simply doesn't
+ * contain it.
  *
  * `ChimeDelegate` (declared directly under `chip::app::Clusters`, NOT
  * nested inside the `Chime::` sub-namespace the way `ChimeServer` itself
@@ -116,8 +130,6 @@
 #include <esp_matter_core.h>
 #include <app-common/zap-generated/cluster-objects.h>
 #include <app/clusters/chime-server/ChimeCluster.h>
-#include <data_model_provider/clusters/chime/integration.h>
-#include <data_model_provider/esp_matter_data_model_provider.h>
 
 static const char *TAG = "matter_chime";
 
@@ -285,7 +297,6 @@ public:
 };
 
 static DeviceChimeDelegate chime_delegate;
-static Chime::ChimeServer *chime_server = nullptr;
 
 /* Toggles the identify LED each time the timer fires — the actual blink. */
 static void identify_led_timer_cb(void *arg)
@@ -473,11 +484,19 @@ extern "C" void app_main(void)
     cluster_t *identify_cluster = cluster::identify::create(endpoint, &identify_config, CLUSTER_FLAG_SERVER);
     cluster::identify::command::create_trigger_effect(identify_cluster);
 
-    /* Raw ember shell for the Chime cluster — see the header comment above
-     * for why no named `cluster::chime::create()` helper exists to call
-     * instead. The real, live ChimeCluster/ChimeServer object is
-     * constructed separately below, after esp_matter::start(). */
-    cluster::create(endpoint, Chime::Id, CLUSTER_FLAG_SERVER);
+    /* Chime — an ordinary config->delegate cluster (see the header comment
+     * above for the corrected understanding of this cluster's own real
+     * create() helper): esp-matter's own `ChimeDelegateInitCB` lazily
+     * constructs the real `Chime::ChimeServer` and calls its `.Init()`
+     * automatically, during `esp_matter::start()`'s own init-callback pass
+     * below — no manual construction of any kind needed in this file. */
+    cluster::chime::config_t chime_config;
+    chime_config.delegate = &chime_delegate;
+    cluster_t *chime_cluster = cluster::chime::create(endpoint, &chime_config, CLUSTER_FLAG_SERVER);
+    if (!chime_cluster) {
+        ESP_LOGE(TAG, "Failed to create chime cluster");
+        return;
+    }
 
     chime_endpoint_id = endpoint::get_id(endpoint);
     ESP_LOGI(TAG, "Chime endpoint id: %u", chime_endpoint_id);
@@ -498,18 +517,6 @@ extern "C" void app_main(void)
     if (should_factory_reset) {
         ESP_LOGW(TAG, "Quick power cycle detected — factory resetting");
         esp_matter::factory_reset(); /* erases NVS + restarts the device */
-        return;
-    }
-
-    /* Construct the real ChimeServer only now that the Matter server is
-     * actually running — see the header comment above for why this isn't
-     * strictly required for Chime specifically, just consistent with this
-     * repo's own majority convention for app-constructed registry-managed
-     * cluster objects. */
-    chime_server = new Chime::ChimeServer(chime_endpoint_id, chime_delegate);
-    CHIP_ERROR chime_err = chime_server->Init();
-    if (chime_err != CHIP_NO_ERROR) {
-        ESP_LOGE(TAG, "Failed to init Chime cluster: %" CHIP_ERROR_FORMAT, chime_err.Format());
         return;
     }
 

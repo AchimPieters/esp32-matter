@@ -72,31 +72,21 @@
  * Binding-cluster entry pointing at firmware/chime/'s own endpoint,
  * exactly the same controller-driven binding step firmware/switch/'s own
  * bound OnOff buttons and firmware/thermostat/'s BINDING output mode
- * already require). Confirmed there is no `cluster::chime::create()`
- * helper at ANY level in esp-matter's legacy data model (unlike e.g.
- * `cluster::on_off::create(endpoint, NULL, CLUSTER_FLAG_CLIENT)`, which
- * firmware/switch/'s and firmware/thermostat/'s own client-side OnOff
- * clusters already reuse) — Chime is new enough (Matter 1.5/1.6) that no
- * per-cluster ember-shell wrapper exists for it at all yet, client or
- * server. Worked around with esp-matter's own genuinely generic,
- * cluster-agnostic primitive instead — `esp_matter::cluster::create(
- * endpoint, cluster_id, flags)` (declared in `esp_matter_data_model.h`,
- * the same underlying function every named per-cluster helper is built
- * from) — called directly with `Chime::Id` and `CLUSTER_FLAG_CLIENT`.
- * This raw shell is what makes the cluster show up in this endpoint's
- * `ClientList` at all: confirmed by reading esp-matter's own
- * `data_model_provider::ClientClusters()`/`ServerClusters()` directly that
- * both walk the endpoint's own linked list of ember `cluster_t` entries
- * looking for the right `CLUSTER_FLAG_*` bit — NOT a live query against the
- * registry the way one might assume from how many other "code-driven"
- * clusters in this repo are reached; the registry is only consulted
- * afterward, for per-cluster metadata (flags/data version) on entries
- * that already exist in that ember list. A worthwhile, previously-
- * undocumented distinction for any future client-side or ember-shell-less
- * cluster added to this repo: `ServerList`/`ClientList` visibility comes
- * from the ember cluster_t list, not from the data model provider's own
- * registry, even on a version of esp-matter where individual clusters'
- * actual attribute/command handling has largely moved off ember entirely.
+ * already require). A real `cluster::chime::create()` helper DOES exist
+ * in esp-matter's legacy data model (an earlier draft of this file wrongly
+ * concluded it didn't, from searching the wrong header path — corrected
+ * once esp-matter's own `doorbell::add()` was found to call it directly,
+ * confirming the miss) — used here as `cluster::chime::create(endpoint,
+ * NULL, CLUSTER_FLAG_CLIENT)`, the exact same call shape firmware/switch/'s
+ * and firmware/thermostat/'s own `cluster::on_off::create(endpoint, NULL,
+ * CLUSTER_FLAG_CLIENT)` already establish for a client cluster with no
+ * config needed. Confirmed by reading `chime::create()`'s own source
+ * directly that its `CLUSTER_FLAG_CLIENT` branch calls
+ * `create_default_binding_cluster(endpoint)` for us — itself confirmed
+ * idempotent (`VerifyOrReturnValue(!cluster, cluster)` if a Binding
+ * cluster already exists) — so this file doesn't create the Binding
+ * cluster separately at all, unlike an earlier draft which manually called
+ * `cluster::binding::create()` first, redundant work now removed.
  * `client::interaction::invoke::send_request()` then sends a real
  * `Chime::Commands::PlayChimeSound` with an empty payload (`"{}"` — no
  * ChimeID field) to whatever this endpoint's Binding cluster resolves to,
@@ -108,7 +98,9 @@
  * concerns Matter's Binding model is designed around. Standard quick-
  * power-cycle factory reset. Build-verified in Docker; not hardware-
  * tested (no separate chime/buzzer device to bind to was physically
- * available when written — see firmware/chime/ for that half).
+ * available when written — see firmware/chime/ for that half, including
+ * the corresponding, more consequential correction to how that file's own
+ * Chime SERVER cluster is constructed).
  */
 
 #include <esp_err.h>
@@ -450,16 +442,11 @@ extern "C" void app_main(void)
         return;
     }
 
-    /* Binding + client-side Chime — see the header comment above for why
-     * Chime needs the raw, cluster-agnostic esp_matter::cluster::create()
-     * primitive rather than a named helper. */
-    cluster::binding::config_t binding_config;
-    cluster_t *binding_cluster = cluster::binding::create(endpoint, &binding_config, CLUSTER_FLAG_SERVER);
-    if (!binding_cluster) {
-        ESP_LOGE(TAG, "Failed to create binding cluster");
-        return;
-    }
-    cluster::create(endpoint, Chime::Id, CLUSTER_FLAG_CLIENT);
+    /* Client-side Chime — see the header comment above for the corrected
+     * understanding of this cluster's own real create() helper, including
+     * why it creates the Binding cluster for us (no separate
+     * cluster::binding::create() call needed here). */
+    cluster::chime::create(endpoint, NULL, CLUSTER_FLAG_CLIENT);
 
     doorbell_endpoint_id = endpoint::get_id(endpoint);
     ESP_LOGI(TAG, "Doorbell endpoint id: %u", doorbell_endpoint_id);
