@@ -3193,6 +3193,42 @@ firmware/refrigerator/    Refrigerator — twenty-seventh device type, and
                            above); not hardware-tested (no relay/DS18B20/
                            reed-switch hardware for this device type
                            physically available when written).
+
+                           Later extended (Matter Device Types Reference
+                           audit, see "Open next steps" below) with
+                           Activated Carbon Filter Monitoring on the root
+                           endpoint — confirmed directly against the CSA's
+                           own Refrigerator.xml (revision 3: "Added
+                           optional Activated Carbon Filter Monitoring
+                           cluster") that this cluster is genuinely
+                           optionalConform, added onto the same root
+                           endpoint the same "extra cluster afterward" way
+                           Identify/RefrigeratorAlarm already are. Reuses
+                           the same Condition-feature integration shape
+                           (`resource_monitoring::feature::condition::
+                           add()` + `ResourceMonitoring::
+                           GetClusterInstance()`) firmware/air-purifier/'s,
+                           firmware/extractor-hood/'s, and firmware/
+                           room-air-conditioner/'s own filter-monitoring
+                           clusters already establish — but with one
+                           deliberate difference: life here accumulates as
+                           plain wall-clock elapsed time, not gated by any
+                           compressor run-state, since a fridge's own
+                           deodorizing carbon filter sits inside the sealed
+                           cabinet and is exposed to the food-storage air
+                           continuously, unlike a kitchen grease filter or
+                           an HVAC air filter that only sees load while air
+                           is actively moving through it.
+                           REFRIGERATOR_CARBON_FILTER_LIFE_HOURS (4380h ≈ 6
+                           months) is a commonly cited real refrigerator
+                           carbon-filter replacement interval — adjustable,
+                           not a calibrated reading, same "adjustable
+                           threshold" precedent this repo's other filter-
+                           life/classifier constants already establish.
+                           Build-verified in Docker (clean first attempt);
+                           not hardware-tested (no relay/DS18B20/reed-
+                           switch hardware for this device type physically
+                           available when written).
   partitions.csv           same OTA + fctry layout as firmware/light/
   sdkconfig.defaults        same as firmware/light/
 firmware/dishwasher/      Dishwasher — twenty-eighth device type, and this

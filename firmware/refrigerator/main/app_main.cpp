@@ -240,6 +240,8 @@
 #include <app/clusters/mode-base-server/mode-base-server.h>
 #include <app/clusters/temperature-control-server/TemperatureControlCluster.h>
 #include <app/clusters/temperature-measurement-server/TemperatureMeasurementCluster.h>
+#include <app/clusters/resource-monitoring-server/ResourceMonitoringCluster.h>
+#include <data_model_provider/clusters/resource_monitor/integration.h>
 #include <data_model_provider/esp_matter_data_model_provider.h>
 
 static const char *TAG = "matter_refrigerator";
@@ -286,6 +288,35 @@ static const char *TAG = "matter_refrigerator";
 /* Door-sensor debounce. */
 #define REFRIGERATOR_DOOR_POLL_INTERVAL_MS 200
 #define REFRIGERATOR_DOOR_DEBOUNCE_SAMPLES 3
+
+/* Activated Carbon Filter Monitoring — optionalConform on this device type
+ * as of Refrigerator.xml's own revision 3 ("Added optional Activated
+ * Carbon Filter Monitoring cluster"), confirmed by reading that XML
+ * directly rather than assumed from firmware/air-purifier/'s or firmware/
+ * room-air-conditioner/'s own precedent. Unlike
+ * those two device types' own filter-monitoring clusters — both gated
+ * behind "is the fan/compressor actually running right now", since a
+ * kitchen grease filter or an HVAC air filter only sees load while air is
+ * moving through it — a refrigerator's own deodorizing carbon filter sits
+ * inside the sealed cabinet and is exposed to (and absorbing odors from)
+ * the food storage air continuously, whether or not the compressor happens
+ * to be cycling at that instant. So life here is plain wall-clock elapsed
+ * time since the counter was last reset (a factory reset, same as every
+ * other NVS-backed counter in this repo), not gated by any run-state —
+ * the one deliberate difference from firmware/air-purifier/'s/firmware/
+ * extractor-hood/'s/firmware/room-air-conditioner/'s own run-time-gated
+ * life estimates. REFRIGERATOR_CARBON_FILTER_LIFE_HOURS (4380h ≈ 6 months
+ * of continuous operation) is a commonly cited real refrigerator carbon-
+ * filter replacement interval — adjustable, not a calibrated reading, same
+ * "adjustable threshold" precedent this repo's other filter-life/
+ * classifier constants already establish. */
+#define REFRIGERATOR_CARBON_FILTER_POLL_INTERVAL_MS 5000
+#define REFRIGERATOR_CARBON_FILTER_NVS_SAVE_INTERVAL_MS 60000
+#define REFRIGERATOR_CARBON_FILTER_NVS_NAMESPACE "carbon_filter"
+#define REFRIGERATOR_CARBON_FILTER_NVS_KEY "run_seconds"
+#define REFRIGERATOR_CARBON_FILTER_LIFE_HOURS 4380
+#define REFRIGERATOR_CARBON_FILTER_CHANGE_WARNING_PERCENT 20
+#define REFRIGERATOR_CARBON_FILTER_CHANGE_CRITICAL_PERCENT 5
 
 using namespace esp_matter;
 using namespace esp_matter::endpoint;
@@ -630,6 +661,79 @@ static void door_task(void *arg)
     }
 }
 
+/* --- Activated Carbon Filter Monitoring — see the #define block above for
+ * why this is plain wall-clock elapsed time, not gated by any compressor
+ * run-state. Reuses firmware/extractor-hood/'s/firmware/room-air-
+ * conditioner/'s own Condition-feature integration shape
+ * (`resource_monitoring::feature::condition::add()` +
+ * `ResourceMonitoring::GetClusterInstance()`), just always-accumulating
+ * instead of gated. -------------------------------------------------- */
+static uint32_t carbon_filter_total_run_seconds = 0;
+
+static uint8_t compute_carbon_filter_condition(uint32_t run_seconds, uint32_t life_hours)
+{
+    uint32_t life_seconds = life_hours * 3600u;
+    if (run_seconds >= life_seconds) {
+        return 0;
+    }
+    uint32_t remaining_percent = 100u - ((uint64_t)run_seconds * 100u) / life_seconds;
+    return (uint8_t)remaining_percent;
+}
+
+static ResourceMonitoring::ChangeIndicationEnum carbon_filter_change_indication_for(uint8_t condition_percent)
+{
+    if (condition_percent <= REFRIGERATOR_CARBON_FILTER_CHANGE_CRITICAL_PERCENT) {
+        return ResourceMonitoring::ChangeIndicationEnum::kCritical;
+    }
+    if (condition_percent <= REFRIGERATOR_CARBON_FILTER_CHANGE_WARNING_PERCENT) {
+        return ResourceMonitoring::ChangeIndicationEnum::kWarning;
+    }
+    return ResourceMonitoring::ChangeIndicationEnum::kOk;
+}
+
+/* Polls every REFRIGERATOR_CARBON_FILTER_POLL_INTERVAL_MS: unconditionally
+ * accumulates elapsed time (unlike firmware/air-purifier/'s/firmware/
+ * extractor-hood/'s/firmware/room-air-conditioner/'s own run-gated
+ * versions — see the #define block above for why), periodically persists
+ * it to NVS, and refreshes the filter cluster's Condition/ChangeIndication
+ * every poll regardless. */
+static void carbon_filter_life_task(void *arg)
+{
+    uint32_t ms_since_save = 0;
+
+    while (true) {
+        vTaskDelay(pdMS_TO_TICKS(REFRIGERATOR_CARBON_FILTER_POLL_INTERVAL_MS));
+
+        carbon_filter_total_run_seconds += REFRIGERATOR_CARBON_FILTER_POLL_INTERVAL_MS / 1000;
+        ms_since_save += REFRIGERATOR_CARBON_FILTER_POLL_INTERVAL_MS;
+
+        if (ms_since_save >= REFRIGERATOR_CARBON_FILTER_NVS_SAVE_INTERVAL_MS) {
+            nvs_handle_t nvs;
+            if (nvs_open(REFRIGERATOR_CARBON_FILTER_NVS_NAMESPACE, NVS_READWRITE, &nvs) == ESP_OK) {
+                nvs_set_u32(nvs, REFRIGERATOR_CARBON_FILTER_NVS_KEY, carbon_filter_total_run_seconds);
+                nvs_commit(nvs);
+                nvs_close(nvs);
+            }
+            ms_since_save = 0;
+        }
+
+        uint8_t condition =
+            compute_carbon_filter_condition(carbon_filter_total_run_seconds, REFRIGERATOR_CARBON_FILTER_LIFE_HOURS);
+        ResourceMonitoring::ChangeIndicationEnum indication = carbon_filter_change_indication_for(condition);
+
+        auto *cluster = ResourceMonitoring::GetClusterInstance(refrigerator_endpoint_id, ActivatedCarbonFilterMonitoring::Id);
+        if (!cluster) {
+            ESP_LOGE(TAG, "Activated carbon filter cluster not found on endpoint %u", refrigerator_endpoint_id);
+            continue;
+        }
+        cluster->UpdateCondition(condition);
+        cluster->UpdateChangeIndication(indication);
+        ESP_LOGI(TAG, "Carbon filter: %u%% remaining (%s)", condition,
+                 indication == ResourceMonitoring::ChangeIndicationEnum::kCritical ? "CRITICAL" :
+                 indication == ResourceMonitoring::ChangeIndicationEnum::kWarning ? "WARNING" : "OK");
+    }
+}
+
 /* Toggles the identify LED each time the timer fires — the actual blink. */
 static void identify_led_timer_cb(void *arg)
 {
@@ -753,6 +857,14 @@ extern "C" void app_main(void)
      * due) only happens later, once Matter has started. */
     bool should_factory_reset = check_factory_reset_boot_count();
 
+    /* 1c. Load the carbon filter's elapsed-time counter — see
+     * carbon_filter_life_task()'s own header comment above. */
+    nvs_handle_t carbon_filter_nvs;
+    if (nvs_open(REFRIGERATOR_CARBON_FILTER_NVS_NAMESPACE, NVS_READWRITE, &carbon_filter_nvs) == ESP_OK) {
+        nvs_get_u32(carbon_filter_nvs, REFRIGERATOR_CARBON_FILTER_NVS_KEY, &carbon_filter_total_run_seconds);
+        nvs_close(carbon_filter_nvs);
+    }
+
     /* 2. Configure the door sensor (pulled up, LOW=closed/HIGH=open). */
     gpio_config_t door_io_conf = {};
     door_io_conf.pin_bit_mask = (1ULL << REFRIGERATOR_DOOR_GPIO);
@@ -820,6 +932,25 @@ extern "C" void app_main(void)
     alarm_config.supported = (uint32_t)RefrigeratorAlarm::AlarmBitmap::kDoorOpen;
     alarm_config.state = 0;
     cluster::refrigerator_alarm::create(refrigerator_endpoint, &alarm_config, CLUSTER_FLAG_SERVER);
+
+    /* 3a-2. Activated Carbon Filter Monitoring — optionalConform as of
+     * Refrigerator.xml revision 3, added onto the same root endpoint the
+     * same "extra cluster afterward" way Identify/RefrigeratorAlarm just
+     * were. See carbon_filter_life_task()'s own header comment above for
+     * why this one's life estimate is plain wall-clock elapsed time rather
+     * than gated by any run-state. */
+    cluster::activated_carbon_filter_monitoring::config_t carbon_filter_config;
+    cluster_t *carbon_filter_cluster = cluster::activated_carbon_filter_monitoring::create(
+        refrigerator_endpoint, &carbon_filter_config, CLUSTER_FLAG_SERVER);
+    if (!carbon_filter_cluster) {
+        ESP_LOGE(TAG, "Failed to create activated carbon filter monitoring cluster");
+        return;
+    }
+    cluster::resource_monitoring::feature::condition::config_t carbon_filter_condition_config;
+    carbon_filter_condition_config.condition = 100; /* fresh filter until NVS says otherwise, corrected on the first poll */
+    carbon_filter_condition_config.degradation_direction =
+        chip::to_underlying(ResourceMonitoring::DegradationDirectionEnum::kDown);
+    cluster::resource_monitoring::feature::condition::add(carbon_filter_cluster, &carbon_filter_condition_config);
 
     /* 3b. Fridge compartment. Note: unlike esp-matter's newer "generated"
      * data model (only enabled via CONFIG_ESP_MATTER_ENABLE_GENERATED_
@@ -939,6 +1070,7 @@ extern "C" void app_main(void)
     xTaskCreate(cabinet_control_task, "fridge_task", 4096, &fridge_runtime, 5, NULL);
     xTaskCreate(cabinet_control_task, "freezer_task", 4096, &freezer_runtime, 5, NULL);
     xTaskCreate(door_task, "door_task", 3072, NULL, 5, NULL);
+    xTaskCreate(carbon_filter_life_task, "carbon_filter_life_task", 4096, NULL, 5, NULL);
 
     ESP_LOGI(TAG, "Matter refrigerator started. Scan the QR code to commission.");
 }
