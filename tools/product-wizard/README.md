@@ -57,10 +57,11 @@ open tools/product-wizard/index.html
   (`firmware/microwave-oven/`), "Doorbell" (`firmware/doorbell/`),
   "Chime" (`firmware/chime/`), "Irrigation System"
   (`firmware/irrigation-system/`), "Electrical Meter"
-  (`firmware/electrical-meter/`), or "Dimmer Switch"
-  (`firmware/dimmer-switch/`).
+  (`firmware/electrical-meter/`), "Dimmer Switch"
+  (`firmware/dimmer-switch/`), or "Color Dimmer Switch"
+  (`firmware/color-dimmer-switch/`).
   All
-  forty-six are real, buildable
+  forty-seven are real, buildable
   firmware, not just UI placeholders (`firmware/camera/`, this repo's
   twelfth device type, is deliberately NOT offered here — see its own
   section further down for why: its two-chip/two-firmware/external-SDK

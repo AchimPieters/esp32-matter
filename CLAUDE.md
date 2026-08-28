@@ -7314,6 +7314,44 @@ SECURITY.md               flash encryption / secure boot / signed OTA guidance
    available when written — and, unlike every server-side device type in
    this repo, testing this one for real also needs a second, already-
    commissioned bindable target device on the same fabric).
+
+   A forty-eighth device type, `firmware/color-dimmer-switch/` (Color
+   Control client added onto Dimmer Switch), followed — the user's choice
+   from a short AskUserQuestion list (Color Dimmer Switch / Oven / Mode
+   Select), specifically framed as a low-risk, fast follow-up reusing
+   firmware/dimmer-switch/'s own just-verified patterns. Confirmed against
+   the CSA's own ColorDimmerSwitch.xml to be an explicit
+   `superset="Dimmer Switch"` — `endpoint::color_dimmer_switch::create()`
+   is byte-for-byte the same endpoint construction as `dimmer_switch::
+   create()` plus one extra `color_control::create(endpoint, NULL,
+   CLUSTER_FLAG_CLIENT)` line, confirmed by reading both `add()`
+   implementations side by side. A second rotary encoder sends real
+   `ColorControl::Commands::StepHue` per detent, reusing firmware/
+   dimmer-switch/'s own JSON-command-payload discipline — but a real,
+   worth-remembering gotcha was found by actually reading
+   connectedhomeip's own generated `ColorControl/Commands.h`/`Enums.h`
+   directly rather than assuming this command mirrors LevelControl::Step:
+   `ColorControl::StepModeEnum` uses 0x01/0x03 for Up/Down, not
+   `LevelControl::StepModeEnum`'s own 0/1, and `TransitionTime` here is a
+   plain non-nullable `uint8_t` (tenths of a second), not LevelControl::
+   Step's own nullable uint16 — so this command's own JSON payload needed
+   a real numeric value for that field, not the `NULL` type-tag firmware/
+   dimmer-switch/'s own LevelControl::Step payload uses. Wizard
+   integration followed in the same sitting: the second encoder's two
+   channels reuse the existing fixed-`extraButtons` mechanism (now four
+   entries instead of firmware/dimmer-switch/'s own two — confirmed
+   `extraButtons` already supports any number of fixed extra GPIO fields
+   with zero new mechanism needed), plus a new two-knobs icon. Verified
+   with the same Node.js sandboxed regression check (15/15 passed), then
+   the generated sed commands run for real against a copy of the actual
+   `app_main.cpp` and diffed against the original — a byte-for-byte
+   match. `tools/product-wizard/README.md`'s own device-type list and
+   count were updated to match (forty-six → forty-seven). Build-verified
+   in Docker, clean first attempt; not hardware-tested (no rotary-
+   encoder/pushbutton hardware physically available when written — and,
+   like firmware/dimmer-switch/, testing this one for real also needs a
+   second, already-commissioned bindable color light on the same
+   fabric).
 2. Implement Matter **OTA** — partially done. All forty-eight firmware
    types ship `CONFIG_ENABLE_OTA_REQUESTOR=y`, which adds the OTA Requestor
    cluster to the root node endpoint entirely via Kconfig — esp-matter's
