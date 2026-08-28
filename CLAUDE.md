@@ -4996,6 +4996,128 @@ firmware/chime/           Chime — forty-fourth device type, and the
                            physically available when written).
   partitions.csv           same OTA + fctry layout as firmware/light/
   sdkconfig.defaults        same as firmware/light/
+firmware/irrigation-system/  Irrigation System — forty-fifth device type,
+                           and this repo's first over the Irrigation
+                           System device type: a single-zone sprinkler/
+                           garden-watering valve controller, combining the
+                           same generic OperationalState cluster firmware/
+                           dishwasher/'s, firmware/laundry-washer/'s, and
+                           firmware/laundry-dryer/'s own device types
+                           already established with firmware/flow-sensor/'s
+                           own real Flow Measurement driver — two already-
+                           proven patterns combined on one endpoint for a
+                           genuinely new hobby use case.
+  main/app_main.cpp        Confirmed directly against the CSA's own
+                           data_model/1.6/device_types/IrrigationSystem.xml
+                           (0x0040, revision 1): unlike almost every other
+                           device type in this repo, NONE of its four
+                           clusters are mandatory — Identify,
+                           OperationalState (server), FlowMeasurement
+                           (server), and FlowMeasurement (client) are ALL
+                           individually optionalConform. Implements
+                           Identify + OperationalState + FlowMeasurement
+                           (server only) — a self-contained single-zone
+                           controller with its own local flow sensor;
+                           skips the client-side FlowMeasurement (would
+                           bind to an external, separate flow sensor
+                           elsewhere in the plumbing — out of scope for a
+                           single hobby device). `endpoint::
+                           irrigation_system::create()` DOES exist in
+                           esp-matter's legacy data model, but its own
+                           `add()` does essentially nothing beyond
+                           `add_device_type()` (matching the XML's own
+                           "nothing mandatory" reality) — still worth
+                           using rather than hand-assembling from scratch,
+                           since its `config_t`'s own `descriptor` field
+                           still gets the endpoint a correct Descriptor
+                           cluster for free via the shared `common::
+                           create<T>()` template (confirmed by reading it
+                           directly), avoiding the real bug class
+                           firmware/color-light/'s and firmware/
+                           addressable-light/'s own fully-hand-assembled
+                           endpoints once hit. Identify + OperationalState
+                           + FlowMeasurement are all added manually
+                           afterward, the same "add extra clusters onto an
+                           already-correct endpoint" pattern firmware/
+                           thermostat/'s BINDING output mode and firmware/
+                           air-quality-sensor/'s concentration-measurement
+                           clusters already establish.
+                           `cluster::operational_state::create()` is the
+                           same lower-level free function firmware/
+                           dishwasher/'s/firmware/laundry-washer/'s/
+                           firmware/laundry-dryer/'s own top-level device
+                           helpers already call internally — confirmed by
+                           reading its own source that it does NOT
+                           register the mandatory OperationCompletion
+                           event on its own (only the always-present
+                           OperationalError event) — `dish_washer::add()`'s
+                           own source shows the missing piece, a separate
+                           `operational_state::event::
+                           create_operation_completion(cluster)` call
+                           right after `create()`, reused here identically.
+                           The Delegate itself is the same shape firmware/
+                           laundry-dryer/'s own header comment documents in
+                           full, ported from connectedhomeip's own real
+                           reference (`examples/dishwasher-app/
+                           dishwasher-common/src/
+                           operational-state-delegate-impl.cpp`). Unlike
+                           firmware/dishwasher/'s and firmware/
+                           laundry-dryer/'s own documented null-stub
+                           `GetCountdownTime()`, this file implements a
+                           REAL, live countdown — the same choice firmware/
+                           microwave-oven/'s own header comment documents
+                           (there because that device type's own spec
+                           makes CountdownTime mandatory; here because a
+                           single watering zone's duration is a plain,
+                           fixed, known-in-advance quantity with nothing
+                           else to wait on, so a real countdown costs
+                           nothing extra). `IRRIGATION_WATERING_DURATION_SEC`
+                           (600s = 10 minutes) is a fixed, adjustable
+                           `#define` — the generic OperationalState Start
+                           command itself takes no parameters, so there is
+                           no way for a controller to request a specific
+                           duration through this cluster alone, the same
+                           real limitation every other OperationalState-
+                           based device type in this repo already has for
+                           its own cycle timings.
+                           FlowMeasurement reuses firmware/flow-sensor/'s
+                           own YF-S201-class pulse-output driver, GPIO-ISR
+                           pulse-counting technique, and L/min-to-
+                           MeasuredValue conversion verbatim, parameterized
+                           through the lower-level `cluster::
+                           flow_measurement::create()` free function
+                           instead of that file's own complete `endpoint::
+                           flow_sensor::create()` helper. Reports
+                           continuously regardless of valve state — for
+                           this self-contained single-zone design, real
+                           flow will only ever be nonzero while this
+                           device's own valve is open, so the reading
+                           already reflects this zone's own watering rate
+                           with no extra correlation logic needed. No
+                           fault detection (no-flow-while-running, flow-
+                           while-stopped) is implemented — a real, sensor-
+                           backed possibility, left as a documented
+                           "smallest reasonable next step" scope cut, same
+                           category as firmware/pump/'s own unfired fault-
+                           event set. Single relay (active-LOW) — one
+                           zone, not a multi-zone manifold, same
+                           simplification firmware/refrigerator/'s own
+                           single-compressor-per-compartment design
+                           already applies to a more complex real
+                           appliance. Boots closed (Stopped), matching
+                           every other device type's boot-to-known-safe-
+                           state convention. Standard quick-power-cycle
+                           factory reset. Build-verified in Docker (clean
+                           first attempt, the direct payoff of the upfront
+                           research into `common::create<T>()`'s own
+                           Descriptor-cluster behavior and `dish_washer::
+                           add()`'s OperationCompletion-event gap, done
+                           before writing any code rather than discovered
+                           by a failed build); not hardware-tested (no
+                           relay/YF-S201-class sensor hardware for this
+                           device type physically available when written).
+  partitions.csv           same OTA + fctry layout as firmware/light/
+  sdkconfig.defaults        same as firmware/light/
 tools/
   dev.sh                  opens the Docker dev environment
   gen_factory.sh          local QR + factory partition generator
@@ -6906,14 +7028,57 @@ SECURITY.md               flash encryption / secure boot / signed OTA guidance
    for-byte match on both. `tools/product-wizard/README.md`'s own device-
    type list and buildable-firmware count were updated to match
    (forty-one → forty-three).
-2. Implement Matter **OTA** — partially done. All forty-four firmware
+
+   A forty-fifth device type, `firmware/irrigation-system/` (OperationalState
+   + FlowMeasurement), followed — the user's choice from a short
+   AskUserQuestion list (Irrigation System / Electrical Meter / Oven), after
+   checking the full Matter 1.6 device type library in the SDK directly a
+   second time for what this repo still hadn't built. This repo's first
+   over the Irrigation System device type itself, but not over either of
+   the two clusters that make it up — a genuinely new combination of two
+   already-proven patterns (the generic OperationalState cluster firmware/
+   dishwasher/'s/firmware/laundry-washer/'s/firmware/laundry-dryer/'s own
+   device types already established, and firmware/flow-sensor/'s own real
+   Flow Measurement driver) rather than a device type needing new SDK
+   integration work of its own. A real, worth-noting spec shape: unlike
+   almost every other device type in this repo, NONE of Irrigation System's
+   four clusters (Identify, OperationalState server, FlowMeasurement server,
+   FlowMeasurement client) are mandatory — confirmed directly in the CSA's
+   own IrrigationSystem.xml. `endpoint::irrigation_system::create()` exists
+   in esp-matter's legacy data model but its own `add()` does essentially
+   nothing beyond `add_device_type()`, matching that "nothing mandatory"
+   reality — still used rather than hand-assembling from scratch, since its
+   `config_t`'s own `descriptor` field still gets a correct Descriptor
+   cluster for free via the shared `common::create<T>()` template (read
+   directly to confirm, rather than assumed from the pattern's name alone).
+   `cluster::operational_state::create()`'s own real behavior needed a
+   second real check before writing any code: it does NOT register the
+   mandatory OperationCompletion event by itself (only the always-present
+   OperationalError event) — found by reading `dish_washer::add()`'s own
+   source for the missing piece (a separate `operational_state::event::
+   create_operation_completion()` call) rather than assumed identical to
+   the higher-level device helpers this repo has used OperationalState
+   through until now. Also a deliberate departure from firmware/
+   dishwasher/'s and firmware/laundry-dryer/'s own documented null-stub
+   `GetCountdownTime()`: this file implements a real, live countdown,
+   since a single watering zone's duration is a plain, fixed, known-in-
+   advance quantity with nothing else to wait on — cheap to add correctly
+   and more useful than a null stub, even though this device type's own
+   spec doesn't mandate it the way firmware/microwave-oven/'s does. Build-
+   verified in Docker — clean first attempt, the direct payoff of
+   confirming both of the real behaviors above (the Descriptor-cluster
+   path and the OperationCompletion-event gap) by reading the SDK's own
+   source before writing any code, rather than discovering either by a
+   failed build; not hardware-tested (no relay/YF-S201-class sensor
+   hardware for this device type physically available when written).
+2. Implement Matter **OTA** — partially done. All forty-five firmware
    types ship `CONFIG_ENABLE_OTA_REQUESTOR=y`, which adds the OTA Requestor
    cluster to the root node endpoint entirely via Kconfig — esp-matter's
    own core startup (`esp_matter_core.cpp`) calls
    `esp_matter_ota_requestor_init()`/`_start()` automatically once that
    flag is on, so no app code was needed. Confirmed on real hardware for
    `firmware/contact-sensor/` and `firmware/switch/` (clean boot, cluster
-   registered, zero errors); the other forty-two build identically since
+   registered, zero errors); the other forty-three build identically since
    the code path is generic to every device type, not device-specific.
 
    Still open: a real OTA **transfer** needs an OTA Provider node
