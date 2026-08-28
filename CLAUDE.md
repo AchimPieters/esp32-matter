@@ -2076,6 +2076,52 @@ firmware/air-quality-sensor/  Air Quality Sensor — seventeenth device type,
                            already uses. Build-verified in Docker; not
                            hardware-tested (no CCS811 module physically
                            available when written).
+
+                           Matter Device Types Reference audit (see
+                           CLAUDE.md's own "Open next steps" below):
+                           confirmed directly against the CSA's own
+                           AirQualitySensor.xml that, beyond the Carbon
+                           Dioxide Concentration Measurement and Total
+                           Volatile Organic Compounds Concentration
+                           Measurement clusters this file already
+                           implements, TEN further clusters are also
+                           optionalConform on this device type — Temperature
+                           Measurement, Relative Humidity Measurement, and
+                           eight more gas/particulate concentration
+                           clusters (CO, NO2, Ozone, PM1, PM2.5, PM10,
+                           Formaldehyde, Radon). None are added: this
+                           device type's only sensing hardware is the
+                           CCS811 (see the header comment above), a
+                           general-purpose MOX gas sensor that reports
+                           only eCO2 and eTVOC — it has no temperature or
+                           humidity sensing element of its own (real
+                           CCS811 designs take an EXTERNAL temperature/
+                           humidity reading as a compensation INPUT, not
+                           an output, confirmed by reading its own
+                           Programming Guide) and no sensitivity to CO,
+                           NO2, ozone, particulates, formaldehyde, or radon
+                           at all. Unlike firmware/smoke-co-alarm/'s own
+                           Carbon Monoxide Concentration Measurement
+                           addition (where the existing MQ7 reading gave a
+                           real, if qualitative, signal to expose via
+                           LevelIndication), there is no comparable partial
+                           signal here for any of these ten — adding any of
+                           them would mean fabricating a reading with
+                           nothing behind it. Same "no sensor, no
+                           fabricated data" honesty precedent firmware/
+                           evse/'s always-NoError FaultState, firmware/
+                           smoke-co-alarm/'s own skipped Temperature/
+                           Relative Humidity Measurement clusters, and
+                           firmware/temperature-sensor/'s skipped
+                           Thermostat User Interface Configuration all
+                           already establish — a deliberate product-scope
+                           decision, not a technical limitation. A real
+                           product wanting any of these ten would need
+                           genuinely different sensor hardware (e.g. an
+                           NDIR CO2/formaldehyde sensor, an optical
+                           particulate sensor, or a dedicated CO/NO2/ozone
+                           electrochemical cell) — out of scope for this
+                           pass.
   partitions.csv           same OTA + fctry layout as firmware/light/
   sdkconfig.defaults        same as firmware/light/
 firmware/water-leak-detector/  Water Leak Detector — eighteenth device
@@ -8002,6 +8048,101 @@ SECURITY.md               flash encryption / secure boot / signed OTA guidance
    the not-yet-constructed case some other way. `firmware/valve/` (added
    immediately after this fix, see below) got the correct ordering from
    the start.
+7. **Matter Device Types Reference audit** — the user supplied
+   `Matter_Device_Types_Reference.xlsx` (Matter Data Model 1.6.1: Device
+   Types / Type × Cluster / Legend sheets) and asked that every already-
+   shipped device type be expanded with its own genuinely available
+   optional clusters. Read via Python `openpyxl`; every claim from the
+   spreadsheet was then cross-verified against the real CSA device type
+   XML inside the pinned SDK image before any code was written — the same
+   "spec is the primary source, not a secondary summary" discipline this
+   whole repo already applies to datasheets. Initial gap analysis: 106
+   total optional clusters across the 47 device types shipped at the
+   time, 70 already considered/documented as deliberate scope cuts in
+   this file's own existing text, 36 genuine "never considered" candidate
+   gaps across roughly 15 device types. The user chose to work through
+   all of them, one device type at a time, lowest-risk first:
+   - `firmware/switch/` — Groups + Scenes Management (client), a
+     zero-config cluster-shell addition confirmed `<optionalConform/>`
+     directly against OnOffLightSwitch.xml.
+   - `firmware/contact-sensor/` and `firmware/occupancy-sensor/` — Boolean
+     State Configuration, zero features enabled, just the always-present
+     SensorFault attribute (no adjustable sensitivity or alarm indicator
+     on either device's simple digital sensor).
+   - `firmware/room-air-conditioner/` — HEPA + Activated Carbon Filter
+     Monitoring, reusing firmware/extractor-hood/'s own Condition-feature
+     integration and run-time-gated life estimate verbatim.
+   - `firmware/refrigerator/` — Activated Carbon Filter Monitoring on the
+     root endpoint, same Condition-feature integration but with a
+     deliberately different, plain wall-clock-time life estimate (not
+     gated by compressor run-state, since this filter sits in the sealed
+     cabinet continuously exposed to food-storage air).
+   - `firmware/light/`, `firmware/outlet/`, `firmware/dimmable-light/`,
+     `firmware/color-light/`, `firmware/addressable-light/`, and
+     `firmware/color-temperature-light/` — Occupancy Sensing (client), a
+     one-line NULL-config/CLUSTER_FLAG_CLIENT binding-surface addition
+     confirmed optionalConform on all six device types' own XML. Level
+     Control (also optionalConform on OnOffLight.xml/
+     OnOffPlug-inUnit.xml) was deliberately NOT added to `firmware/light/`
+     or `firmware/outlet/`: it carries the exact same mandatory OO+LT
+     features as firmware/dimmable-light/'s/firmware/dimmable-plug/'s own
+     device types, so enabling it would make those endpoints functionally
+     dimmable while still declaring the non-dimmable device type identity
+     — most real controllers key their UI off the cluster list present,
+     not the declared device type, so this would just create a second,
+     misleadingly-labelled way to build what those two device types
+     already build correctly.
+   - `firmware/thermostat/` — Fan Control, Occupancy Sensing, and
+     Relative Humidity Measurement (all client), same one-line binding-
+     surface pattern. Two more optionalConform clusters on Thermostat.xml
+     were deliberately skipped: Ambient Context Sensing (client) —
+     provisionalConform per the XML itself, and esp-matter has no cluster
+     helper for it at all; and Energy Preference (server, EnergyBalance)
+     — esp-matter's own feature helper always creates an empty
+     EnergyBalances list with no config-driven way to populate a real
+     preset list, a pattern with no existing precedent anywhere in this
+     repo. Thermostat User Interface Configuration (also optionalConform
+     here, and the sole gap on `firmware/temperature-sensor/`) was
+     skipped on both: genuinely meaningful only once a device's own local
+     display is updated to honor TemperatureDisplayMode, and — for
+     `firmware/temperature-sensor/` specifically — this attribute pairing
+     (plus KeypadLockout) is inherently UI-hardware-specific, with
+     nothing real behind it on a bare sensor chip with no display or
+     keypad at all.
+   - `firmware/smoke-co-alarm/` — Groups (a plain shell) and Carbon
+     Monoxide Concentration Measurement with ONLY the LevelIndication
+     feature (never NumericMeasurement, for the same "MQ-series ppm
+     curves aren't calibratable" reasoning this file's own header comment
+     already gives for not exposing a numeric reading elsewhere) — reusing
+     the MQ7's own existing Normal/Warning/Critical classification rather
+     than computing a second, independent one. Temperature Measurement
+     and Relative Humidity Measurement were skipped: no temperature/
+     humidity sensing hardware exists anywhere in this device type.
+   - `firmware/air-quality-sensor/` — all ten remaining optional clusters
+     (Temperature/Relative Humidity Measurement plus eight gas/
+     particulate concentration clusters) were left unimplemented: the
+     CCS811 is a general-purpose MOX gas sensor reporting only eCO2/eTVOC,
+     with no sensitivity to any of the other eight gases and no
+     temperature/humidity sensing element of its own (it takes an
+     external temperature/humidity reading as a compensation INPUT, not
+     an output) — unlike smoke-co-alarm's CO addition, there was no
+     partial real signal to expose for any of the ten, so all ten were
+     documented as a deliberate scope cut rather than fabricated.
+
+   Every addition across this whole pass followed the same discipline:
+   verify the specific cluster's `optionalConform`/`mandatoryConform`
+   status against the real CSA XML inside the pinned SDK image (never
+   trust the spreadsheet or a device type's own name alone), read
+   esp-matter's own `cluster::create()` implementation directly before
+   assuming a config/feature shape, prefer an honest documented skip over
+   a fabricated reading whenever no real sensor or SDK mechanism backs a
+   cluster, and Docker-build-verify every change (including, for
+   `firmware/smoke-co-alarm/`, re-verifying all 3 `SENSOR_TYPE` configs
+   to confirm the new cluster's own `#if` guard compiles correctly out of
+   both single-sensor builds). None of the additions in this pass have
+   been hardware-tested — every device type they touch was already
+   flagged as build-verified-only before this pass began, for hardware
+   reasons unrelated to these specific changes.
 
 ## Note on hardware/USB
 
