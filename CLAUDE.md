@@ -5231,6 +5231,55 @@ firmware/dimmer-switch/   Dimmer Switch — forty-seventh device type: a
                            fabric, not just this device alone).
   partitions.csv           same OTA + fctry layout as firmware/light/
   sdkconfig.defaults        same as firmware/light/
+firmware/color-dimmer-switch/  Color Dimmer Switch — forty-eighth device
+                           type, and a direct extension of firmware/
+                           dimmer-switch/: confirmed against the CSA's own
+                           ColorDimmerSwitch.xml (0x0105) to be an
+                           explicit `superset="Dimmer Switch"` — the exact
+                           same cluster list plus one addition, Color
+                           Control (client, mandatoryConform).
+  main/app_main.cpp        `endpoint::color_dimmer_switch::create()`
+                           confirmed complete/ready-to-use — byte-for-byte
+                           the same Descriptor + Binding + Identify
+                           [server+client] + OnOff[client] +
+                           LevelControl[client] wiring firmware/
+                           dimmer-switch/'s own endpoint already uses,
+                           plus exactly one extra line
+                           (`color_control::create(endpoint, NULL,
+                           CLUSTER_FLAG_CLIENT)`) confirmed by reading
+                           `color_dimmer_switch::add()` directly. On/off
+                           button (short=Toggle, long=Identify) and the
+                           brightness rotary encoder (LevelControl::Step)
+                           are both reused verbatim from firmware/
+                           dimmer-switch/. A SECOND rotary encoder sends
+                           real `ColorControl::Commands::StepHue` per
+                           detent — confirmed by reading connectedhomeip's
+                           own generated `ColorControl/Commands.h`/
+                           `Enums.h` directly that this command's field
+                           shape genuinely differs from LevelControl::
+                           Step's in two ways worth remembering for any
+                           future ColorControl client command in this
+                           repo: `StepModeEnum` here is `kUp`=0x01/
+                           `kDown`=0x03 (NOT LevelControl::StepModeEnum's
+                           own 0/1 — a real, easy mistake to make by
+                           assuming a shared step-direction convention
+                           across clusters), and `TransitionTime` is a
+                           plain non-nullable `uint8_t` (tenths of a
+                           second) here, unlike LevelControl::Step's own
+                           nullable uint16 — so this command's JSON
+                           payload needs a real numeric value for that
+                           field, not the `NULL` type-tag trick firmware/
+                           dimmer-switch/'s own LevelControl::Step payload
+                           needs. Standard quick-power-cycle factory
+                           reset. Build-verified in Docker, clean first
+                           attempt; not hardware-tested (no rotary-
+                           encoder/pushbutton hardware physically
+                           available when written — and, like firmware/
+                           dimmer-switch/, testing this one for real also
+                           needs a second, already-commissioned bindable
+                           color light on the same fabric).
+  partitions.csv           same OTA + fctry layout as firmware/light/
+  sdkconfig.defaults        same as firmware/light/
 tools/
   dev.sh                  opens the Docker dev environment
   gen_factory.sh          local QR + factory partition generator
@@ -7265,14 +7314,14 @@ SECURITY.md               flash encryption / secure boot / signed OTA guidance
    available when written — and, unlike every server-side device type in
    this repo, testing this one for real also needs a second, already-
    commissioned bindable target device on the same fabric).
-2. Implement Matter **OTA** — partially done. All forty-seven firmware
+2. Implement Matter **OTA** — partially done. All forty-eight firmware
    types ship `CONFIG_ENABLE_OTA_REQUESTOR=y`, which adds the OTA Requestor
    cluster to the root node endpoint entirely via Kconfig — esp-matter's
    own core startup (`esp_matter_core.cpp`) calls
    `esp_matter_ota_requestor_init()`/`_start()` automatically once that
    flag is on, so no app code was needed. Confirmed on real hardware for
    `firmware/contact-sensor/` and `firmware/switch/` (clean boot, cluster
-   registered, zero errors); the other forty-five build identically since
+   registered, zero errors); the other forty-six build identically since
    the code path is generic to every device type, not device-specific.
 
    Still open: a real OTA **transfer** needs an OTA Provider node
