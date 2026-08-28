@@ -5118,6 +5118,49 @@ firmware/irrigation-system/  Irrigation System — forty-fifth device type,
                            device type physically available when written).
   partitions.csv           same OTA + fctry layout as firmware/light/
   sdkconfig.defaults        same as firmware/light/
+firmware/electrical-meter/  Electrical Meter — forty-sixth device type: a
+                           standalone whole-circuit/whole-home energy
+                           meter, reusing firmware/outlet/'s own 6-chip
+                           power-monitoring subsystem (BL0942/BL0937/
+                           HLW8012/CSE7759/CSE7766/ADE7953) verbatim as
+                           the device's own primary function rather than
+                           a bonus feature. Confirmed against the CSA's
+                           own ElectricalMeter.xml (0x0514): Electrical
+                           Power Measurement + Electrical Energy
+                           Measurement both mandatoryConform; Commodity
+                           Metering is provisionalConform in its fallback
+                           branch, so skipped — same precedent firmware/
+                           microwave-oven/'s own PowerInWatts feature
+                           already establishes. `endpoint::
+                           electrical_meter::create()` is a complete
+                           top-level helper (Descriptor + both mandatory
+                           clusters, one endpoint — simpler than firmware/
+                           outlet/'s own two-endpoint composition, since
+                           metering is this device's whole purpose).
+                           `ELECTRICAL_METER_CHIP` defaults to BL0942 (the
+                           most accurate of the six) rather than firmware/
+                           outlet/'s own "none" default, since a meter
+                           with no chip selected would be non-functional.
+                           A real question was checked before writing any
+                           code, not assumed either way: esp-matter's own
+                           `ElectricalPowerMeasurementDelegateInitCB`
+                           DOES offer an automatic `config->delegate`
+                           construction path for this cluster (unlike
+                           Chime before this session's correction) — but
+                           reading esp-matter's own official reference
+                           (`examples/all_device_types_app/main/
+                           electrical_measurement/`) directly confirmed
+                           it uses the exact same manual `Instance`
+                           construction firmware/outlet/'s own file
+                           already follows, not the automatic path — so
+                           this file's reuse of that pattern is
+                           reference-grounded, not a missed shortcut.
+                           Standard quick-power-cycle factory reset.
+                           Build-verified in Docker, clean first attempt;
+                           not hardware-tested (no module of any of the
+                           six chips physically available when written).
+  partitions.csv           same OTA + fctry layout as firmware/light/
+  sdkconfig.defaults        same as firmware/light/
 tools/
   dev.sh                  opens the Docker dev environment
   gen_factory.sh          local QR + factory partition generator
@@ -7084,14 +7127,14 @@ SECURITY.md               flash encryption / secure boot / signed OTA guidance
    diffed against the original — a byte-for-byte match.
    `tools/product-wizard/README.md`'s own device-type list and count
    were updated to match (forty-three → forty-four).
-2. Implement Matter **OTA** — partially done. All forty-five firmware
+2. Implement Matter **OTA** — partially done. All forty-six firmware
    types ship `CONFIG_ENABLE_OTA_REQUESTOR=y`, which adds the OTA Requestor
    cluster to the root node endpoint entirely via Kconfig — esp-matter's
    own core startup (`esp_matter_core.cpp`) calls
    `esp_matter_ota_requestor_init()`/`_start()` automatically once that
    flag is on, so no app code was needed. Confirmed on real hardware for
    `firmware/contact-sensor/` and `firmware/switch/` (clean boot, cluster
-   registered, zero errors); the other forty-three build identically since
+   registered, zero errors); the other forty-four build identically since
    the code path is generic to every device type, not device-specific.
 
    Still open: a real OTA **transfer** needs an OTA Provider node
