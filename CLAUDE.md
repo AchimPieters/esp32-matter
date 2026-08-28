@@ -138,6 +138,30 @@ firmware/switch/          On/Off switch — second device type, copied from ligh
                            configuration has been tested on real hardware
                            so far — multi-button is new and flagged as
                            such in the wizard.
+                           Later extended (Matter Device Types Reference
+                           audit, see "Open next steps" below): each
+                           button endpoint also gets Groups + Scenes
+                           Management client-cluster shells — both
+                           confirmed `<optionalConform/>` directly against
+                           the CSA's own OnOffLightSwitch.xml, alongside
+                           the mandatory Identify/OnOff client clusters
+                           `on_off_light_switch::create()` already wires
+                           up. Added via the raw `cluster::groups::
+                           create(endpoint, NULL, CLUSTER_FLAG_CLIENT)`/
+                           `cluster::scenes_management::create(endpoint,
+                           NULL, CLUSTER_FLAG_CLIENT)` calls (confirmed by
+                           reading both functions directly that
+                           `CLUSTER_FLAG_CLIENT` needs no config at all) —
+                           shells only, no local trigger wired up for
+                           either (this button only ever sends Toggle;
+                           there's no natural second gesture on a single
+                           button for "add to group"/"recall scene"), same
+                           "declare the shell, don't invent busy-work"
+                           precedent this file's own OnOff client shell
+                           already sets. A real controller can still use
+                           both once bound, via its own generic group/
+                           scene management UI. Build-verified in Docker
+                           for both SWITCH_BUTTON_COUNT=1 and =4.
   partitions.csv           same OTA + fctry layout as firmware/light/
   sdkconfig.defaults        same as firmware/light/
 firmware/contact-sensor/  Contact sensor — third device type, copied from switch/

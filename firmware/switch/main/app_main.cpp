@@ -509,6 +509,28 @@ extern "C" void app_main(void)
             ESP_LOGE(TAG, "Failed to create switch endpoint for button %d", i + 1);
             return;
         }
+        /* Groups + Scenes Management client — both optionalConform on
+         * On/Off Light Switch's own device type XML, confirmed directly
+         * against the CSA's own OnOffLightSwitch.xml (Groups client and
+         * Scenes Management client, both `<optionalConform/>`, alongside
+         * Identify/OnOff's own mandatory client clusters this endpoint
+         * already has via the complete `on_off_light_switch::create()`
+         * helper). Added as plain client shells (`cluster::create(
+         * endpoint, Id, CLUSTER_FLAG_CLIENT)`, confirmed by reading
+         * `cluster::groups::create()`/`cluster::scenes_management::
+         * create()` directly that CLUSTER_FLAG_CLIENT needs no config at
+         * all — both fall straight through to the same raw shell) — no
+         * local trigger is wired up for either, same "declare the shell,
+         * don't invent busy-work" precedent this file's own OnOff client
+         * shell already sets: this button only ever sends Toggle, and
+         * there's no second physical gesture on a single-button switch to
+         * naturally drive "add to group"/"recall scene" with. A real
+         * controller can still discover and use these clusters via its
+         * own generic group/scene management UI once bound, the same way
+         * any Matter client cluster works regardless of what triggers
+         * this specific firmware happens to wire up locally. */
+        cluster::groups::create(endpoint, NULL, CLUSTER_FLAG_CLIENT);
+        cluster::scenes_management::create(endpoint, NULL, CLUSTER_FLAG_CLIENT);
         switch_endpoint_ids[i] = endpoint::get_id(endpoint);
         ESP_LOGI(TAG, "Button %d: switch endpoint id %u (GPIO %d)",
                  i + 1, switch_endpoint_ids[i], switch_button_gpios[i]);
