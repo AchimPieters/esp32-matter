@@ -393,6 +393,30 @@ firmware/temperature-sensor/  Temperature + humidity sensor — fifth device
                            this sensor's raw ADC counts are meaningless
                            without applying it against per-chip
                            calibration coefficients read from its NVM.
+
+                           Matter Device Types Reference audit (see
+                           CLAUDE.md's own "Open next steps" below):
+                           TemperatureSensor.xml's own revision 3 lists one
+                           optional cluster, Thermostat User Interface
+                           Configuration (TemperatureDisplayMode +
+                           KeypadLockout) — confirmed real and
+                           optionalConform, but deliberately NOT added
+                           here. Both attributes only have physical meaning
+                           on a device with an actual local display/keypad
+                           to configure; this device type is a bare I2C/
+                           single-wire/1-Wire sensor chip with neither —
+                           unlike firmware/contact-sensor/'s own zero-
+                           feature Boolean State Configuration addition
+                           (SensorFault is a general "is something wrong
+                           with this sensor" concept applicable to any
+                           sensor), TemperatureDisplayMode/KeypadLockout
+                           are inherently UI-hardware-specific and would be
+                           fabricated attributes with nothing real behind
+                           them here. Same "no sensor/hardware, no
+                           fabricated feature" honesty precedent firmware/
+                           evse/'s always-NoError FaultState already
+                           establishes — a deliberate product-scope
+                           decision, not a technical limitation.
   partitions.csv           same OTA + fctry layout as firmware/light/
   sdkconfig.defaults        same as firmware/light/
 firmware/light-sensor/    Ambient light sensor — sixth device type, and
@@ -1231,6 +1255,62 @@ firmware/thermostat/      Thermostat (Heat + Cool) — eleventh device type,
                            encoder + SPI display) simply runs out of the
                            classic ESP32's ~17 usable
                            GPIOs otherwise.
+
+                           Later extended (Matter Device Types Reference
+                           audit, see "Open next steps" below): confirmed
+                           directly against the CSA's own Thermostat.xml
+                           (revision 6) that Fan Control, Occupancy
+                           Sensing, and Relative Humidity Measurement (all
+                           client) are genuinely optionalConform, added via
+                           the same NULL-config/CLUSTER_FLAG_CLIENT shape
+                           the 6 light/outlet device types' own Occupancy
+                           Sensing addition already establishes — each only
+                           calls `create_default_binding_cluster()`
+                           internally (confirmed idempotent, safe even
+                           alongside `THERMOSTAT_OUTPUT_BINDING`'s own
+                           separate Binding cluster). Fan Control lets a
+                           controller bind this thermostat to a separate
+                           whole-house fan; Occupancy Sensing/Relative
+                           Humidity Measurement each let it bind to an
+                           external sensor — none has local app logic
+                           reacting to the bound device, same "declared but
+                           not acted on locally" honesty this repo already
+                           applies to e.g. EVSE's ChargingPreferences. Two
+                           more optionalConform clusters on this XML are
+                           deliberately NOT added: Ambient Context Sensing
+                           (client) — marked provisionalConform in the XML
+                           itself, and esp-matter has no cluster helper for
+                           it at all (confirmed: no
+                           `ambient_context_sensing` namespace exists
+                           anywhere in the legacy data model), same
+                           "provisional, no real controller or SDK support"
+                           precedent firmware/addressable-light/'s own
+                           skipped DynamicLighting cluster already
+                           establishes; and Energy Preference (server,
+                           EnergyBalance feature) — esp-matter's own
+                           `feature::energy_balance::add()` creates its
+                           mandatory EnergyBalances attribute (a list of
+                           BalanceStruct describing each selectable preset)
+                           always empty, via `attribute::
+                           create_energy_balances(cluster, NULL, 0, 0)`,
+                           with no config-driven way to populate it — a
+                           real preset list would need hand-building a
+                           list-of-structs attribute value from scratch, a
+                           pattern with no existing precedent anywhere in
+                           this repo, deferred rather than risk an
+                           incorrect struct-array encoding. Thermostat User
+                           Interface Configuration (server, also
+                           optionalConform here) is likewise deferred —
+                           genuinely meaningful only once this file's own
+                           optional GC9A01/ST7789/SSD1306 displays are
+                           updated to honor TemperatureDisplayMode's
+                           Celsius/Fahrenheit choice, a larger follow-up
+                           touching all three display drivers, not bundled
+                           into this same pass. Build-verified in Docker
+                           (default config, clean first attempt — the new
+                           lines are unconditional, not gated behind any
+                           `THERMOSTAT_OUTPUT_TYPE`/`DISPLAY_TYPE` branch,
+                           so this covers every configuration).
   partitions.csv           same OTA + fctry layout as firmware/light/
   sdkconfig.defaults        same as firmware/light/, plus
                            CONFIG_SPI_MASTER_ISR_IN_IRAM=n (see above)

@@ -2413,6 +2413,51 @@ extern "C" void app_main(void)
     thermostat_endpoint_id = endpoint::get_id(endpoint);
     ESP_LOGI(TAG, "Thermostat endpoint id: %u", thermostat_endpoint_id);
 
+    /* Fan Control, Occupancy Sensing, and Relative Humidity Measurement
+     * (all client) — all three confirmed optionalConform directly against
+     * the CSA's own Thermostat.xml (Matter Device Types Reference audit,
+     * see CLAUDE.md's own "Open next steps"). Same NULL-config/CLUSTER_
+     * FLAG_CLIENT shape the 6 light/outlet device types' own Occupancy
+     * Sensing addition already establishes — each only calls
+     * create_default_binding_cluster() internally (confirmed idempotent,
+     * same as firmware/chime/'s own client Chime cluster; safe to call
+     * again here even when THERMOSTAT_OUTPUT_BINDING below also creates
+     * its own Binding cluster explicitly). Fan Control lets a controller
+     * bind this thermostat to a separate whole-house fan; Occupancy
+     * Sensing and Relative Humidity Measurement each let it bind to an
+     * external sensor. None of the three has any local app logic reacting
+     * to the bound device's own attributes — same "declared but not acted
+     * on locally" honesty this repo already applies to e.g. EVSE's
+     * ChargingPreferences; a bound controller (e.g. Home Assistant) can
+     * still use the binding for its own automation. */
+    cluster::fan_control::create(endpoint, NULL, CLUSTER_FLAG_CLIENT);
+    cluster::occupancy_sensing::create(endpoint, NULL, CLUSTER_FLAG_CLIENT);
+    cluster::relative_humidity_measurement::create(endpoint, NULL, CLUSTER_FLAG_CLIENT);
+
+    /* Two more optionalConform clusters on this device type are
+     * deliberately NOT added, both documented in CLAUDE.md's own "Open
+     * next steps": Ambient Context Sensing (client) — provisional per the
+     * XML's own conform marker, and esp-matter has no cluster helper for
+     * it at all (confirmed: no `ambient_context_sensing` namespace exists
+     * anywhere in the legacy data model) — same "provisional, no real
+     * controller or SDK support" precedent firmware/addressable-light/'s
+     * own skipped DynamicLighting cluster already establishes. Energy
+     * Preference (server, EnergyBalance feature) — esp-matter's own
+     * `feature::energy_balance::add()` creates its mandatory
+     * EnergyBalances attribute (a list of BalanceStruct describing each
+     * selectable preset) via `attribute::create_energy_balances(cluster,
+     * NULL, 0, 0)`, i.e. always empty, with no config-driven way to
+     * populate it — a real preset list would need hand-building a
+     * list-of-structs attribute value from scratch, a pattern with no
+     * existing precedent anywhere in this repo; deferred rather than risk
+     * an incorrect struct-array encoding, same "smallest reasonable next
+     * step" scope cut this repo applies elsewhere. Thermostat User
+     * Interface Configuration (server) — genuinely meaningful only once
+     * this file's own optional GC9A01/ST7789/SSD1306 displays are updated
+     * to honor TemperatureDisplayMode's Celsius/Fahrenheit choice, a
+     * larger follow-up touching all three display drivers, deliberately
+     * not bundled into this same pass. */
+
 #if THERMOSTAT_OUTPUT_TYPE == THERMOSTAT_OUTPUT_BINDING
     /* Add a client-side OnOff cluster + the Binding cluster itself onto
      * this SAME endpoint — the exact pair esp-matter's own
