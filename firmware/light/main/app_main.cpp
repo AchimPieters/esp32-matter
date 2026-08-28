@@ -250,6 +250,34 @@ extern "C" void app_main(void)
     light_endpoint_id = endpoint::get_id(endpoint);
     ESP_LOGI(TAG, "Light endpoint id: %u", light_endpoint_id);
 
+    /* 3a. Occupancy Sensing (client) — optionalConform on OnOffLight.xml
+     * (Matter Device Types Reference audit, see CLAUDE.md's own "Open next
+     * steps" for detail), letting a controller bind this endpoint to a
+     * real occupancy sensor's own endpoint. NULL config + CLUSTER_FLAG_
+     * CLIENT: confirmed by reading occupancy_sensing::create() directly
+     * that its CLIENT branch only calls create_default_binding_cluster()
+     * — same shape firmware/switch/'s own Groups/Scenes client clusters
+     * and firmware/doorbell/'s client Chime cluster already establish. No
+     * app code reacts to the bound sensor's Occupancy attribute itself —
+     * this only gives a controller (e.g. Home Assistant) the binding
+     * surface to wire up its own automation; same "declared but not acted
+     * on locally" honesty this repo already applies to e.g. EVSE's
+     * ChargingPreferences. */
+    cluster::occupancy_sensing::create(endpoint, NULL, CLUSTER_FLAG_CLIENT);
+
+    /* Level Control (server) is ALSO optionalConform on OnOffLight.xml —
+     * confirmed directly in the XML that it carries the exact same
+     * mandatory OO+LT features as firmware/dimmable-light/'s own device
+     * type (0x0101). Deliberately NOT added here: enabling it would make
+     * this endpoint functionally a dimmable light while still declaring
+     * itself device type 0x0100 (On/Off Light) rather than 0x0101 — most
+     * real controllers key their UI off the cluster list actually present,
+     * not the declared device type, so this would just create a second,
+     * misleadingly-labelled way to build what firmware/dimmable-light/
+     * already builds correctly. Skipped as a deliberate product-scope
+     * decision, not a technical limitation — see CLAUDE.md's own "Open
+     * next steps" for the full reasoning. */
+
     /* 4. Start Matter — begins BLE advertising so a controller can commission it. */
     err = esp_matter::start(app_event_cb);
     if (err != ESP_OK) {

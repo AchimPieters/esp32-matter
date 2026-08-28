@@ -95,6 +95,37 @@ Then flash the factory partition to the `fctry` slot at `0x3E0000`.
 ```
 firmware/light/          On/Off light — the reference device
   main/app_main.cpp       plain esp-matter code; LED on GPIO 2 (WROOM-32)
+
+                           Later extended (Matter Device Types Reference
+                           audit, see "Open next steps" below) with
+                           Occupancy Sensing (client) — confirmed directly
+                           against the CSA's own OnOffLight.xml that this
+                           is genuinely optionalConform, added via
+                           `cluster::occupancy_sensing::create(endpoint,
+                           NULL, CLUSTER_FLAG_CLIENT)` — its CLIENT branch
+                           only calls `create_default_binding_cluster()`,
+                           the same shape firmware/switch/'s own Groups/
+                           Scenes client clusters and firmware/doorbell/'s
+                           client Chime cluster already establish. No app
+                           code reacts to a bound sensor's own Occupancy
+                           attribute — this only gives a controller the
+                           binding surface to wire up its own automation.
+                           Level Control (also optionalConform on this XML,
+                           confirmed to carry the exact same mandatory
+                           OO+LT features as firmware/dimmable-light/'s own
+                           device type) is deliberately NOT added: enabling
+                           it would make this endpoint functionally a
+                           dimmable light while still declaring itself
+                           device type 0x0100 rather than 0x0101 — most
+                           real controllers key their UI off the cluster
+                           list actually present, not the declared device
+                           type, so this would just create a second,
+                           misleadingly-labelled way to build what
+                           firmware/dimmable-light/ already builds
+                           correctly. A deliberate product-scope decision,
+                           not a technical limitation — the same reasoning
+                           applies to firmware/outlet/'s identical gap.
+                           Build-verified in Docker (clean first attempt).
   partitions.csv          OTA A/B slots + separate fctry partition (fits 4 MB)
   sdkconfig.defaults      factory-data provider + custom partition table
 firmware/switch/          On/Off switch — second device type, copied from light/
@@ -298,6 +329,21 @@ firmware/outlet/         On/Off Plug-in Unit — fourth device type, combines
                            hardware-tested (no module of any of the 6 chips,
                            or a separate status LED, was physically
                            available).
+
+                           Later extended (Matter Device Types Reference
+                           audit, see "Open next steps" below) with
+                           Occupancy Sensing (client) — confirmed directly
+                           against the CSA's own OnOffPlug-inUnit.xml that
+                           this is genuinely optionalConform, same NULL-
+                           config/CLUSTER_FLAG_CLIENT addition firmware/
+                           light/'s own identical gap already establishes.
+                           Level Control (also optionalConform here) is
+                           deliberately skipped for the same reasoning
+                           firmware/light/'s own header comment documents
+                           in full: it would functionally duplicate
+                           firmware/dimmable-plug/ under this device type's
+                           own (misleading, for that purpose) identity.
+                           Build-verified in Docker (clean first attempt).
   partitions.csv           same OTA + fctry layout as firmware/light/
   sdkconfig.defaults        same as firmware/light/
 firmware/temperature-sensor/  Temperature + humidity sensor — fifth device
@@ -462,6 +508,15 @@ firmware/dimmable-light/  Dimmable light — seventh device type, and this
                            correctly reached set_output() and updated the
                            LEDC duty, confirmed by the serial log's
                            "Light level set to N/254" line for each step.
+
+                           Later extended (Matter Device Types Reference
+                           audit, see "Open next steps" below) with
+                           Occupancy Sensing (client) — confirmed directly
+                           against the CSA's own DimmableLight.xml that
+                           this is genuinely optionalConform, same NULL-
+                           config/CLUSTER_FLAG_CLIENT addition firmware/
+                           light/'s own identical gap already establishes.
+                           Build-verified in Docker (clean first attempt).
   partitions.csv           same OTA + fctry layout as firmware/light/
   sdkconfig.defaults        same as firmware/light/
 firmware/window-covering/  Roller shade / curtain — eighth device type, and
@@ -671,6 +726,16 @@ firmware/color-light/     RGB/RGBW/RGBWW color light — ninth device type,
                            contact-sensor's reed switch/Hall sensor list,
                            reused here rather than inventing a second,
                            differently-shaped mechanism for the same idea.
+
+                           Later extended (Matter Device Types Reference
+                           audit, see "Open next steps" below) with
+                           Occupancy Sensing (client) — confirmed directly
+                           against the CSA's own ExtendedColorLight.xml
+                           that this is genuinely optionalConform, same
+                           NULL-config/CLUSTER_FLAG_CLIENT addition
+                           firmware/light/'s own identical gap already
+                           establishes. Build-verified in Docker (clean
+                           first attempt).
   partitions.csv           same OTA + fctry layout as firmware/light/
   sdkconfig.defaults        same as firmware/light/
 firmware/addressable-light/  Addressable LED strip / smart-bulb driver —
@@ -897,6 +962,16 @@ firmware/addressable-light/  Addressable LED strip / smart-bulb driver —
                            firmware/color-light/); the other 6
                            chips remain build-verified only (no hardware
                            for them was physically available).
+
+                           Later extended (Matter Device Types Reference
+                           audit, see "Open next steps" below) with
+                           Occupancy Sensing (client) — confirmed directly
+                           against the CSA's own ExtendedColorLight.xml
+                           that this is genuinely optionalConform, same
+                           NULL-config/CLUSTER_FLAG_CLIENT addition
+                           firmware/light/'s own identical gap already
+                           establishes. Build-verified in Docker (clean
+                           first attempt).
   partitions.csv           same OTA + fctry layout as firmware/light/
   sdkconfig.defaults        same as firmware/light/
 firmware/thermostat/      Thermostat (Heat + Cool) — eleventh device type,
@@ -4601,6 +4676,16 @@ firmware/color-temperature-light/  Color Temperature Light — fortieth device
                            include directly); not hardware-tested (no
                            cool-white/warm-white LED/driver board for this
                            device type physically available when written).
+
+                           Later extended (Matter Device Types Reference
+                           audit, see "Open next steps" below) with
+                           Occupancy Sensing (client) — confirmed directly
+                           against the CSA's own ColorTemperatureLight.xml
+                           that this is genuinely optionalConform, same
+                           NULL-config/CLUSTER_FLAG_CLIENT addition
+                           firmware/light/'s own identical gap already
+                           establishes. Build-verified in Docker (clean
+                           first attempt).
   partitions.csv           same OTA + fctry layout as firmware/light/
   sdkconfig.defaults        same as firmware/light/
 firmware/closure/         Closure (garage door / roller shutter / awning) —

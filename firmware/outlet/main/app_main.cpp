@@ -1497,6 +1497,17 @@ extern "C" void app_main(void)
     outlet_endpoint_id = endpoint::get_id(endpoint);
     ESP_LOGI(TAG, "Outlet endpoint id: %u", outlet_endpoint_id);
 
+    /* Occupancy Sensing (client) — optionalConform on OnOffPlug-inUnit.xml
+     * (Matter Device Types Reference audit, see CLAUDE.md's own "Open next
+     * steps"). Same NULL-config/CLUSTER_FLAG_CLIENT shape as firmware/
+     * light/'s own identical addition — see that file's own comment for
+     * the full detail on why no app code reacts to it directly. Level
+     * Control (also optionalConform here) is deliberately skipped for the
+     * same reasoning firmware/light/'s own header comment documents in
+     * full: it would functionally duplicate firmware/dimmable-plug/ under
+     * this device type's own (misleading, for that purpose) identity. */
+    cluster::occupancy_sensing::create(endpoint, NULL, CLUSTER_FLAG_CLIENT);
+
 #if OUTLET_POWER_MONITOR != OUTLET_POWER_MONITOR_NONE
     if (!power_monitoring_setup(node)) {
         ESP_LOGE(TAG, "Power monitoring setup failed — continuing without it");

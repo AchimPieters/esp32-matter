@@ -875,6 +875,13 @@ extern "C" void app_main(void)
     color_light_endpoint_id = endpoint::get_id(ep);
     ESP_LOGI(TAG, "Color light endpoint id: %u", color_light_endpoint_id);
 
+    /* Occupancy Sensing (client) — optionalConform on ExtendedColorLight.xml
+     * (Matter Device Types Reference audit, see CLAUDE.md's own "Open next
+     * steps"). Same NULL-config/CLUSTER_FLAG_CLIENT shape firmware/light/'s
+     * own identical addition already establishes — see that file's own
+     * comment for the full detail on why no app code reacts to it directly. */
+    cluster::occupancy_sensing::create(ep, NULL, CLUSTER_FLAG_CLIENT);
+
     /* CurrentLevel/CurrentHue/CurrentSaturation/CurrentX/CurrentY/
      * ColorTemperatureMireds all change rapidly while a controller is
      * actively dragging a brightness/color slider — deferring their NVS
