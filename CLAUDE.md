@@ -3914,6 +3914,38 @@ firmware/room-air-conditioner/  Room Air Conditioner — thirty-second device
                            attempt; not hardware-tested (no relay/DS18B20/
                            fan-driver hardware for this device type
                            physically available when written).
+
+                           Later extended (Matter Device Types Reference
+                           audit, see "Open next steps" below) with HEPA +
+                           Activated Carbon Filter Monitoring — confirmed
+                           directly against the CSA's own
+                           RoomAirConditioner.xml (revision 3) that both
+                           are genuinely `<optionalConform/>` on this
+                           device type, added onto the already-correct
+                           endpoint the same "add extra clusters
+                           afterward" way FanControl itself already is.
+                           Reuses firmware/extractor-hood/'s own Condition-
+                           feature integration verbatim
+                           (`resource_monitoring::feature::condition::
+                           add()` + `ResourceMonitoring::
+                           GetClusterInstance()`) and its identical plain
+                           time-based life estimate (accumulated fan-
+                           running seconds vs. each filter's own
+                           configurable rated life in hours, persisted to
+                           NVS periodically) — `g_fan_percent_setting`
+                           (already tracked by the existing FanDelegate for
+                           PercentCurrent reporting) doubles as the
+                           "is the fan currently running" signal the
+                           filter-life task polls, no new state needed.
+                           Life-hour defaults (2000h HEPA / 1000h carbon)
+                           reuse firmware/air-purifier/'s own room-air
+                           figures rather than firmware/extractor-hood/'s
+                           much shorter kitchen-grease-filter figures,
+                           since this is a room-air filter, not a grease
+                           filter. Build-verified in Docker (clean first
+                           attempt); not hardware-tested (no PWM fan/
+                           MOSFET driver board for this device type
+                           physically available when written).
   partitions.csv           same OTA + fctry layout as firmware/light/
   sdkconfig.defaults        same as firmware/light/
 firmware/heat-pump/       Heat Pump — thirty-third device type, and this

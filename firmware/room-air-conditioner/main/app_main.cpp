@@ -133,6 +133,8 @@
 #include <esp_matter_core.h>
 #include <app-common/zap-generated/cluster-objects.h>
 #include <app/clusters/fan-control-server/CodegenIntegration.h>
+#include <app/clusters/resource-monitoring-server/ResourceMonitoringCluster.h>
+#include <data_model_provider/clusters/resource_monitor/integration.h>
 #include <data_model_provider/esp_matter_data_model_provider.h>
 
 static const char *TAG = "matter_room_air_conditioner";
@@ -170,11 +172,37 @@ static const char *TAG = "matter_room_air_conditioner";
  * compressor hysteresis. */
 #define ROOM_AC_CONTROL_INTERVAL_MS 5000
 
+/* --- Filter monitoring (Matter Device Types Reference audit) ------------
+ * HEPA + Activated Carbon Filter Monitoring, both optionalConform on this
+ * device type's own XML (confirmed directly against the CSA's own
+ * RoomAirConditioner.xml) — a real room air conditioner's own air-intake
+ * filters, tracked the same fan-runtime-based way firmware/air-purifier/'s
+ * and firmware/extractor-hood/'s own filter clusters already are (see
+ * either file's own header comment for the full "why runtime, not wall-
+ * clock time" reasoning): accumulated seconds the fan has actually been
+ * running, persisted to its own NVS namespace every
+ * ROOM_AC_FILTER_NVS_SAVE_INTERVAL_MS while running (not every tick, to
+ * avoid flash wear), against each filter's own configurable rated life in
+ * hours. HEPA/carbon life figures reused from firmware/air-purifier/'s own
+ * defaults (2000h/1000h) — a room air conditioner's intake filters see
+ * broadly comparable duty to a dedicated air purifier's, unlike firmware/
+ * extractor-hood/'s own much shorter kitchen-grease-exposure figures. */
+#define ROOM_AC_FILTER_POLL_INTERVAL_MS 5000
+#define ROOM_AC_FILTER_NVS_SAVE_INTERVAL_MS 60000
+#define ROOM_AC_FILTER_NVS_NAMESPACE "filter_life"
+#define ROOM_AC_FILTER_NVS_KEY "run_seconds"
+#define ROOM_AC_HEPA_FILTER_LIFE_HOURS 2000
+#define ROOM_AC_CARBON_FILTER_LIFE_HOURS 1000
+#define ROOM_AC_FILTER_CHANGE_WARNING_PERCENT 20
+#define ROOM_AC_FILTER_CHANGE_CRITICAL_PERCENT 5
+
 using namespace esp_matter;
 using namespace esp_matter::endpoint;
 using namespace chip::app::Clusters;
 
 static uint16_t room_ac_endpoint_id = 0;
+static uint32_t filter_total_run_seconds = 0;
+static uint8_t g_fan_percent_setting = 0;
 static esp_timer_handle_t identify_led_timer = NULL;
 
 /* --- DS18B20 driver ---------------------------------------------------
@@ -439,6 +467,7 @@ public:
     {
         uint8_t percent = newState.percentSetting.IsNull() ? 0 : newState.percentSetting.Value();
         set_fan_output(percent);
+        g_fan_percent_setting = percent; /* read by filter_life_task() below */
 
         chip::app::ConcreteClusterPath path(room_ac_endpoint_id, FanControl::Id);
         chip::app::ServerClusterInterface *iface = esp_matter::data_model::provider::get_instance().registry().Get(path);
@@ -452,6 +481,97 @@ public:
 };
 
 static FanDelegate fan_delegate;
+
+/* HEPA + Activated Carbon Filter Monitoring — both optionalConform on this
+ * device type (added in RoomAirConditioner.xml revision 3), confirmed by
+ * reading the CSA's own device type XML directly rather than assumed from
+ * firmware/air-purifier/'s or firmware/extractor-hood/'s own precedent. A
+ * real room air conditioner commonly has both a washable/replaceable air
+ * filter and, on some models, an activated-carbon deodorizing filter —
+ * this reuses firmware/extractor-hood/'s own Condition-feature integration
+ * (`resource_monitoring::feature::condition::add()` +
+ * `ResourceMonitoring::GetClusterInstance()`) verbatim, including its
+ * plain time-based (not sensor-based) life estimate: accumulated seconds
+ * the fan actually ran, persisted to NVS periodically, against each
+ * filter's own configurable rated life in operating hours. Life figures
+ * reuse firmware/air-purifier/'s own air-purifier-style defaults (not
+ * firmware/extractor-hood/'s much shorter grease-filter figures) since a
+ * room AC's filter is a room-air filter, not a kitchen grease filter. */
+static uint8_t compute_filter_condition(uint32_t run_seconds, uint32_t life_hours)
+{
+    uint32_t life_seconds = life_hours * 3600u;
+    if (run_seconds >= life_seconds) {
+        return 0;
+    }
+    uint32_t remaining_percent = 100u - ((uint64_t)run_seconds * 100u) / life_seconds;
+    return (uint8_t)remaining_percent;
+}
+
+static ResourceMonitoring::ChangeIndicationEnum filter_change_indication_for(uint8_t condition_percent)
+{
+    if (condition_percent <= ROOM_AC_FILTER_CHANGE_CRITICAL_PERCENT) {
+        return ResourceMonitoring::ChangeIndicationEnum::kCritical;
+    }
+    if (condition_percent <= ROOM_AC_FILTER_CHANGE_WARNING_PERCENT) {
+        return ResourceMonitoring::ChangeIndicationEnum::kWarning;
+    }
+    return ResourceMonitoring::ChangeIndicationEnum::kOk;
+}
+
+/* Pushes a freshly computed Condition/ChangeIndication into one filter
+ * cluster — via ResourceMonitoring::GetClusterInstance(), esp-matter's own
+ * ready-made convenience free function (see firmware/air-purifier/'s own
+ * header comment for why this is used instead of this repo's usual
+ * registry-lookup pattern). */
+static void update_filter_cluster(uint32_t cluster_id, uint32_t life_hours, const char *label)
+{
+    uint8_t condition = compute_filter_condition(filter_total_run_seconds, life_hours);
+    ResourceMonitoring::ChangeIndicationEnum indication = filter_change_indication_for(condition);
+
+    auto *cluster = ResourceMonitoring::GetClusterInstance(room_ac_endpoint_id, cluster_id);
+    if (!cluster) {
+        ESP_LOGE(TAG, "%s filter cluster not found on endpoint %u", label, room_ac_endpoint_id);
+        return;
+    }
+    cluster->UpdateCondition(condition);
+    cluster->UpdateChangeIndication(indication);
+    ESP_LOGI(TAG, "%s filter: %u%% remaining (%s)", label, condition,
+             indication == ResourceMonitoring::ChangeIndicationEnum::kCritical ? "CRITICAL" :
+             indication == ResourceMonitoring::ChangeIndicationEnum::kWarning ? "WARNING" : "OK");
+}
+
+/* Polls every ROOM_AC_FILTER_POLL_INTERVAL_MS: accumulates run time while
+ * the fan is actually on (g_fan_percent_setting > 0, set by FanDelegate's
+ * own OnFanDriveStateChanged() above), periodically persists it to NVS, and
+ * refreshes both filter clusters' Condition/ChangeIndication every poll
+ * regardless — same shape as firmware/extractor-hood/'s own
+ * filter_life_task(). */
+static void filter_life_task(void *arg)
+{
+    uint32_t ms_since_save = 0;
+
+    while (true) {
+        vTaskDelay(pdMS_TO_TICKS(ROOM_AC_FILTER_POLL_INTERVAL_MS));
+
+        if (g_fan_percent_setting > 0) {
+            filter_total_run_seconds += ROOM_AC_FILTER_POLL_INTERVAL_MS / 1000;
+            ms_since_save += ROOM_AC_FILTER_POLL_INTERVAL_MS;
+
+            if (ms_since_save >= ROOM_AC_FILTER_NVS_SAVE_INTERVAL_MS) {
+                nvs_handle_t nvs;
+                if (nvs_open(ROOM_AC_FILTER_NVS_NAMESPACE, NVS_READWRITE, &nvs) == ESP_OK) {
+                    nvs_set_u32(nvs, ROOM_AC_FILTER_NVS_KEY, filter_total_run_seconds);
+                    nvs_commit(nvs);
+                    nvs_close(nvs);
+                }
+                ms_since_save = 0;
+            }
+        }
+
+        update_filter_cluster(HepaFilterMonitoring::Id, ROOM_AC_HEPA_FILTER_LIFE_HOURS, "HEPA");
+        update_filter_cluster(ActivatedCarbonFilterMonitoring::Id, ROOM_AC_CARBON_FILTER_LIFE_HOURS, "Carbon");
+    }
+}
 
 /* Toggles the identify LED each time the timer fires — the actual blink. */
 static void identify_led_timer_cb(void *arg)
@@ -592,6 +712,14 @@ extern "C" void app_main(void)
      * due) only happens later, once Matter has started. */
     bool should_factory_reset = check_factory_reset_boot_count();
 
+    /* 1c. Load the filter life counter accumulated so far — see
+     * filter_life_task()'s own header comment above. */
+    nvs_handle_t filter_nvs;
+    if (nvs_open(ROOM_AC_FILTER_NVS_NAMESPACE, NVS_READWRITE, &filter_nvs) == ESP_OK) {
+        nvs_get_u32(filter_nvs, ROOM_AC_FILTER_NVS_KEY, &filter_total_run_seconds);
+        nvs_close(filter_nvs);
+    }
+
     /* 2. Configure the compressor relay — boot off (de-energized), same
      * "boot to known safe state" convention every other device type here
      * follows. */
@@ -670,6 +798,35 @@ extern "C" void app_main(void)
     fan_config.fan_mode_sequence = chip::to_underlying(FanControl::FanModeSequenceEnum::kOffLowMedHigh);
     cluster::fan_control::create(endpoint, &fan_config, CLUSTER_FLAG_SERVER);
 
+    /* 3b. HEPA + Activated Carbon Filter Monitoring — both optionalConform,
+     * added onto the already-correct endpoint the same way FanControl just
+     * was; see filter_life_task()'s own header comment above for the full
+     * detail. */
+    cluster::hepa_filter_monitoring::config_t hepa_config;
+    cluster_t *hepa_cluster = cluster::hepa_filter_monitoring::create(endpoint, &hepa_config, CLUSTER_FLAG_SERVER);
+    if (!hepa_cluster) {
+        ESP_LOGE(TAG, "Failed to create HEPA filter monitoring cluster");
+        return;
+    }
+    cluster::resource_monitoring::feature::condition::config_t hepa_condition_config;
+    hepa_condition_config.condition = 100; /* fresh filter until NVS says otherwise, corrected on the first poll */
+    hepa_condition_config.degradation_direction =
+        chip::to_underlying(ResourceMonitoring::DegradationDirectionEnum::kDown);
+    cluster::resource_monitoring::feature::condition::add(hepa_cluster, &hepa_condition_config);
+
+    cluster::activated_carbon_filter_monitoring::config_t carbon_config;
+    cluster_t *carbon_cluster =
+        cluster::activated_carbon_filter_monitoring::create(endpoint, &carbon_config, CLUSTER_FLAG_SERVER);
+    if (!carbon_cluster) {
+        ESP_LOGE(TAG, "Failed to create activated carbon filter monitoring cluster");
+        return;
+    }
+    cluster::resource_monitoring::feature::condition::config_t carbon_condition_config;
+    carbon_condition_config.condition = 100;
+    carbon_condition_config.degradation_direction =
+        chip::to_underlying(ResourceMonitoring::DegradationDirectionEnum::kDown);
+    cluster::resource_monitoring::feature::condition::add(carbon_cluster, &carbon_condition_config);
+
     /* 4. Start Matter — begins BLE advertising so a controller can commission it. */
     err = esp_matter::start(app_event_cb);
     if (err != ESP_OK) {
@@ -694,6 +851,9 @@ extern "C" void app_main(void)
     /* 5. Start the control task — reads the sensor, pushes LocalTemperature,
      * runs the Cool-only hysteresis loop. */
     xTaskCreate(control_task, "room_ac_control_task", 4096, NULL, 5, NULL);
+
+    /* 5b. Start the filter life task — see its own header comment above. */
+    xTaskCreate(filter_life_task, "room_ac_filter_life_task", 4096, NULL, 5, NULL);
 
     ESP_LOGI(TAG, "Matter room air conditioner started. Scan the QR code to commission.");
 }
