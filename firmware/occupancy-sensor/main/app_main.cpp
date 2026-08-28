@@ -528,6 +528,20 @@ extern "C" void app_main(void)
     occupancy_endpoint_id = endpoint::get_id(endpoint);
     ESP_LOGI(TAG, "Occupancy sensor endpoint id: %u", occupancy_endpoint_id);
 
+    /* 3a. Boolean State Configuration — optionalConform on Occupancy
+     * Sensor's own device type XML (added in the spec's own revision 4),
+     * confirmed directly against the CSA's own OccupancySensor.xml. Same
+     * zero-feature, SensorFault-only addition firmware/contact-sensor/'s
+     * own header comment documents in full — see that file for the
+     * complete reasoning (no adjustable sensitivity or dedicated alarm
+     * indicator on any of PIR/RCWL-0516/HLK-LD2410's simple digital OUT
+     * pin, so SensorFault is added alone, always reporting "no fault"). */
+    cluster::boolean_state_configuration::config_t bsc_config;
+    cluster_t *bsc_cluster = cluster::boolean_state_configuration::create(endpoint, &bsc_config, CLUSTER_FLAG_SERVER);
+    if (bsc_cluster) {
+        cluster::boolean_state_configuration::attribute::create_sensor_fault(bsc_cluster, 0);
+    }
+
     /* 4. Start Matter — begins BLE advertising so a controller can commission it. */
     err = esp_matter::start(app_event_cb);
     if (err != ESP_OK) {

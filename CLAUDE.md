@@ -182,6 +182,30 @@ firmware/contact-sensor/  Contact sensor — third device type, copied from swit
                            attribute app code needs to write" case going
                            forward — OnOff was a plain ember attribute and
                            didn't hit it, BooleanState did)
+                           Later extended (Matter Device Types Reference
+                           audit, see "Open next steps" below): Boolean
+                           State Configuration (optionalConform, added in
+                           the spec's own revision 2), confirmed directly
+                           against the CSA's own ContactSensor.xml. Zero
+                           features enabled (none of Visual/Audible alarm,
+                           Suppress, Sensitivity Level, or Fault Events
+                           apply honestly to a plain reed switch) — just
+                           the one attribute NOT gated behind any feature
+                           at all, SensorFault, added and left at its
+                           default "no fault" (0), same "no sensor, no
+                           fabricated diagnostic" precedent firmware/
+                           evse/'s own always-NoError FaultState already
+                           establishes. Confirmed by reading esp-matter's
+                           own `data_model_provider/clusters/
+                           boolean_state_configuration/integration.cpp`
+                           directly that this cluster is genuinely code-
+                           driven and self-constructing — its own init
+                           callback reads whichever ember attributes
+                           already exist on the cluster shell (including
+                           whether a SensorFault attribute was created at
+                           all) to decide the live cluster's own feature/
+                           optional-attribute set, no delegate needed for
+                           this zero-feature configuration.
   partitions.csv           same OTA + fctry layout as firmware/light/
   sdkconfig.defaults        same as firmware/light/
 firmware/outlet/         On/Off Plug-in Unit — fourth device type, combines
@@ -1597,6 +1621,19 @@ firmware/occupancy-sensor/  Occupancy Sensor — fifteenth device type. First
                            confirmed against the same live serial log
                            showing each debounced edge and the resulting
                            `ReportData` sent to the controller.
+                           Later extended (Matter Device Types Reference
+                           audit, see "Open next steps" below): Boolean
+                           State Configuration (optionalConform, added in
+                           the spec's own revision 4), confirmed directly
+                           against the CSA's own OccupancySensor.xml. Same
+                           zero-feature, SensorFault-only addition
+                           firmware/contact-sensor/'s own header comment
+                           documents in full — see that file for the
+                           complete reasoning (no adjustable sensitivity
+                           or dedicated alarm indicator on any of PIR/
+                           RCWL-0516/HLK-LD2410's simple digital OUT pin,
+                           so SensorFault is added alone, always reporting
+                           "no fault").
   partitions.csv           same OTA + fctry layout as firmware/light/
   sdkconfig.defaults        same as firmware/light/
 firmware/fan/              Fan — sixteenth device type, and this repo's

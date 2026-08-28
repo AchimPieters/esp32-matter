@@ -374,6 +374,35 @@ extern "C" void app_main(void)
     contact_endpoint_id = endpoint::get_id(endpoint);
     ESP_LOGI(TAG, "Contact sensor endpoint id: %u", contact_endpoint_id);
 
+    /* 3a. Boolean State Configuration — optionalConform on Contact
+     * Sensor's own device type XML (added in the spec's own revision 2),
+     * confirmed directly against the CSA's own ContactSensor.xml. Every
+     * one of this cluster's five features (Visual/Audible alarms, alarm
+     * Suppress, Sensitivity Level, Fault Events) is independently
+     * optional and gates its own attributes/commands — none apply
+     * honestly to a plain reed switch (no adjustable sensitivity, no
+     * dedicated alarm indicator beyond the shared Identify LED), so this
+     * enables none of them (FeatureMap left at 0). The one attribute NOT
+     * gated behind any feature at all — SensorFault — is still added,
+     * always reporting "no fault" (0): a plain magnetic reed switch has
+     * no real way to detect its own fault condition, so this is an
+     * honestly-constant value, not a fabricated diagnostic, same
+     * precedent firmware/evse/'s own always-NoError FaultState already
+     * establishes. Confirmed by reading esp-matter's own
+     * `data_model_provider/clusters/boolean_state_configuration/
+     * integration.cpp` directly that this cluster is genuinely code-
+     * driven and self-constructing (its own
+     * `ESPMatterBooleanStateConfigurationClusterServerInitCallback` reads
+     * whichever ember attributes already exist on the cluster shell —
+     * including whether a SensorFault attribute was created at all — to
+     * decide the live cluster's own feature/optional-attribute set, no
+     * delegate needed for this zero-feature configuration). */
+    cluster::boolean_state_configuration::config_t bsc_config;
+    cluster_t *bsc_cluster = cluster::boolean_state_configuration::create(endpoint, &bsc_config, CLUSTER_FLAG_SERVER);
+    if (bsc_cluster) {
+        cluster::boolean_state_configuration::attribute::create_sensor_fault(bsc_cluster, 0);
+    }
+
     /* 4. Start Matter — begins BLE advertising so a controller can commission it. */
     err = esp_matter::start(app_event_cb);
     if (err != ESP_OK) {
