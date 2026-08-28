@@ -1621,6 +1621,57 @@ firmware/smoke-co-alarm/  Smoke/CO Alarm — fourteenth device type, and this
                            all 3 sensor configs (MQ2+MQ7, MQ2-only,
                            MQ7-only); not hardware-tested (no MQ-2/MQ-7
                            module physically available when written).
+
+                           Later extended (Matter Device Types Reference
+                           audit, see "Open next steps" below): confirmed
+                           directly against the CSA's own SmokeCOAlarm.xml
+                           that Groups (server) and Carbon Monoxide
+                           Concentration Measurement (server) are both
+                           genuinely optionalConform. Groups is a plain,
+                           self-contained cluster shell (`cluster::groups::
+                           create()`, real config_t but no app logic
+                           needed) — lets a controller add this alarm to a
+                           group for group-addressed commands, e.g. a
+                           whole-house "test all alarms" scene. Carbon
+                           Monoxide Concentration Measurement is only added
+                           when SENSOR_TYPE actually wires up an MQ7
+                           (SENSOR_MQ2_MQ7/SENSOR_MQ7), with ONLY the
+                           LevelIndication (LEV) feature enabled —
+                           deliberately not NumericMeasurement, for the
+                           exact same reason this file's own header comment
+                           already explains why no calibrated ppm figure is
+                           exposed anywhere else in this firmware (MQ-series
+                           ppm curves shift per sensor/module/burn-in
+                           state). LevelIndication is the spec's own
+                           qualitative alternative — `co_alarm_state_to_
+                           level_value()` maps the SAME SmokeCoAlarm::
+                           AlarmStateEnum result `classify()` already
+                           computes for COState (Normal/Warning/Critical)
+                           onto LevelValueEnum (Low/Medium/High/Critical),
+                           reusing an existing computation rather than
+                           introducing a second, independent one.
+                           Confirmed LevelValue is a plain, non-nullable
+                           ember attribute (no `concentration_measurement/`
+                           folder under `data_model_provider/clusters/`,
+                           same check this repo's other concentration
+                           clusters already apply) — written via a direct
+                           `attribute::update()` with `esp_matter_enum8()`,
+                           the same pattern firmware/pump/'s own
+                           OperationMode already establishes. Temperature
+                           Measurement and Relative Humidity Measurement
+                           (both server, also optionalConform on this XML)
+                           are deliberately NOT added: this device type's
+                           only sensing hardware is the MQ2/MQ7 gas-sensor
+                           pair, with no temperature/humidity chip anywhere
+                           in this file to back either cluster with a real
+                           reading — same "no sensor, no fabricated data"
+                           honesty precedent firmware/evse/'s always-
+                           NoError FaultState already establishes. Build-
+                           verified in Docker across all 3 sensor configs
+                           again (MQ2+MQ7, MQ2-only, MQ7-only), confirming
+                           the CO concentration cluster's own `#if` guard
+                           compiles correctly out of both single-sensor
+                           builds.
   partitions.csv           same OTA + fctry layout as firmware/light/
   sdkconfig.defaults        same as firmware/light/
 firmware/occupancy-sensor/  Occupancy Sensor — fifteenth device type. First

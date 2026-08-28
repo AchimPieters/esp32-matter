@@ -392,6 +392,27 @@ static SmokeCoAlarm::AlarmStateEnum classify(int mv, int warning_mv, int critica
     return SmokeCoAlarm::AlarmStateEnum::kNormal;
 }
 
+#if SENSOR_TYPE == SENSOR_MQ2_MQ7 || SENSOR_TYPE == SENSOR_MQ7
+/* Reuses classify()'s own SmokeCoAlarm::AlarmStateEnum result (already
+ * computed once per MQ7 reading for COState) as the Carbon Monoxide
+ * Concentration Measurement cluster's own LevelValue — see the header
+ * comment above and this cluster's own creation site in app_main() for
+ * why LevelIndication, not a fabricated numeric ppm, is what's exposed
+ * here. */
+static CarbonMonoxideConcentrationMeasurement::LevelValueEnum co_alarm_state_to_level_value(SmokeCoAlarm::AlarmStateEnum state)
+{
+    switch (state) {
+    case SmokeCoAlarm::AlarmStateEnum::kCritical:
+        return CarbonMonoxideConcentrationMeasurement::LevelValueEnum::kCritical;
+    case SmokeCoAlarm::AlarmStateEnum::kWarning:
+        return CarbonMonoxideConcentrationMeasurement::LevelValueEnum::kMedium;
+    case SmokeCoAlarm::AlarmStateEnum::kNormal:
+    default:
+        return CarbonMonoxideConcentrationMeasurement::LevelValueEnum::kLow;
+    }
+}
+#endif
+
 static void sensor_task(void *arg)
 {
     int64_t start_us = esp_timer_get_time();
@@ -440,6 +461,16 @@ static void sensor_task(void *arg)
                 if (auto *cluster = get_smoke_co_alarm_cluster(smoke_co_alarm_endpoint_id)) {
                     cluster->SetCOState(state);
                 }
+                /* CarbonMonoxideConcentrationMeasurement's LevelValue is a
+                 * plain ember attribute (confirmed NOT code-driven — no
+                 * concentration_measurement/ folder under
+                 * data_model_provider/clusters/, same check this repo's
+                 * other concentration clusters already apply), so a direct
+                 * attribute::update() here, same pattern as door-lock's
+                 * LockState. */
+                esp_matter_attr_val_t level_val = esp_matter_enum8(chip::to_underlying(co_alarm_state_to_level_value(state)));
+                attribute::update(smoke_co_alarm_endpoint_id, CarbonMonoxideConcentrationMeasurement::Id,
+                                  CarbonMonoxideConcentrationMeasurement::Attributes::LevelValue::Id, &level_val);
             }
             if (mq7_fault_streak >= SMOKE_CO_ALARM_FAULT_STREAK_THRESHOLD) {
                 any_fault = true;
@@ -648,6 +679,50 @@ extern "C" void app_main(void)
     }
     smoke_co_alarm_endpoint_id = endpoint::get_id(endpoint);
     ESP_LOGI(TAG, "Smoke/CO alarm endpoint id: %u", smoke_co_alarm_endpoint_id);
+
+    /* Groups (server) — optionalConform on SmokeCOAlarm.xml (Matter Device
+     * Types Reference audit, see CLAUDE.md's own "Open next steps"). A
+     * plain, self-contained cluster shell — lets a controller add this
+     * alarm to a group for group-addressed commands (e.g. a whole-house
+     * "test all alarms" scene), same trivial addition firmware/switch/'s
+     * own Groups client cluster already establishes, just server-side
+     * here since this device receives group commands rather than sending
+     * them. */
+    cluster::groups::config_t groups_config;
+    cluster::groups::create(endpoint, &groups_config, CLUSTER_FLAG_SERVER);
+
+#if SENSOR_TYPE == SENSOR_MQ2_MQ7 || SENSOR_TYPE == SENSOR_MQ7
+    /* Carbon Monoxide Concentration Measurement (server) — also
+     * optionalConform on this XML, only added when an MQ7 is actually
+     * wired up. LevelIndication (LEV) only, deliberately NOT
+     * NumericMeasurement: the header comment above already explains in
+     * full why this firmware doesn't expose a calibrated ppm figure from
+     * the MQ7's own raw millivolt reading (MQ-series ppm curves shift per
+     * sensor/module/burn-in state) — LevelIndication is the spec's own
+     * qualitative alternative, letting this cluster honestly report the
+     * SAME Normal/Warning/Critical classification `classify()` already
+     * computes for SmokeCoAlarm's own COState, via `LevelValueEnum`
+     * (Low/Medium/High/Critical) instead of a fabricated numeric value —
+     * see co_alarm_state_to_level_value() below and its call site in
+     * sensor_task(). */
+    cluster::carbon_monoxide_concentration_measurement::config_t co_concentration_config;
+    co_concentration_config.measurement_medium =
+        chip::to_underlying(CarbonMonoxideConcentrationMeasurement::MeasurementMediumEnum::kAir);
+    co_concentration_config.feature_flags = chip::to_underlying(CarbonMonoxideConcentrationMeasurement::Feature::kLevelIndication);
+    co_concentration_config.features.level_indication.level_value =
+        chip::to_underlying(CarbonMonoxideConcentrationMeasurement::LevelValueEnum::kUnknown);
+    cluster::carbon_monoxide_concentration_measurement::create(endpoint, &co_concentration_config, CLUSTER_FLAG_SERVER);
+#endif
+
+    /* Temperature Measurement and Relative Humidity Measurement (both
+     * server, also optionalConform on this XML) are deliberately NOT
+     * added: this device type's only sensing hardware is the MQ2/MQ7 gas
+     * sensor pair (see the header comment above) — no temperature/
+     * humidity chip exists anywhere in this file to back either cluster
+     * with a real reading. Same "no sensor, no fabricated data" honesty
+     * precedent firmware/evse/'s always-NoError FaultState and this same
+     * file's own MQ2/MQ7 threshold-not-ppm classifier already establish —
+     * a deliberate product-scope decision, not a technical limitation. */
 
     /* 4. Start Matter — begins BLE advertising so a controller can commission it. */
     err = esp_matter::start(app_event_cb);
