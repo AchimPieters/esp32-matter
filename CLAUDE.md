@@ -5161,6 +5161,76 @@ firmware/electrical-meter/  Electrical Meter — forty-sixth device type: a
                            six chips physically available when written).
   partitions.csv           same OTA + fctry layout as firmware/light/
   sdkconfig.defaults        same as firmware/light/
+firmware/dimmer-switch/   Dimmer Switch — forty-seventh device type: a
+                           wall-mount/handheld remote dimmer, sending real
+                           On/Off, LevelControl, and Identify commands to
+                           whatever device a controller binds it to —
+                           this repo's first client-side device combining
+                           brightness control with on/off, and its first
+                           command ever sent with real, non-empty command
+                           fields (every prior client-invoke device here —
+                           firmware/switch/'s buttons, firmware/
+                           thermostat/'s BINDING output, firmware/
+                           doorbell/'s Chime client — only ever sent
+                           empty-payload commands).
+  main/app_main.cpp        Confirmed against the CSA's own DimmerSwitch.xml
+                           (0x0104, superset of On/Off Light Switch):
+                           Identify (BOTH server AND client) + On/Off
+                           (client) + Level Control (client) all
+                           mandatoryConform; Groups/Scenes Management
+                           (client) optionalConform, not implemented.
+                           `endpoint::dimmer_switch::create()` confirmed
+                           complete/ready-to-use — Descriptor + Binding +
+                           Identify[server+client, one dual-flag call] +
+                           OnOff[client] + LevelControl[client], zero
+                           manual cluster-creation code needed, the
+                           simplest client-side endpoint construction in
+                           this repo so far. Three real gestures: a short
+                           button press sends OnOff::Toggle (empty
+                           payload); a long press sends Identify::Identify
+                           (IdentifyTime=5s) — real, genuinely useful
+                           purpose for the mandatory client-side Identify
+                           cluster (hold the button to make the bound
+                           light blink, confirming which light this
+                           switch controls, no controller app needed);
+                           turning a rotary encoder sends
+                           LevelControl::Step (Up/Down per rotation
+                           direction) once per detent — reusing firmware/
+                           thermostat/'s own quadrature-decoding technique
+                           and firmware/generic-switch/'s own short/long-
+                           press debounce timing verbatim. This is the
+                           first command in this repo sent with real,
+                           non-empty JSON fields (every prior client-
+                           invoke command — Toggle, Chime::PlayChimeSound
+                           with ChimeID omitted — used an empty `"{}"`
+                           payload) — the exact `"<field-id>:<type-tag>"`
+                           JSON-to-TLV schema (U8/U16/.../NULL/OBJ/ARR)
+                           was confirmed by reading esp-matter's own
+                           `utils/jsontlv/element_types.h` and
+                           `json_to_tlv.cpp` directly, not guessed from
+                           the single field esp-matter's own
+                           `examples/light_switch/` reference happens to
+                           encode — including that a nullable field (
+                           LevelControl::Step's own TransitionTime) needs
+                           the `NULL` type tag for a genuine TLV null
+                           (sent null here so the bound light's own
+                           default fade time applies). Field IDs for both
+                           commands (`LevelControl::Commands::Step::
+                           Fields`, `Identify::Commands::Identify::
+                           Fields`) confirmed directly against
+                           connectedhomeip's own generated `Commands.h`
+                           for each cluster, not assumed from the spec's
+                           own prose numbering. Standard quick-power-cycle
+                           factory reset. Build-verified in Docker, clean
+                           first attempt; not hardware-tested (no rotary
+                           encoder/pushbutton hardware physically
+                           available when written — and, unlike every
+                           server-side device type in this repo, testing
+                           this one for real also needs a second, already-
+                           commissioned bindable target device on the same
+                           fabric, not just this device alone).
+  partitions.csv           same OTA + fctry layout as firmware/light/
+  sdkconfig.defaults        same as firmware/light/
 tools/
   dev.sh                  opens the Docker dev environment
   gen_factory.sh          local QR + factory partition generator
@@ -7127,14 +7197,14 @@ SECURITY.md               flash encryption / secure boot / signed OTA guidance
    diffed against the original — a byte-for-byte match.
    `tools/product-wizard/README.md`'s own device-type list and count
    were updated to match (forty-three → forty-four).
-2. Implement Matter **OTA** — partially done. All forty-six firmware
+2. Implement Matter **OTA** — partially done. All forty-seven firmware
    types ship `CONFIG_ENABLE_OTA_REQUESTOR=y`, which adds the OTA Requestor
    cluster to the root node endpoint entirely via Kconfig — esp-matter's
    own core startup (`esp_matter_core.cpp`) calls
    `esp_matter_ota_requestor_init()`/`_start()` automatically once that
    flag is on, so no app code was needed. Confirmed on real hardware for
    `firmware/contact-sensor/` and `firmware/switch/` (clean boot, cluster
-   registered, zero errors); the other forty-four build identically since
+   registered, zero errors); the other forty-five build identically since
    the code path is generic to every device type, not device-specific.
 
    Still open: a real OTA **transfer** needs an OTA Provider node
