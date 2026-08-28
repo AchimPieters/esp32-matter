@@ -6857,10 +6857,28 @@ SECURITY.md               flash encryption / secure boot / signed OTA guidance
    the way every other LEDC output in this repo works). Both build-verified
    in Docker; neither hardware-tested (no separate chime/buzzer hardware to
    bind firmware/doorbell/ to, and no passive piezo buzzer for firmware/
-   chime/ itself, was physically available when written). Not yet wired
-   into `tools/product-wizard/` — left as a follow-up, same as every other
-   device type's own wizard-integration pass has been treated as separate
-   from the firmware itself landing and being build-verified.
+   chime/ itself, was physically available when written).
+
+   Wizard integration for both followed immediately after, in the same
+   sitting — neither needed any new wizard mechanism: both fit the plain
+   `driver`+`identify` shape firmware/generic-switch/'s and firmware/
+   rain-sensor/'s own entries already use (Doorbell's Chime-client/
+   Binding-cluster plumbing and Chime's own two fixed tone sequences are
+   both pure in-firmware logic with no GPIOs of their own beyond the one
+   button/buzzer pin). Each got its own hand-drawn icon: Doorbell is a
+   wall-mounted plate with a filled circular pushbutton (the physical
+   fixture, distinct from Generic Switch's own bare button-bezel-plus-
+   ticks motif); Chime is a classic bell silhouette with two small sound-
+   wave ticks, the standard "ring" pictogram. Verified with the same
+   Node.js sandboxed regression check this wizard's own history already
+   establishes (device-type lookup; `isProductComplete` before any render
+   and after `renderConfigureDevice`'s own default-fill; field labels; the
+   exact generated sed commands for all 4 `#define`s) — 14/14 passed —
+   then those exact sed commands run for real against copies of both
+   actual `app_main.cpp` files and diffed against the originals: a byte-
+   for-byte match on both. `tools/product-wizard/README.md`'s own device-
+   type list and buildable-firmware count were updated to match
+   (forty-one → forty-three).
 2. Implement Matter **OTA** — partially done. All forty-four firmware
    types ship `CONFIG_ENABLE_OTA_REQUESTOR=y`, which adds the OTA Requestor
    cluster to the root node endpoint entirely via Kconfig — esp-matter's

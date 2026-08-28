@@ -53,10 +53,11 @@ open tools/product-wizard/index.html
   (`firmware/soil-sensor/`), "Dimmable Plug-In Unit"
   (`firmware/dimmable-plug/`), "Rain Sensor" (`firmware/rain-sensor/`),
   "Color Temperature Light" (`firmware/color-temperature-light/`),
-  "Closure" (`firmware/closure/`), or "Microwave Oven"
-  (`firmware/microwave-oven/`).
+  "Closure" (`firmware/closure/`), "Microwave Oven"
+  (`firmware/microwave-oven/`), "Doorbell" (`firmware/doorbell/`), or
+  "Chime" (`firmware/chime/`).
   All
-  forty-one are real, buildable
+  forty-three are real, buildable
   firmware, not just UI placeholders (`firmware/camera/`, this repo's
   twelfth device type, is deliberately NOT offered here — see its own
   section further down for why: its two-chip/two-firmware/external-SDK
