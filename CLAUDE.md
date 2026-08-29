@@ -6393,6 +6393,90 @@ firmware/on-off-sensor/   On/Off Sensor — fiftieth device type: a wireless
                            target device on the same fabric).
   partitions.csv           same OTA + fctry layout as firmware/light/
   sdkconfig.defaults        same as firmware/light/
+firmware/solar-power/     Solar Power — fifty-first device type: a solar
+                           inverter/panel-array power meter, reusing
+                           firmware/electrical-meter/'s own 6-chip power-
+                           monitoring subsystem essentially verbatim
+                           through a genuinely different, same-endpoint
+                           composition.
+  main/app_main.cpp        Confirmed directly against the CSA's own
+                           data_model/1.6/device_types/SolarPower.xml
+                           (device type 0x0017, revision 1): the root only
+                           lists Identify as optionalConform — all the
+                           real substance is a composed Electrical Sensor
+                           (0x0510) device type, requiring User Label
+                           (describedConform) + Electrical Power
+                           Measurement + Electrical Energy Measurement
+                           (both mandatoryConform). `endpoint::
+                           solar_power::create()` confirmed complete/
+                           ready-to-use by reading esp-matter's own legacy
+                           `solar_power::add()` directly — and, unlike
+                           firmware/refrigerator/'s or firmware/cooktop/'s
+                           own genuine parent-child endpoint compositions,
+                           this helper builds everything on the SAME
+                           endpoint: `add_device_type()` for Solar Power
+                           itself, the Descriptor's own TagList feature,
+                           an auto-added wired PowerSource (`endpoint::
+                           power_source::add()`), the AlternatingCurrent
+                           feature on ElectricalPowerMeasurement and
+                           ExportedEnergy+CumulativeEnergy on
+                           ElectricalEnergyMeasurement both force-set once
+                           requested via the config's own `with_
+                           electrical_power_measurement()`/`with_
+                           electrical_energy_measurement()` builder
+                           methods, then `electrical_sensor::add()` called
+                           on that SAME endpoint — the same same-endpoint
+                           composition style firmware/heat-pump/'s own
+                           header comment already confirmed valid
+                           (`add_device_type()` layering multiple device
+                           types onto one endpoint's DeviceTypeList), now
+                           further confirmed here as esp-matter's own
+                           canonical approach for this specific device
+                           type. Identify is NOT auto-wired (confirmed: no
+                           `identify::create()` call anywhere in
+                           `solar_power::add()`) — added manually, same
+                           "optionalConform, not auto-wired" shape
+                           firmware/extractor-hood/'s, firmware/
+                           water-heater/'s, and firmware/cooktop/'s own
+                           root endpoints already hit.
+
+                           `SOLAR_POWER_CHIP` is the exact same 6-way
+                           choice firmware/electrical-meter/'s own
+                           `ELECTRICAL_METER_CHIP` already offers (BL0942,
+                           BL0937, HLW8012, CSE7759, CSE7766, ADE7953) —
+                           every driver, protocol detail, and sourcing
+                           citation reused unchanged (itself reused from
+                           firmware/outlet/'s own original). Same reasoning
+                           as electrical-meter's own header comment for
+                           defaulting to `_BL0942` and offering no "none"
+                           option. The `ElectricalPowerMeasurement`
+                           Delegate/Instance construction pattern and
+                           `ElectricalEnergyMeasurement`'s ready-made free-
+                           function API are both reused unchanged.
+
+                           One real, deliberate difference from
+                           electrical-meter's own file: since `solar_power
+                           ::add()` force-sets `ExportedEnergy` +
+                           `CumulativeEnergy` (not `ImportedEnergy`) on
+                           ElectricalEnergyMeasurement — the spec-correct
+                           choice for a device that generates power rather
+                           than consumes it — `report_power()` here
+                           populates `NotifyCumulativeEnergyMeasured()`'s
+                           own *exported* struct instead of the *imported*
+                           one electrical-meter's own file uses, matching
+                           the feature bits the helper itself actually
+                           advertises. Wiring a real solar micro-inverter's
+                           own AC output into one of the six power-monitor
+                           chips measures exactly the same physics as
+                           measuring any other AC circuit — no new sensor
+                           engineering needed, just the correct semantic
+                           label on which direction the energy is flowing.
+                           Standard quick-power-cycle factory reset.
+                           Build-verified in Docker (clean first attempt);
+                           not hardware-tested (no module of any of the six
+                           chips was physically available when written).
+  partitions.csv           same OTA + fctry layout as firmware/light/
+  sdkconfig.defaults        same as firmware/light/
 tools/
   dev.sh                  opens the Docker dev environment
   gen_factory.sh          local QR + factory partition generator
@@ -8574,7 +8658,53 @@ SECURITY.md               flash encryption / secure boot / signed OTA guidance
    available when written, and — like every client-invoke device in this
    repo — verifying this one for real also needs a second, already-
    commissioned bindable target device on the same fabric).
-2. Implement Matter **OTA** — partially done. All fifty firmware
+
+   A fifty-first device type, `firmware/solar-power/` (Solar Power),
+   followed — continuing "verder gaan met het toevoegen van devices".
+   Checked several more remaining candidates directly against the CSA's
+   own device type XMLs before picking one: Mode Select (too thin — a
+   single legacy cluster with no compelling physical realization beyond
+   this repo's five existing ModeBase-derived implementations), Battery
+   Storage (needs genuinely different bidirectional-DC-current sensing
+   hardware this repo's existing 6-chip AC power-monitor library isn't
+   suited to, a real risk of fabricating data rather than honestly
+   measuring it), Intercom/Audio Doorbell (both need real TLS-certificate-
+   management + multi-condition time-sync infra, well beyond this repo's
+   "read the datasheet, drive a GPIO" style), and Electrical Utility Meter
+   (needs a mandatory root-node TimeSyncCond this repo hasn't wired up
+   anywhere, for a device otherwise near-identical to the already-built
+   Electrical Meter). Solar Power stood out as the safest, highest-
+   confidence pick: `endpoint::solar_power::create()` turned out to be a
+   complete top-level helper doing ALL the real composition work already
+   (auto-added PowerSource, auto-set EPM/EEM feature flags once
+   requested) — the SolarPower.xml itself confirming, independently of
+   firmware/heat-pump/'s own earlier finding, that layering multiple
+   device types onto one endpoint's DeviceTypeList (rather than a genuine
+   parent-child split) is esp-matter's own canonical approach here. The
+   whole power-monitoring subsystem is a near-verbatim port of firmware/
+   electrical-meter/'s own 6-chip library — the one real, deliberate
+   difference being a semantic correction, not new engineering: since
+   `solar_power::add()` force-sets `ExportedEnergy` (not `ImportedEnergy`)
+   on ElectricalEnergyMeasurement, matching a device that generates power
+   rather than consumes it, `report_power()` populates the *exported*
+   struct in `NotifyCumulativeEnergyMeasured()` instead of the *imported*
+   one electrical-meter's own file uses. See firmware/solar-power/'s own
+   repository-layout entry above for the complete detail. Wizard
+   integration reused the existing `extraPickers` shape firmware/
+   electrical-meter/'s own entry already establishes (new `SP_CHIP_*`
+   COMPONENT_LIBRARY entries, since this device's own `#define` is
+   `SOLAR_POWER_CHIP_*`, not `ELECTRICAL_METER_CHIP_*` — zero new
+   mechanism needed), plus a new hand-drawn icon (a plain sun with eight
+   rays). Verified with the same Node.js sandboxed regression check (all
+   50 device types re-swept through all 4 render/complete/sed/review
+   functions, zero failures), then the generated sed commands run for
+   real against a copy of the actual `app_main.cpp` and diffed against
+   the original — byte-identical. `tools/product-wizard/README.md`'s own
+   device-type list and count were updated to match (forty-nine →
+   fifty). Build-verified in Docker, clean first attempt; not hardware-
+   tested (no module of any of the six power-monitor chips physically
+   available when written).
+2. Implement Matter **OTA** — partially done. All fifty-one firmware
    types ship `CONFIG_ENABLE_OTA_REQUESTOR=y`, which adds the OTA Requestor
    cluster to the root node endpoint entirely via Kconfig — esp-matter's
    own core startup (`esp_matter_core.cpp`) calls
