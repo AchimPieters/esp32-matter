@@ -7635,6 +7635,318 @@ firmware/control-bridge/  Control Bridge — sixty-fifth device type, and
                            color light on the same fabric).
   partitions.csv           same OTA + fctry layout as firmware/light/
   sdkconfig.defaults        same as firmware/light/
+firmware/ble-mesh-bridge/  BLE Mesh Bridge — sixty-sixth device type, and
+                           this repo's first Matter BRIDGE (Aggregator
+                           device type, 0x000E) — one node dynamically
+                           exposing OTHER, non-Matter devices as real
+                           Matter endpoints, created and removed at
+                           runtime rather than fixed at build time the way
+                           every other device type here is. Requested
+                           after the user explicitly pushed back on this
+                           repo's own earlier "controller/media/
+                           infrastructure device types are always out of
+                           scope" framing and asked for a real bridge to
+                           be built, offering a genuine choice of target
+                           protocol (BLE, Wi-Fi, Matter, Thread, Zigbee,
+                           Z-Wave, 433MHz, Infrared) — this is the first
+                           of four chosen together in that same pass (see
+                           this file's own "Open next steps" for the full
+                           protocol-by-protocol feasibility research that
+                           decision was based on).
+  main/*                    Confirmed via Docker `find` that esp-matter's
+                           own SDK image ships real, complete bridge
+                           infrastructure and reference examples this
+                           repo had never explored before: a shared,
+                           protocol-agnostic dynamic-endpoint component
+                           (`components/esp_matter_bridge` + `examples/
+                           common/app_bridge`, real NVS-persisted
+                           bridged-device create/resume/remove APIs) and
+                           real working examples for BLE Mesh, Zigbee, and
+                           ESP-NOW. This file is a verbatim port of
+                           esp-matter's own `examples/bridge_apps/
+                           blemesh_bridge` (Public Domain/CC0) — the same
+                           "port a real, working reference rather than
+                           guess the integration shape" principle already
+                           used for SM2335EGH/APA102/OpenTherm and, at
+                           much larger scale, firmware/camera/ itself.
+                           Bridges real, PROVISIONED BLE Mesh nodes (not
+                           plain BLE advertising peripherals like Xiaomi
+                           Mijia-style sensors — a genuinely different,
+                           not-attempted-here integration) onto the
+                           fabric as dynamically-created On/Off Light/
+                           Dimmable Light/Color Temperature Light/
+                           Extended Color Light/On/Off Light Switch
+                           endpoints (`create_bridge_devices()`, reused
+                           exactly as Espressif shipped it). Needs a real
+                           custom Matter platform integration layer
+                           (`examples/common/blemesh_platform/platform/
+                           ESP32_custom/`, a complete alternate
+                           `PlatformManagerImpl`/`ConnectivityManagerImpl`/
+                           `BLEManagerImpl`/etc., since BLE Mesh and
+                           Matter's own BLE commissioning share the same
+                           radio/stack) — confirmed, by reading exactly
+                           how `CONFIG_CHIP_EXTERNAL_PLATFORM_DIR`'s own
+                           relative path is resolved in connectedhomeip's
+                           own `chip/CMakeLists.txt`
+                           (`${CHIP_ROOT}/config/esp32/${...}`), that this
+                           path is anchored to the SDK's own fixed
+                           internal directory structure, NOT to wherever
+                           this repo's own copy of the project happens to
+                           live — meaning it needed zero adjustment
+                           despite this repo's own copy living at a
+                           completely different filesystem depth than the
+                           original `examples/bridge_apps/blemesh_bridge/`
+                           example. Keeps every one of Espressif's own
+                           build files unmodified (`CMakeLists.txt`,
+                           `main/CMakeLists.txt`, `partitions.csv`,
+                           `sdkconfig.defaults`) — the same "keep the
+                           reference's own working build infrastructure"
+                           choice firmware/camera/'s own entry already
+                           documents, since this repo's own simplified
+                           CMakeLists pattern was never designed to
+                           support either the custom platform layer or
+                           `examples/common` at all (see firmware/light/'s
+                           own CMakeLists.txt comment for the specific,
+                           previously-confirmed `app_reset`/`button`
+                           gotcha that motivated excluding `examples/
+                           common` by default in every other device type
+                           here). Build-verified in Docker for `esp32`
+                           (classic ESP32/WROOM-32, this repo's own
+                           default target) — clean on the first attempt,
+                           notable since Espressif's own README only
+                           documents testing on `esp32c3`. Not hardware-
+                           tested — no BLE Mesh node/provisioner hardware
+                           was physically available when this was added,
+                           and verifying this one for real also needs a
+                           second, real BLE Mesh peripheral device on the
+                           mesh network being bridged. Not offered in
+                           `tools/product-wizard/` — same reasoning as
+                           firmware/camera/: no GPIO fields of its own,
+                           and a project structure the wizard's own one-
+                           device-type/one-chip/one-simplified-firmware
+                           model was never designed to represent.
+  CMakeLists.txt,           Espressif's own build configuration,
+  main/CMakeLists.txt,      unmodified.
+  partitions.csv,
+  sdkconfig.defaults*
+firmware/rf433-bridge/    RF433 Bridge — sixty-seventh device type, and this
+                           repo's first bridge built genuinely from
+                           scratch (no esp-matter reference exists for
+                           this protocol at all) — dynamically bridges
+                           cheap 433MHz fixed-code remotes/sensors (the
+                           EV1527/PT2262 encoder-chip family behind
+                           countless wireless doorbells, remote-control
+                           sockets, PIR sensors, and door/window sensors
+                           sold worldwide) onto the fabric as real,
+                           dynamically-created Generic Switch endpoints.
+  main/app_main.cpp        Reuses the SAME `endpoint::aggregator::
+                           create()` + `app_bridge_initialize()`/
+                           `app_bridge_create_new_device()`/
+                           `app_bridge_remove_device()` dynamic-endpoint
+                           machinery firmware/ble-mesh-bridge/'s own
+                           ported reference uses — pulled in via a single,
+                           narrowly-targeted `EXTRA_COMPONENT_DIRS` entry
+                           pointing directly at `examples/common/
+                           app_bridge` (not the whole `examples/common`
+                           directory the official bridge examples use),
+                           sidestepping the `app_reset`/`button` gotcha
+                           firmware/light/'s own CMakeLists.txt comment
+                           documents — this repo's own simplified
+                           CMakeLists pattern otherwise works unmodified
+                           for this device type, unlike firmware/
+                           ble-mesh-bridge/'s own need for Espressif's
+                           full unmodified build treatment. Each learned
+                           RF code becomes a Generic Switch endpoint
+                           (device type 0x000F, MomentarySwitch feature
+                           only, reusing `endpoint::generic_switch::
+                           add()` directly) that fires InitialPress/
+                           ShortRelease whenever that SAME code is
+                           received again — deliberately not attempting
+                           to infer whether a given code represents a
+                           "door sensor," "PIR," or "remote button": a
+                           bare 24-bit fixed code carries no semantic
+                           meaning about what physical thing sent it, the
+                           same honest scope this repo already applies
+                           elsewhere. The self-calibrating decode
+                           algorithm (deriving a per-frame base timing
+                           unit from the measured sync gap, rather than
+                           trusting one hardcoded microsecond value) is
+                           ported from the real, MIT-licensed, extremely
+                           widely-deployed `rc-switch` Arduino library
+                           (`RCSwitch::receiveProtocol()`/
+                           `handleInterrupt()`, fetched and read directly)
+                           — confirmed necessary, not just convenient,
+                           after two independent primary-source lookups
+                           for the EV1527 chip's own literal timing gave
+                           meaningfully different microsecond values (a
+                           real, confirmed ambiguity: different real-
+                           world EV1527-*compatible* remotes/sensors,
+                           often clone dies rather than the genuine
+                           Silvan Chip part, don't all share identical
+                           exact timing). Also ported directly: requiring
+                           the SAME 24-bit code twice in a row before
+                           accepting it, and a minimum-edge-count floor
+                           before even attempting sync detection — both
+                           real `rc-switch`-own noise-rejection steps kept
+                           rather than dropped. A real, physical LEARN
+                           button opens a 15-second pairing window during
+                           which the next validated code becomes a newly
+                           bridged endpoint — outside that window, a
+                           validated-but-unbridged code is logged and
+                           ignored, never silently auto-registered, the
+                           same real "pairing mode" UX actual commercial
+                           433MHz/RF bridge products already use.
+                           `app_rf433_bridged_device_t` persists each
+                           bridged endpoint's own learned code to NVS so
+                           it survives a reboot. Standard quick-power-
+                           cycle factory reset, also erasing every learned
+                           code via `esp_matter_bridge::factory_reset()`.
+                           Build-verified in Docker (one real compile
+                           error caught and fixed — a missing
+                           `data_model_provider/esp_matter_data_model_
+                           provider.h` include for the registry-lookup-
+                           and-cast `SwitchCluster` access pattern
+                           firmware/generic-switch/'s own file already
+                           establishes — clean on the second attempt); not
+                           hardware-tested — no 433MHz receiver module or
+                           EV1527/PT2262-class remote/sensor was
+                           physically available when written, and this
+                           decoder's own real-world correctness rests
+                           entirely on the ported `rc-switch` algorithm
+                           being faithfully reproduced, not on anything
+                           this session could independently confirm
+                           against a real signal.
+  partitions.csv           same OTA + fctry layout as firmware/light/
+  sdkconfig.defaults        same as firmware/light/
+firmware/ir-bridge/       Infrared Bridge — sixty-eighth device type, and
+                           the direct sibling of firmware/rf433-bridge/ —
+                           same bridge architecture, same learn-mode UX,
+                           same bridged-device shape, a different decode
+                           front-end: dynamically bridges NEC-protocol
+                           infrared remote-control button presses (by far
+                           the most common IR protocol across cheap
+                           consumer electronics remotes worldwide) onto
+                           the fabric as real, dynamically-created Generic
+                           Switch endpoints.
+  main/app_main.cpp        NEC's own timing (9ms AGC mark + 4.5ms space;
+                           bit-0 = 560us mark + 560us space; bit-1 = 560us
+                           mark + 1690us space; 32 bits LSB-first — 8-bit
+                           address + its own bitwise-inverted check byte +
+                           8-bit command + its own bitwise-inverted check
+                           byte) was cross-checked against two independent
+                           primary sources (sb-projects.net's own widely-
+                           cited technical reference, and a second summary
+                           drawn from Vishay's own IR-receiver-datasheet-
+                           adjacent documentation) that agreed exactly,
+                           unlike firmware/rf433-bridge/'s own EV1527
+                           lookups — so a fixed-value classifier
+                           (`NEC_TOLERANCE_PERCENT`, 25%) is the honest,
+                           correct approach here, not the self-calibrating
+                           decoder that file's own real timing ambiguity
+                           required. A real, deliberate implementation
+                           choice, not an oversight: decodes via the same
+                           plain GPIO-interrupt-edge-timing technique
+                           firmware/rf433-bridge/'s own decoder uses,
+                           NOT ESP-IDF's dedicated `driver/rmt_rx.h`
+                           peripheral (Espressif's own typically-
+                           recommended approach for IR receive, and one
+                           this repo has never used in RX mode at all —
+                           firmware/addressable-light/'s own RMT usage is
+                           TX-only) — NEC's own timing margins are
+                           comfortably within what a plain ISR +
+                           `esp_timer_get_time()` can reliably resolve,
+                           so reusing an already-proven pattern was judged
+                           better than introducing a new peripheral API
+                           for a protocol that doesn't strictly need it.
+                           The IR receiver module's own output polarity is
+                           INVERTED relative to the physical carrier (idle
+                           HIGH, LOW during each real 38kHz-modulated
+                           mark) — standard behavior for every common
+                           TSOP38238-class demodulator module, accounted
+                           for directly in the decode logic rather than
+                           assumed non-inverted. Bridged-device
+                           architecture (address-context class, NVS
+                           persistence, `create_bridge_devices()`
+                           callback, `SwitchCluster` registry-lookup-and-
+                           cast dispatch, learn-mode UX/timeout) reused
+                           byte-for-byte from firmware/rf433-bridge/'s own
+                           file, keyed on a 16-bit (address, command) pair
+                           instead of a 24-bit RF code. A held remote
+                           button's own real NEC repeat-code frames are
+                           deliberately not re-dispatched as repeated
+                           Matter events — one physical press still means
+                           one InitialPress/ShortRelease pair, the same
+                           choice firmware/rf433-bridge/'s own repeat-
+                           count de-duplication makes for a held RF
+                           remote. Standard quick-power-cycle factory
+                           reset, also erasing every learned code.
+                           Build-verified in Docker (clean first attempt —
+                           the direct payoff of firmware/rf433-bridge/'s
+                           own missing-include fix, applied proactively
+                           here rather than rediscovered); not hardware-
+                           tested — no IR receiver module or real NEC-
+                           protocol remote was physically available when
+                           written.
+  partitions.csv           same OTA + fctry layout as firmware/light/
+  sdkconfig.defaults        same as firmware/light/
+firmware/zigbee-bridge/   Zigbee Bridge — sixty-ninth device type, and
+                           this repo's second two-chip, two-firmware
+                           device after firmware/camera/ itself — for a
+                           genuinely different reason: Zigbee needs its
+                           own dedicated 802.15.4 radio running a full
+                           coordinator stack at the same time Matter
+                           itself needs Wi-Fi/BLE, more than one chip can
+                           practically do at once. A verbatim port of
+                           esp-matter's own `examples/bridge_apps/
+                           zigbee_bridge` (Public Domain/CC0), the same
+                           "port a real, working reference" treatment
+                           firmware/ble-mesh-bridge/'s own entry already
+                           establishes, reusing the identical shared
+                           bridge architecture (`esp_matter_bridge`/
+                           `app_bridge`, an Aggregator root endpoint,
+                           `create_bridge_devices()` mapping the same five
+                           real device types — On/Off Light, Dimmable
+                           Light, Color Temperature Light, Extended Color
+                           Light, On/Off Light Switch — On/Off Light
+                           Switch's own inclusion here matching a real
+                           Zigbee remote/switch peripheral, not just
+                           lights).
+  main/*                    An **ESP32-S3** (this actual Matter/bridge
+                           application, this folder) talks over UART to a
+                           separate **ESP32-H2** running as a Zigbee RCP
+                           (Radio Co-Processor), built from plain ESP-
+                           IDF's own `examples/openthread/ot_rcp`
+                           reference repurposed for Zigbee via its own
+                           `OPENTHREAD_NCP_VENDOR_HOOK` option — genuinely
+                           not esp-matter at all, and not part of this
+                           repo (build/flash it by hand per Espressif's
+                           own instructions in this folder's own README).
+                           Keeps every one of Espressif's own build files
+                           unmodified, same reasoning firmware/
+                           ble-mesh-bridge/'s own entry already
+                           establishes. Build-verified in Docker for
+                           `esp32s3` (Espressif's own tested/documented
+                           target for this example, unlike firmware/
+                           ble-mesh-bridge/'s own classic-`esp32`
+                           confirmation) — clean on the first attempt,
+                           though flash headroom is genuinely tight (only
+                           4% of the smallest app partition free, `idf.py
+                           build` itself warning "nearly full" — the least
+                           headroom of any device type in this repo, worth
+                           knowing before adding OTA-update payloads or
+                           other growth on top of this firmware as
+                           shipped). Not hardware-tested — no ESP32-S3/
+                           ESP32-H2 pair (or Zigbee Gateway DevKit board)
+                           was physically available when this was added,
+                           and verifying this one for real also needs a
+                           genuine Zigbee peripheral device on the network
+                           being bridged. Not offered in `tools/
+                           product-wizard/` — same reasoning as firmware/
+                           camera/ and firmware/ble-mesh-bridge/.
+  CMakeLists.txt,           Espressif's own build configuration,
+  main/CMakeLists.txt,      unmodified.
+  partitions.csv,
+  sdkconfig.defaults*
 tools/
   dev.sh                  opens the Docker dev environment
   gen_factory.sh          local QR + factory partition generator
@@ -10305,16 +10617,99 @@ SECURITY.md               flash encryption / secure boot / signed OTA guidance
    verder met het aanvullen van de devices... totdat alle devices zijn
    toegevoegd" instruction that drove this whole pass — a fourth,
    independent re-check found no further device types this repo's own
-   mission and technical model can honestly build.
-2. Implement Matter **OTA** — partially done. All sixty-five firmware
-   types ship `CONFIG_ENABLE_OTA_REQUESTOR=y`, which adds the OTA Requestor
-   cluster to the root node endpoint entirely via Kconfig — esp-matter's
-   own core startup (`esp_matter_core.cpp`) calls
+   mission and technical model can honestly build, from the device-
+   TYPE-catalog angle specifically. The user then asked to "revisit
+   ClosurePanel and the camera-adjacent controllers once more" — a
+   fresh, third re-check of those specific device types with full
+   per-cluster conform-level detail (not just the bare cluster list a
+   first pass had read), which confirmed every one of them (ClosurePanel,
+   CameraController, Intercom, AudioDoorbell, SnapshotCamera,
+   FloodlightCamera, VideoDoorbell) really is a distinct, structural
+   blocker for its own specific reason, correcting the earlier text's
+   overly-broad "same as camera" lumping — see the previous paragraph's
+   own per-device breakdown.
+
+   That still left a real, different angle open: not every device TYPE
+   in the CSA catalog, but a real Matter BRIDGE (Aggregator, 0x000E) —
+   which this repo's own earlier "controller/media/infrastructure device
+   types are always out of scope" framing had also swept Aggregator
+   itself into, without checking whether a bridge specifically might be
+   genuinely buildable the same way the six controller device types
+   turned out to be. Offered the user a genuine choice of bridge target
+   protocol (BLE, Wi-Fi, Matter, Thread, Zigbee, Z-Wave, 433MHz,
+   Infrared) rather than assuming one — the user chose all four of BLE
+   Mesh, 433MHz, Infrared, and Zigbee. Real feasibility research (Docker
+   `find`/`grep` inside the pinned SDK image, not assumed) found esp-
+   matter's own SDK already ships a complete, reusable, protocol-
+   agnostic dynamic-Matter-endpoint bridge infrastructure
+   (`components/esp_matter_bridge` + `examples/common/app_bridge`) that
+   this repo had never explored before, plus real working reference
+   examples for BLE Mesh, Zigbee, and ESP-NOW (not requested, but a real
+   bonus find) — genuinely de-risking three of the four immediately.
+   `firmware/ble-mesh-bridge/` and `firmware/zigbee-bridge/` are
+   verbatim ports of those two references (the same "port a real,
+   working reference rather than guess the integration shape" principle
+   already used repeatedly in this repo); `firmware/rf433-bridge/` and
+   `firmware/ir-bridge/` are genuinely new, from-scratch decoders (no
+   esp-matter reference exists for either protocol) built on that same
+   shared bridge infrastructure, reusing Generic Switch as the honest,
+   semantics-free bridged-device shape for a learned code/button rather
+   than guessing what kind of physical device sent it. See each of the
+   four device types' own repository-layout entries above for the full
+   technical detail, including: the real, confirmed reason `Matter`/
+   `Thread` don't map to a "bridge target" the way the other six
+   protocols do (Matter devices already interoperate directly; "Thread"
+   would mean a genuine Border Router role, the same network-
+   infrastructure category already ruled out above) and why `Z-Wave` was
+   not attempted (no esp-matter reference, no Z-Wave radio in any ESP32
+   chip, needing genuinely external, likely licensed hardware/SDK this
+   repo has no path to) — a real, evidence-based scoping decision shared
+   with the user before committing to the four that WERE built, not a
+   silent unilateral one. `firmware/rf433-bridge/`'s and `firmware/
+   ir-bridge/`'s own EV1527/NEC decode algorithms were each verified
+   against real primary/community-standard sources via live web research
+   before writing any code (a genuine first for this session — every
+   prior protocol verification in this repo's history used a locally
+   fetched datasheet PDF or an already-known open-source reference
+   instead), including a real, confirmed timing ambiguity for EV1527
+   specifically (two independent sources disagreeing on the literal
+   microsecond values) that a self-calibrating decode algorithm — ported
+   from the real, widely-deployed `rc-switch` library rather than
+   invented — was chosen specifically to sidestep. All four build-
+   verified in Docker (one real, quickly-fixed compile error total,
+   on `firmware/rf433-bridge/`; the other three clean on the first
+   attempt) — `firmware/ble-mesh-bridge/`'s own build for classic `esp32`
+   is itself a small, real finding, since Espressif's own README only
+   documents testing on `esp32c3`. None of the four is hardware-tested —
+   no BLE Mesh/Zigbee peripheral, 433MHz receiver/remote, or IR receiver/
+   remote was physically available when written, the same standing
+   caveat most of this repo's own device types already carry. `firmware/
+   rf433-bridge/` and `firmware/ir-bridge/` are offered in `tools/
+   product-wizard/` (they fit its own one-chip/one-simplified-firmware
+   model cleanly, needing only one extra `EXTRA_COMPONENT_DIRS` entry);
+   `firmware/ble-mesh-bridge/` and `firmware/zigbee-bridge/` are not,
+   the same reasoning firmware/camera/'s own entry already establishes
+   (Espressif's own unmodified build files, no GPIO fields of their own
+   to customize).
+2. Implement Matter **OTA** — partially done. Sixty-seven of the sixty-
+   nine firmware types ship `CONFIG_ENABLE_OTA_REQUESTOR=y`, which adds
+   the OTA Requestor cluster to the root node endpoint entirely via
+   Kconfig — esp-matter's own core startup (`esp_matter_core.cpp`) calls
    `esp_matter_ota_requestor_init()`/`_start()` automatically once that
    flag is on, so no app code was needed. Confirmed on real hardware for
    `firmware/contact-sensor/` and `firmware/switch/` (clean boot, cluster
-   registered, zero errors); the other forty-six build identically since
+   registered, zero errors); the other sixty-four device types built with
+   this repo's own template `sdkconfig.defaults` build identically since
    the code path is generic to every device type, not device-specific.
+   The two exceptions, confirmed directly (not assumed) by checking
+   connectedhomeip's own `chip/Kconfig` (`ENABLE_OTA_REQUESTOR` defaults
+   to `n`): `firmware/ble-mesh-bridge/` and `firmware/zigbee-bridge/`,
+   both verbatim ports of Espressif's own reference examples keeping
+   their own unmodified `sdkconfig.defaults` (per those two device
+   types' own repository-layout entries above), neither of which sets
+   this option — OTA Requestor is genuinely off for those two as
+   shipped, matching Espressif's own reference default rather than this
+   repo's own.
 
    Still open: a real OTA **transfer** needs an OTA Provider node
    commissioned onto the same fabric, actually serving a `.bin` (e.g.

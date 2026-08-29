@@ -74,15 +74,19 @@ open tools/product-wizard/index.html
   Controller" (`firmware/thermostat-controller/`), "Window Covering
   Controller" (`firmware/window-covering-controller/`), "Closure
   Controller" (`firmware/closure-controller/`), "Pump Controller"
-  (`firmware/pump-controller/`), or "Control Bridge"
-  (`firmware/control-bridge/`).
+  (`firmware/pump-controller/`), "Control Bridge"
+  (`firmware/control-bridge/`), "RF433 Bridge" (`firmware/rf433-bridge/`),
+  or "Infrared Bridge" (`firmware/ir-bridge/`).
   All
-  sixty-four are real, buildable
-  firmware, not just UI placeholders (`firmware/camera/`, this repo's
-  twelfth device type, is deliberately NOT offered here — see its own
-  section further down for why: its two-chip/two-firmware/external-SDK
-  shape doesn't fit this wizard's one-device-type/one-chip/one-firmware
-  data model at all). Each card has its own hand-drawn
+  sixty-six are real, buildable
+  firmware, not just UI placeholders. Three device types are deliberately
+  NOT offered here: `firmware/camera/` (this repo's twelfth device type),
+  `firmware/ble-mesh-bridge/`, and `firmware/zigbee-bridge/` — see the
+  "Known limitations" section below for why (each is a two-chip/two-
+  firmware device, or keeps Espressif's own unmodified reference build
+  files with no GPIO fields of its own to customize; none fits this
+  wizard's one-device-type/one-chip/one-simplified-firmware data model).
+  Each card has its own hand-drawn
   line-art icon (`DEVICE_TYPE_ICONS` in `index.html`), in the spirit of
   Apple's own SF Symbols/HomeKit accessory icons — not the actual Apple
   assets (those are proprietary), but drawn to read the same way: light
@@ -1148,7 +1152,24 @@ and diffed against the original, a byte-for-byte match. All checks passed.
   data model assumes one device type = one chip = one firmware image on
   one board. Forcing it into that model would misrepresent how it
   actually needs to be built and flashed. Build and flash it by hand
-  following `firmware/camera/README.md`'s own instructions. A handful of
+  following `firmware/camera/README.md`'s own instructions.
+  `firmware/ble-mesh-bridge/` and `firmware/zigbee-bridge/` (both real
+  Matter *bridges* — an Aggregator device type dynamically exposing
+  other, non-Matter devices as Matter endpoints — verbatim ports of
+  esp-matter's own reference BLE Mesh/Zigbee bridge examples) are
+  excluded for the same underlying reason: `firmware/zigbee-bridge/`
+  is a second genuine two-chip/two-firmware device (ESP32-S3 + ESP32-H2
+  RCP), and both keep Espressif's own unmodified build files (a custom
+  Matter platform layer for BLE Mesh; `examples/common` + `device_hal/
+  device` for both), with no GPIO fields of their own for the wizard to
+  customize at all — every bridged device's own hardware lives on a
+  completely separate board/module, not on the bridge itself. Build and
+  flash either by hand following their own `README.md`'s instructions.
+  `firmware/rf433-bridge/` and `firmware/ir-bridge/` (the other two
+  bridges built in the same pass, for 433MHz and infrared respectively)
+  ARE offered here — they use this repo's own simplified build pattern
+  and have real GPIO fields (a receiver input, a learn button), unlike
+  their two bridge siblings above. A handful of
   other real Matter device types (camera-adjacent controllers/doorbells,
   real media-playback devices, network/fabric-infrastructure devices,
   and a couple of spec-forbidden or genuinely still-empty device type

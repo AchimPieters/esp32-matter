@@ -4429,6 +4429,71 @@ const DEVICE_TYPES = [
       defaultsByModule: { esp32: 2, esp32c2: 2, esp32c3: 2, esp32c5: 2, esp32c6: 2, esp32c61: 2, esp32s3: 2, esp32h2: 2 },
     },
   },
+  {
+    id: "rf433-bridge",
+    name: "RF433 Bridge",
+    desc: "Matter RF433 Bridge: an Aggregator that dynamically bridges cheap 433MHz fixed-code remotes/sensors (the EV1527/PT2262 chip family) onto the Matter fabric as real, dynamically-created Generic Switch endpoints. Press the learn button, then trigger the remote/sensor you want to bridge — its next validated code becomes a new bridged endpoint, persisted across reboots. No Identify cluster at all (confirmed absent from the Aggregator device type's own spec). Reference device in firmware/rf433-bridge/.",
+    shortDesc: "433MHz receiver + learn button: bridges RF remotes/sensors.",
+    // Matches project(matter_rf433_bridge) in firmware/rf433-bridge/
+    // CMakeLists.txt. Same driver+secondary two-independent-GPIO shape
+    // firmware/temperature-controlled-cabinet/'s own entry already
+    // establishes (RX module input + learn button), repurposed here for
+    // a bridge instead of a relay+sensor pair. No identify field — this
+    // device type genuinely carries no Identify cluster at all (same
+    // reasoning firmware/door-lock-controller/'s own entry already
+    // establishes for the same absence).
+    binName: "matter_rf433_bridge.bin",
+    driver: {
+      summary: "GPIO (digital input)",
+      fieldLabel: "433MHz receiver GPIO pin",
+      blockTitle: "433MHz receiver · digital input",
+      filePath: "firmware/rf433-bridge/main/app_main.cpp",
+      defineName: "RF433_RX_GPIO",
+      currentGpio: 4,
+      defaultsByModule: { esp32: 4, esp32c2: 4, esp32c3: 4, esp32c5: 4, esp32c6: 4, esp32c61: 4, esp32s3: 4, esp32h2: 4 },
+    },
+    secondary: {
+      label: "Learn Button",
+      summary: "GPIO (digital input, active-LOW)",
+      fieldLabel: "Learn button GPIO pin",
+      blockTitle: "Learn button · digital GPIO input",
+      filePath: "firmware/rf433-bridge/main/app_main.cpp",
+      defineName: "RF433_LEARN_BUTTON_GPIO",
+      currentGpio: 16,
+      defaultsByModule: { esp32: 16, esp32c2: 16, esp32c3: 16, esp32c5: 16, esp32c6: 16, esp32c61: 16, esp32s3: 16, esp32h2: 16 },
+    },
+  },
+  {
+    id: "ir-bridge",
+    name: "Infrared Bridge",
+    desc: "Matter Infrared Bridge: an Aggregator that dynamically bridges NEC-protocol infrared remote-control buttons onto the Matter fabric as real, dynamically-created Generic Switch endpoints — the direct sibling of RF433 Bridge, same learn-mode UX. Press the learn button, then press the remote button you want to bridge. No Identify cluster at all (confirmed absent from the Aggregator device type's own spec). Reference device in firmware/ir-bridge/.",
+    shortDesc: "IR receiver + learn button: bridges NEC remote buttons.",
+    // Matches project(matter_ir_bridge) in firmware/ir-bridge/
+    // CMakeLists.txt. Same driver+secondary shape as firmware/
+    // rf433-bridge/'s own entry above — the two are direct siblings,
+    // same bridge architecture, different decode front-end. No identify
+    // field, same reasoning.
+    binName: "matter_ir_bridge.bin",
+    driver: {
+      summary: "GPIO (digital input)",
+      fieldLabel: "IR receiver GPIO pin",
+      blockTitle: "IR receiver · digital input",
+      filePath: "firmware/ir-bridge/main/app_main.cpp",
+      defineName: "IR_RX_GPIO",
+      currentGpio: 4,
+      defaultsByModule: { esp32: 4, esp32c2: 4, esp32c3: 4, esp32c5: 4, esp32c6: 4, esp32c61: 4, esp32s3: 4, esp32h2: 4 },
+    },
+    secondary: {
+      label: "Learn Button",
+      summary: "GPIO (digital input, active-LOW)",
+      fieldLabel: "Learn button GPIO pin",
+      blockTitle: "Learn button · digital GPIO input",
+      filePath: "firmware/ir-bridge/main/app_main.cpp",
+      defineName: "IR_LEARN_BUTTON_GPIO",
+      currentGpio: 16,
+      defaultsByModule: { esp32: 16, esp32c2: 16, esp32c3: 16, esp32c5: 16, esp32c6: 16, esp32c61: 16, esp32s3: 16, esp32h2: 16 },
+    },
+  },
 ];
 
 function findDeviceType(id) {
@@ -5281,6 +5346,31 @@ const DEVICE_TYPE_ICONS = {
     <path d="M16 26h16"/>
     <circle cx="26" cy="26" r="2.5" fill="currentColor" stroke="none"/>
     <circle cx="24" cy="36" r="4"/>
+  </svg>`,
+  // A small antenna/mast with two concentric broadcast arcs — the real
+  // "receiving a wireless signal" pictogram, distinct from every other
+  // radio-adjacent icon in this wizard (occupancy-sensor's own detection
+  // rings are centered on a sensor body, not a mast; this one is purely
+  // about RECEIVING a broadcast, matching a bridge's own role).
+  "rf433-bridge": `<svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M24 44V20"/>
+    <circle cx="24" cy="16" r="3"/>
+    <path d="M15 24a13 13 0 0 1 18 0"/>
+    <path d="M10 19a20 20 0 0 1 28 0"/>
+  </svg>`,
+  // A remote-control body (rounded rect) with three short dashed rays —
+  // the standard "infrared beam" pictogram — distinct from rf433-
+  // bridge's own mast-and-arcs motif (a directional beam vs. an
+  // omnidirectional broadcast, matching how each protocol actually
+  // propagates) and from generic-switch's own bare button-bezel icon.
+  "ir-bridge": `<svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+    <rect x="16" y="8" width="14" height="32" rx="4"/>
+    <circle cx="23" cy="16" r="2" fill="currentColor" stroke="none"/>
+    <path d="M23 24h.01"/>
+    <path d="M23 30h.01"/>
+    <path d="M33 14l6-3"/>
+    <path d="M35 20h7"/>
+    <path d="M33 26l6 3"/>
   </svg>`,
   // A wall-mounted doorbell plate (rounded rect) with a filled circular
   // pushbutton — the real, physical thing this device type is. Distinct
