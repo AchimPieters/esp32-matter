@@ -102,7 +102,11 @@ open tools/product-wizard/index.html
   (needs an external companion radio chip); ESP32-S2 was left out because
   it has Wi-Fi but no BLE, so it can't do Matter's standard commissioning
   flow (esp-matter's own `light` example doesn't ship an S2 config
-  either, for the same reason).
+  either, for the same reason). Each card also shows a real module
+  illustration (from the repo-root `modules/` directory — one SVG per
+  chip, loaded via a plain relative `<img src>` rather than inlined, since
+  they're full vector illustrations, not small hand-drawn line art like
+  the device-type icons above) instead of the badges standing alone.
 - **Configure Device (step 3)** — set the GPIO(s) each device type's
   driver actually exposes: the LED pin for the light, the button pin for
   the switch, the contact pin for the contact sensor, the output + button

@@ -377,8 +377,9 @@
 
   /* Device-type icon — HomeKit-style rounded-square line art, one per
      DEVICE_TYPES entry (see DEVICE_TYPE_ICONS). Not used on the module
-     picker's cards (those have connectivity badges instead — a chip isn't
-     a device category, a HomeKit-style icon wouldn't mean anything there). */
+     picker's cards — those get a real product illustration instead (see
+     .module-icon below), since a chip isn't a device category a
+     HomeKit-style icon could represent. */
   .option-card .device-icon {
     width: 34px;
     height: 34px;
@@ -388,6 +389,27 @@
 
   .option-card.selected .device-icon {
     color: var(--blue);
+  }
+
+  /* Module-picker icon — a real illustration (see MODULES' own `icon`
+     field + modules/*.svg), not hand-drawn line art like .device-icon
+     above, so it's shown at real size/color rather than tinted via
+     currentColor. Fixed-height box, image letterboxed inside it via
+     object-fit — the source SVGs don't share one aspect ratio (compact
+     modules like the ESP8684/ESP8685 boards are noticeably wider/
+     shorter than e.g. the ESP32-S3's), so a fixed box keeps every card
+     in the grid the same height regardless. */
+  .option-card .module-icon {
+    height: 110px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-bottom: 10px;
+  }
+
+  .option-card .module-icon img {
+    max-width: 100%;
+    max-height: 100%;
   }
 
   .option-card h3 {
@@ -3475,6 +3497,20 @@ function findComponent(id) {
  * against real hardware in this repo yet; idf.py build always prints the
  * authoritative command for whatever it just built, so cross-check that if
  * you hit boot trouble on one of them. */
+// `icon` is a filename under the repo-root `modules/` directory — real
+// Adobe-Illustrator-exported module illustrations, one per entry below
+// (added after this wizard already existed; see CLAUDE.md's own
+// repository-layout entry for `modules/`). Loaded via a plain relative
+// `<img src>` (`../../modules/<icon>`, resolved from this file's own
+// location at `tools/product-wizard/index.html`) rather than inlined the
+// way DEVICE_TYPE_ICONS' own hand-drawn line art is — these are full,
+// detailed vector illustrations (hundreds of path elements each, decoded
+// from the committed file sizes), not small enough to inline into this
+// single-file wizard without bloating it. A plain relative path works
+// under this wizard's own "just open the file" model (see README.md) —
+// browsers resolve `file://` `<img>` sources against the loading
+// document's own path the same way they resolve `http://` ones, no
+// server needed.
 const MODULES = [
   {
     id: "esp32",
@@ -3483,6 +3519,7 @@ const MODULES = [
     conn: ["wifi", "ble"],
     bootloaderOffset: "0x1000",
     offsetsVerified: true,
+    icon: "ESP32-WROOM-32E.svg",
   },
   {
     id: "esp32c2",
@@ -3494,6 +3531,10 @@ const MODULES = [
     conn: ["wifi", "ble"],
     bootloaderOffset: "0x0",
     offsetsVerified: false,
+    // Illustrated under its die-level name (see the comment above) — no
+    // separate "ESP32-C2" illustration exists, same relationship as the
+    // description text already documents.
+    icon: "ESP8684-WROOM-03.svg",
   },
   {
     id: "esp32c3",
@@ -3504,6 +3545,7 @@ const MODULES = [
     conn: ["wifi", "ble"],
     bootloaderOffset: "0x0",
     offsetsVerified: false,
+    icon: "ESP8685-WROOM-03.svg",
   },
   {
     id: "esp32c5",
@@ -3512,6 +3554,7 @@ const MODULES = [
     conn: ["wifi", "ble", "thread", "zigbee"],
     bootloaderOffset: "0x0",
     offsetsVerified: false,
+    icon: "ESP32-C5-WROOM-1.svg",
   },
   {
     id: "esp32c6",
@@ -3520,6 +3563,7 @@ const MODULES = [
     conn: ["wifi", "ble", "thread", "zigbee"],
     bootloaderOffset: "0x0",
     offsetsVerified: false,
+    icon: "ESP32-C6-WROOM-1.svg",
   },
   {
     id: "esp32c61",
@@ -3534,6 +3578,7 @@ const MODULES = [
     conn: ["wifi", "ble"],
     bootloaderOffset: "0x0",
     offsetsVerified: false,
+    icon: "ESP32-C61-WROOM-1.svg",
   },
   {
     id: "esp32s3",
@@ -3542,6 +3587,7 @@ const MODULES = [
     conn: ["wifi", "ble"],
     bootloaderOffset: "0x0",
     offsetsVerified: false,
+    icon: "ESP32-S3-WROOM-1.svg",
   },
   {
     id: "esp32h2",
@@ -3550,6 +3596,7 @@ const MODULES = [
     conn: ["ble", "thread", "zigbee"],
     bootloaderOffset: "0x0",
     offsetsVerified: false,
+    icon: "ESP32-H2-WROOM-02C.svg",
   },
 ];
 
@@ -4226,8 +4273,14 @@ function renderSelectModule(p) {
     const badges = m.conn
       .map((c) => `<span class="conn-badge ${c}" title="${escapeHtml(CONN_LABELS[c].title)}">${escapeHtml(CONN_LABELS[c].label)}</span>`)
       .join("");
+    // See the comment on MODULES itself for why this is a relative <img>
+    // src rather than an inlined string the way DEVICE_TYPE_ICONS is.
+    const icon = m.icon
+      ? `<div class="module-icon"><img src="../../modules/${encodeURIComponent(m.icon)}" alt="" aria-hidden="true"></div>`
+      : "";
     return `
       <button class="option-card ${selected ? "selected" : ""}" data-select-module="${m.id}">
+        ${icon}
         <h3>${escapeHtml(m.name)}</h3>
         <p class="desc">${escapeHtml(m.desc)}</p>
         <div class="badge-row">${matterBadge}${badges}</div>
