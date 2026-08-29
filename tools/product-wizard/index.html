@@ -3697,6 +3697,50 @@ const DEVICE_TYPES = [
       defaultsByModule: { esp32: 2, esp32c2: 2, esp32c3: 2, esp32c5: 2, esp32c6: 2, esp32c61: 2, esp32s3: 2, esp32h2: 2 },
     },
   },
+  {
+    id: "cooktop",
+    name: "Cooktop",
+    desc: "Matter Cooktop + Cook Surface: a single-zone induction/electric hob. On/Off has the OffOnly feature — a controller can only ever turn it OFF (a real spec-enforced safety restriction); a physical power button is the only way to turn it on. TemperatureControl's TemperatureLevel feature (Low/Medium/High) drives a time-proportioned relay/SSR duty cycle — a real, spec-correct \"selected power level,\" not a fabricated temperature reading, so no sensor is needed at all. Reference device in firmware/cooktop/.",
+    shortDesc: "Power button + relay/SSR; safety-gated remote off-only.",
+    // Matches project(matter_cooktop) in firmware/cooktop/CMakeLists.txt.
+    // Same driver+secondary+identify two-independent-GPIO shape firmware/
+    // water-heater/'s own entry already establishes — here `driver` is the
+    // zone's relay/SSR output and `secondary` is the local power button
+    // input (always required, not optional-checkbox-gated, since it's the
+    // ONLY way to turn this device on at all — remote On is blocked by the
+    // OnOff cluster's own OffOnly feature). No componentOptions/
+    // extraPickers on this entry — a single fixed 3-level power scale, no
+    // chip/output choice to make.
+    binName: "matter_cooktop.bin",
+    driver: {
+      summary: "GPIO (relay/SSR, active-LOW)",
+      fieldLabel: "Zone relay/SSR GPIO pin",
+      blockTitle: "Zone relay/SSR · digital output",
+      filePath: "firmware/cooktop/main/app_main.cpp",
+      defineName: "COOKTOP_ZONE_RELAY_GPIO",
+      currentGpio: 16,
+      defaultsByModule: { esp32: 16, esp32c2: 16, esp32c3: 16, esp32c5: 16, esp32c6: 16, esp32c61: 16, esp32s3: 16, esp32h2: 16 },
+    },
+    secondary: {
+      label: "Power Button",
+      summary: "GPIO (digital input, active-low)",
+      fieldLabel: "Power button GPIO pin",
+      blockTitle: "Power button · digital GPIO input",
+      filePath: "firmware/cooktop/main/app_main.cpp",
+      defineName: "COOKTOP_POWER_BUTTON_GPIO",
+      currentGpio: 4,
+      defaultsByModule: { esp32: 4, esp32c2: 4, esp32c3: 4, esp32c5: 4, esp32c6: 4, esp32c61: 4, esp32s3: 4, esp32h2: 4 },
+    },
+    identify: {
+      summary: "GPIO (digital output)",
+      fieldLabel: "Identify LED GPIO pin",
+      blockTitle: "Identify LED · digital output",
+      filePath: "firmware/cooktop/main/app_main.cpp",
+      defineName: "IDENTIFY_LED_GPIO",
+      currentGpio: 2,
+      defaultsByModule: { esp32: 2, esp32c2: 2, esp32c3: 2, esp32c5: 2, esp32c6: 2, esp32c61: 2, esp32s3: 2, esp32h2: 2 },
+    },
+  },
 ];
 
 function findDeviceType(id) {
@@ -4455,6 +4499,18 @@ const DEVICE_TYPE_ICONS = {
     <circle cx="33" cy="16" r="8"/>
     <path d="M33 16V9"/>
     <rect x="15" y="35" width="18" height="7" rx="3.5"/>
+  </svg>`,
+  // A hob viewed from above: a rounded-square cooktop body with one
+  // concentric-ring heating zone (the single Cook Surface this device
+  // implements) plus a small filled dot standing in for the physical
+  // power button — the one control this device actually needs, since a
+  // remote On command is blocked by the OffOnly feature (see
+  // firmware/cooktop/'s own header comment).
+  cooktop: `<svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+    <rect x="6" y="6" width="36" height="36" rx="4"/>
+    <circle cx="21" cy="24" r="9"/>
+    <circle cx="21" cy="24" r="4.5"/>
+    <circle cx="35" cy="12" r="2" fill="currentColor" stroke="none"/>
   </svg>`,
 };
 

@@ -6081,6 +6081,223 @@ firmware/color-dimmer-switch/  Color Dimmer Switch — forty-eighth device
                            color light on the same fabric).
   partitions.csv           same OTA + fctry layout as firmware/light/
   sdkconfig.defaults        same as firmware/light/
+firmware/cooktop/         Cooktop — forty-ninth device type, and this repo's
+                           second genuinely composed, multi-endpoint device
+                           after firmware/refrigerator/: a Cooktop (0x0078)
+                           root endpoint with one Cook Surface (0x0077)
+                           *child* endpoint (a single heating zone), linked
+                           via esp-matter's real parent-child endpoint API,
+                           same as firmware/refrigerator/'s own Fridge/
+                           Freezer pair.
+  main/app_main.cpp        Oven (0x007B) was researched first as this
+                           session's next candidate — its own root endpoint
+                           mandates a composed Temperature Controlled
+                           Cabinet child under the "Heater" condition, which
+                           unlocks Oven Cavity Operational State (0x0048)
+                           and Oven Mode (0x0049), neither used anywhere in
+                           this repo. Both turned out to be a genuinely
+                           deeper SDK gap than anything built so far,
+                           confirmed by reading esp-matter's own source
+                           directly rather than assumed from the device
+                           type's apparent similarity to Refrigerator:
+                           neither has a legacy `esp_matter_cluster.cpp`
+                           namespace helper at all — only a `data_model/
+                           generated/clusters/oven_mode/` /
+                           `oven_cavity_operational_state/` pair exists,
+                           under the "generated" data model this repo has
+                           never enabled (same split firmware/
+                           refrigerator/'s own header comment already
+                           documents for TemperatureControl, one level
+                           deeper here since there's no legacy wrapper at
+                           all, not just a feature-flag/field-name
+                           mismatch). The delegate-construction machinery
+                           (`OvenModeDelegateInitCB`/
+                           `OvenCavityOperationalStateDelegateInitCB`) IS
+                           present in the legacy `esp_matter_delegate_
+                           callbacks.cpp` — but with no legacy `cluster::
+                           oven_mode::create()`/`cluster::oven_cavity_
+                           operational_state::create()` wrapper calling it,
+                           building either cluster here would mean hand-
+                           reconstructing that wrapper from the "generated"
+                           file's own logic while depending on legacy-only
+                           headers — a real, deeper architectural risk than
+                           any of this repo's prior hand-built Delegate
+                           cases (RvcOperationalState included, which at
+                           least had a legacy `common::config_t`-driven
+                           cluster shell already in place to attach to).
+                           Deferred rather than forced through; worth
+                           revisiting if esp-matter ever ships a legacy
+                           wrapper for either cluster, or if a future
+                           session decides hand-reconstructing one is
+                           worth the risk. Cooktop + Cook Surface cover the
+                           same "hob/cooking appliance" ground with zero
+                           such gaps — both have complete, ready-to-use
+                           legacy top-level helpers — and introduce a
+                           genuinely new pattern of their own:
+                           TemperatureControl's TL (TemperatureLevel)
+                           feature, never used elsewhere in this repo
+                           (every prior TemperatureControl user —
+                           refrigerator, dishwasher, laundry-washer,
+                           laundry-dryer — uses TN).
+
+                           Confirmed directly against the CSA's own
+                           Cooktop.xml: Identify optionalConform; On/Off
+                           mandatoryConform with its OffOnly feature also
+                           mandatoryConform. `endpoint::cooktop::create()`
+                           confirmed complete/ready-to-use by reading
+                           esp-matter's own legacy `cooktop::add()`
+                           directly — it wires up On/Off + the OffOnly
+                           feature internally, auto-Descriptor via
+                           `common::create<T>()`, but does NOT add
+                           Identify (added manually here, same
+                           "optionalConform, not auto-wired" shape
+                           firmware/extractor-hood/'s and firmware/
+                           water-heater/'s own root endpoints already
+                           hit). OffOnly is a real, spec-enforced safety
+                           restriction, not just documentation text —
+                           confirmed by reading connectedhomeip's own
+                           `OnOffCluster.cpp` directly: with the OffOnly
+                           feature bit set, the cluster's own accepted-
+                           commands list is narrowed to Off only, enforced
+                           by the Interaction Model itself before a remote
+                           On command ever reaches app code — the built-in,
+                           spec-mandated safety net a real cooktop needs
+                           (nobody should be able to remotely switch on a
+                           hot appliance they can't see). The ONLY way this
+                           cooktop turns on is therefore locally: a real
+                           `COOKTOP_POWER_BUTTON_GPIO` pushbutton writes the
+                           On/Off attribute directly via `attribute::
+                           update()` (the same "app writes the attribute in
+                           response to a local physical event" pattern
+                           firmware/outlet/'s own button already uses) —
+                           unaffected by OffOnly, since that restriction
+                           only narrows remote *commands*, not local
+                           attribute writes. A controller can still always
+                           turn it Off remotely, matching the safety
+                           feature's whole intent.
+
+                           Cook Surface child: confirmed directly against
+                           the CSA's own CookSurface.xml (revision 2 —
+                           "Made TemperatureLevel (TL) the only valid
+                           temperature control mode"): On/Off[OffOnly]
+                           optionalConform (not added — a single-zone
+                           design already has the root's own On/Off as its
+                           master switch, same "smallest reasonable next
+                           step" scope cut as every other device type's
+                           first cut); TemperatureControl and
+                           TemperatureMeasurement are both
+                           `<optionalConform choice="a" more="true"
+                           min="1"/>` — a real "at least one of these two"
+                           choice group, the same kind of constraint
+                           firmware/closure/'s own Positioning/
+                           MotionLatching pair and firmware/
+                           occupancy-sensor/'s own sensing-modality
+                           features already established, confirmed by
+                           reading `endpoint::cook_surface::add()`
+                           directly: it enforces the same choice itself via
+                           `VALIDATE_OPTIONAL_CLUSTERS_AT_LEAST_ONE
+                           ("cook_surface", ...)`. TemperatureControl is
+                           enabled alone, satisfying that choice on its
+                           own; TemperatureMeasurement is deliberately
+                           skipped — a real cook-surface temperature
+                           reading needs a sensor rated for genuinely hot
+                           surface temperatures (a hob element can exceed
+                           200 degC), and this repo's only high-
+                           temperature-capable driver category (K-type
+                           thermocouple amplifiers like MAX6675/MAX31855)
+                           hasn't been sourced or datasheet-verified for
+                           this device type — same "no sensor, no
+                           fabricated data" honesty precedent firmware/
+                           air-quality-sensor/'s own skipped particulate/
+                           gas clusters and firmware/smoke-co-alarm/'s
+                           skipped Temperature/Humidity Measurement already
+                           establish, not a technical limitation of the
+                           cluster itself. TemperatureControl[TL] needs no
+                           numeric sensor at all — it's a discrete,
+                           controller/locally-selected *power level*, not a
+                           measured temperature, so this device is honestly
+                           buildable with nothing more than a relay/SSR and
+                           zero sensors. `cook_surface::add()` confirmed to
+                           force-add the TL feature flag itself once
+                           requested via the config's own `with_
+                           temperature_control()` builder method — no
+                           manual feature-flag line needed, unlike
+                           firmware/refrigerator/'s own TN case (whose
+                           legacy `temperature_controlled_cabinet::add()`
+                           does NOT auto-set it, a real, previously-
+                           documented discrepancy specific to that helper).
+
+                           `SetTemperature(TargetTemperatureLevel)` is
+                           handled entirely inside the cluster, confirmed
+                           by reading `TemperatureControlCluster::
+                           HandleSetTemperature()` directly — exactly
+                           symmetric with firmware/refrigerator/'s own TN
+                           path (`SetSelectedTemperatureLevel()` internally,
+                           no delegate/app code needed to accept the
+                           command); this file's own duty-cycle task only
+                           ever *reads* the live level back via
+                           `GetSelectedTemperatureLevel()`, through the
+                           same registry-lookup-and-cast pattern firmware/
+                           refrigerator/'s own `get_temperature_control_
+                           cluster()` already establishes.
+                           `SupportedTemperatureLevels`, though, is a
+                           genuinely new Delegate requirement for this
+                           repo — unlike TN mode (where firmware/
+                           refrigerator/'s own header comment explains in
+                           full why `TemperatureControlCluster::
+                           SetDelegate()` is safely skippable, since TL's
+                           delegate-gated code paths are never reached
+                           there), this file needs a real
+                           `TemperatureControl::
+                           SupportedTemperatureLevelsIteratorDelegate`
+                           (`Size()`/`Next()`, confirmed by reading
+                           `TemperatureControlCluster::ReadAttribute()`
+                           directly — an empty list is returned with no
+                           delegate set) — `CookSurfaceLevelsDelegate` here
+                           is ported from the real reference shape
+                           (`examples/refrigerator-app/refrigerator-common/
+                           include/static-supported-temperature-levels.h`,
+                           read directly) simplified for a single fixed
+                           level list on a single endpoint.
+                           `TemperatureControlCluster::SetDelegate()` is
+                           confirmed to be a `static` class method with no
+                           ordering dependency on endpoint/cluster
+                           construction (unlike e.g. firmware/fan/'s own
+                           `FanControl::SetDefaultDelegate()`) — called
+                           once, early, in `app_main()`. Three levels are
+                           offered — "Low"/"Medium"/"High", mapped to
+                           33/66/100% duty cycle — a deliberate "smallest
+                           reasonable next step" scope cut versus a real
+                           hob's typically much larger (often 9-position)
+                           dial, the same kind of reduced-but-honest step
+                           count firmware/fan/'s own `FanModeSequence::
+                           OffLowMedHigh` already applies to a continuous
+                           PWM output for the same underlying reason.
+
+                           Output is a time-proportioned relay/SSR duty
+                           cycle, reusing firmware/microwave-oven/'s own
+                           `MICROWAVE_DUTY_CYCLE_WINDOW_SEC` technique
+                           verbatim (`COOKTOP_DUTY_CYCLE_WINDOW_SEC`, 10s)
+                           — the zone's relay/SSR is energized for whatever
+                           fraction of that window matches the live
+                           level's duty percentage, real general appliance-
+                           design knowledge, not a per-chip datasheet fact.
+                           The relay only ever energizes while the root's
+                           own On/Off attribute is true — a plain `static
+                           bool` kept in sync by `app_attribute_update_
+                           cb()`'s `PRE_UPDATE` hook, covering both a
+                           remote Off command and the local power button's
+                           own direct write, since both funnel through the
+                           same attribute-store path. Standard quick-
+                           power-cycle factory reset. Build-verified in
+                           Docker (clean first attempt, the direct payoff
+                           of the upfront esp-matter/connectedhomeip source
+                           research done before writing any code rather
+                           than discovered by a failed build); not
+                           hardware-tested (no relay/SSR hardware for this
+                           device type physically available when written).
+  partitions.csv           same OTA + fctry layout as firmware/light/
+  sdkconfig.defaults        same as firmware/light/
 tools/
   dev.sh                  opens the Docker dev environment
   gen_factory.sh          local QR + factory partition generator
@@ -8153,7 +8370,68 @@ SECURITY.md               flash encryption / secure boot / signed OTA guidance
    like firmware/dimmer-switch/, testing this one for real also needs a
    second, already-commissioned bindable color light on the same
    fabric).
-2. Implement Matter **OTA** — partially done. All forty-eight firmware
+
+   A forty-ninth device type, `firmware/cooktop/` (Cooktop + Cook
+   Surface), followed — continuing "verder gaan met het toevoegen van
+   devices" (keep adding devices). Oven (0x007B) was researched first,
+   but its own mandatory composed Temperature Controlled Cabinet child
+   (under the "Heater" condition) unlocks Oven Cavity Operational State
+   and Oven Mode, neither of which has a legacy `esp_matter_cluster.cpp`
+   namespace helper at all — confirmed by reading esp-matter's own
+   source directly, only a "generated"-data-model-only pair exists (this
+   repo has never enabled that data model), a genuinely deeper SDK gap
+   than any hand-built Delegate case so far in this repo, including
+   RvcOperationalState. Deferred rather than forced through; see
+   firmware/cooktop/'s own repository-layout entry above for the full
+   technical detail on exactly what's missing and why. Cooktop + Cook
+   Surface cover the same cooking-appliance ground with zero such gaps —
+   both have complete, ready-to-use legacy top-level helpers — and
+   introduce TemperatureControl's TL (TemperatureLevel) feature, never
+   used elsewhere in this repo (every prior TemperatureControl user —
+   refrigerator, dishwasher, laundry-washer, laundry-dryer — uses TN).
+   This repo's second genuinely composed, multi-endpoint device after
+   firmware/refrigerator/ (a Cooktop root + one Cook Surface child, via
+   `set_parent_endpoint()`). A real, spec-enforced safety detail drove
+   this file's own design: On/Off's OffOnly feature (mandatoryConform on
+   Cooktop.xml) blocks a remote controller's On command at the protocol
+   level, confirmed by reading connectedhomeip's own `OnOffCluster.cpp`
+   directly — so a physical power button is the ONLY way this cooktop
+   ever turns on, writing the On/Off attribute directly (unaffected by
+   OffOnly, which only narrows remote *commands*). TemperatureMeasurement
+   (the CookSurface XML's own "at least one of TemperatureControl/
+   TemperatureMeasurement" choice partner) is deliberately skipped —
+   TemperatureControl[TL] alone already satisfies that choice, and a real
+   cook-surface temperature reading would need a sensor rated for
+   genuinely hot surface temperatures (200 degC+) that hasn't been
+   sourced/verified for this device type, same "no sensor, no fabricated
+   data" honesty precedent this repo applies elsewhere — meaning
+   TemperatureControl[TL] is a discrete, locally-selected power level,
+   not a measured temperature, so this device needs no sensor at all.
+   `SupportedTemperatureLevels` needed this repo's first real
+   `TemperatureControl::SupportedTemperatureLevelsIteratorDelegate`
+   (ported from `examples/refrigerator-app/`'s own reference shape,
+   simplified to one fixed level list). Output is a time-proportioned
+   relay/SSR duty cycle, reusing firmware/microwave-oven/'s own
+   duty-cycle-window technique verbatim. Wizard integration reused the
+   existing `driver`+`secondary`+`identify` shape firmware/water-heater/'s
+   own entry already establishes (zone relay as `driver`, power button as
+   `secondary`, both required — no new mechanism needed), plus a new
+   hand-drawn icon (a hob viewed from above: one concentric-ring heating
+   zone plus a small filled dot for the power button). Verified with the
+   same Node.js sandboxed regression check (all 48 device types re-swept
+   through all 4 render/complete/sed/review functions, zero failures),
+   then the generated sed commands run for real against a copy of the
+   actual `app_main.cpp` and diffed against the original — byte-identical
+   (every GPIO already shipped at its wizard default). `tools/
+   product-wizard/README.md`'s own device-type list and count were
+   updated to match (forty-seven → forty-eight). Build-verified in
+   Docker, clean first attempt — the direct payoff of the upfront esp-
+   matter/connectedhomeip source research (TemperatureControl's TL
+   feature, the SupportedTemperatureLevels delegate shape, OffOnly's real
+   enforcement) done before writing any code; not hardware-tested (no
+   relay/SSR hardware for this device type physically available when
+   written).
+2. Implement Matter **OTA** — partially done. All forty-nine firmware
    types ship `CONFIG_ENABLE_OTA_REQUESTOR=y`, which adds the OTA Requestor
    cluster to the root node endpoint entirely via Kconfig — esp-matter's
    own core startup (`esp_matter_core.cpp`) calls
