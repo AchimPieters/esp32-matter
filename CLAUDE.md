@@ -7001,6 +7001,200 @@ firmware/battery-storage/  Battery Storage — fifty-seventh device type: an
                            written).
   partitions.csv           same OTA + fctry layout as firmware/light/
   sdkconfig.defaults        same as firmware/light/
+firmware/oven/            Oven — fifty-eighth device type, and this repo's
+                           second genuinely composed, multi-endpoint device
+                           after firmware/refrigerator/'s own Fridge/Freezer
+                           pair — but the hardest single device type built in
+                           this whole "hobbyist cluster expansion"/device-
+                           catalog pass, since neither of its two real
+                           clusters (Oven Mode, Oven Cavity Operational
+                           State) has a legacy top-level wrapper OR a legacy
+                           `cluster::xxx::create()` free function to call at
+                           all — both had to be hand-assembled from raw
+                           `cluster::create()` + individual attribute/
+                           command/event calls, the same low-level technique
+                           firmware/doorbell/'s and firmware/chime/'s own
+                           hand-assembled endpoints already established, one
+                           level deeper here since even the CLUSTER shells
+                           (not just the endpoint) had no ready-made helper.
+                           Originally left as a documented "SDK gap" skip
+                           during this session's own 92-XML CSA device-type
+                           catalog sweep; revisited and actually built once
+                           asked to push past that deferral rather than stop
+                           at it.
+  main/app_main.cpp        Confirmed directly against the CSA's own
+                           data_model/1.6/device_types/Oven.xml (0x007B):
+                           the ROOT endpoint itself only needs Identify
+                           (optionalConform, added manually) — the real
+                           substance is a mandatory composed Temperature
+                           Controlled Cabinet (0x0071, the same device type
+                           firmware/refrigerator/'s own Fridge/Freezer
+                           children already use) child endpoint carrying
+                           TemperatureControl (auto-added by
+                           `temperature_controlled_cabinet::create()`
+                           itself, same legacy `feature_flags`/
+                           `temp_setpoint` field-name fix firmware/
+                           refrigerator/'s own header comment already
+                           documents in full) plus two more
+                           mandatoryConform clusters this repo had never
+                           touched before: Oven Mode (reuses the generic,
+                           cluster-agnostic `ModeBase::Delegate`/
+                           `ModeBase::Instance` base classes directly —
+                           confirmed via connectedhomeip's own chef
+                           reference, `examples/chef/common/clusters/
+                           oven-mode/chef-oven-mode.h`, that OvenMode needs
+                           NO cluster-specific Delegate subclass at all,
+                           unlike every other ModeBase-derived cluster this
+                           repo has built) and Oven Cavity Operational
+                           State (derives from the same generic
+                           `OperationalState::Delegate`/`Instance` base
+                           classes firmware/dishwasher/'s/firmware/
+                           laundry-washer/'s/firmware/laundry-dryer/'s own
+                           generic OperationalState already uses — but,
+                           confirmed by reading connectedhomeip's own
+                           `CodegenIntegration.h` directly,
+                           `OvenCavityOperationalState::Instance` is a
+                           trivial ONE-LINE derived class
+                           (`Instance(Delegate*, EndpointId) :
+                           OperationalState::Instance(d, e, Id) {}`) that
+                           the SDK's own existing `OvenCavityOperational
+                           StateDelegateInitCB` already auto-constructs
+                           during `esp_matter::start()` once a delegate is
+                           registered — no manual `new Instance()` needed
+                           the way firmware/robot-vacuum/'s own
+                           RvcOperationalState required, confirmed this is
+                           a property of THAT specific legacy wrapper
+                           skipping delegate wiring entirely, not something
+                           intrinsic to hand-building an OperationalState-
+                           family cluster shell from scratch).
+                           `operational_state::event::
+                           create_operation_completion(cluster)` (the same
+                           free function firmware/irrigation-system/'s own
+                           header comment already confirms is generic, not
+                           tied to any specific derived OperationalState
+                           cluster — cluster association comes from the
+                           `cluster_t*` argument, not the enum namespace)
+                           is called here too, additionally cross-confirmed
+                           by finding it already used this exact way inside
+                           esp-matter's own shipped
+                           `robotic_vacuum_cleaner::add()`. Both hand-built
+                           cluster shells follow the same shape every
+                           already-working legacy cluster constructor in
+                           this repo uses (`water_heater_mode::create()`,
+                           `operational_state::create()`, `mode_select::
+                           create()`, all read directly in
+                           `esp_matter_cluster.cpp` before writing this
+                           file's own version): `cluster::create()` +
+                           `cluster::set_delegate_and_init_callback()` +
+                           the cluster's own `global::attribute::
+                           create_feature_map()`/`create_cluster_revision()`
+                           + its own attribute/command/event `create_*()`
+                           calls.
+
+                           Two real, sequential sets of compile errors were
+                           caught and fixed by actual Docker builds, not
+                           guessed — a genuinely new namespace lesson for
+                           this repo, worth remembering for any future
+                           from-scratch cluster-shell construction: (1)
+                           EVERY generic `global::`/`mode_base::`/
+                           `operational_state::` attribute/command/event
+                           helper, and `set_delegate_and_init_callback`
+                           itself, needs an explicit `cluster::` prefix
+                           when called from app code — they live under
+                           `esp_matter::cluster::global`/`::mode_base`/
+                           `::operational_state`, not directly under
+                           `esp_matter::`, unlike how these same-looking
+                           names might read from a top-level helper's own
+                           internals (which are already inside the
+                           `esp_matter::cluster` namespace, so don't need
+                           the prefix themselves) — a real, easy trap when
+                           porting that internal shape into app code
+                           verbatim; (2) `OvenModeDelegateInitCB`/
+                           `OvenCavityOperationalStateDelegateInitCB`
+                           themselves live one level deeper still, under
+                           `esp_matter::cluster::delegate_cb::` — found via
+                           the compiler's own suggested-fix message on the
+                           second build attempt, then confirmed by matching
+                           the same pattern every other `*DelegateInitCB`
+                           call site in this repo already uses (assigned to
+                           a `static const auto` local first). Also needed
+                           an explicit `#include
+                           <esp_matter_delegate_callbacks.h>` — not pulled
+                           in transitively by `<esp_matter.h>` the way
+                           every other device type in this repo has
+                           apparently gotten away without it (most of them
+                           reach their own `*DelegateInitCB` through a
+                           complete top-level helper that already includes
+                           it internally, rather than calling it directly
+                           from app code the way this hand-assembled shell
+                           has to).
+
+                           Deliberately NOT implemented: closed-loop
+                           temperature control. `TemperatureControl`'s own
+                           setpoint (`OVEN_MIN/MAX/DEFAULT_CENTIDEGREES`,
+                           30.00-260.00 degC default 180.00 degC — real oven
+                           baking range) is accepted and stored via the
+                           same TN-only pattern every other TemperatureControl
+                           device type in this repo already uses, but
+                           nothing reads it back against a live temperature
+                           reading to regulate the heating relay — the same
+                           reasoning firmware/room-air-conditioner/'s/
+                           firmware/heat-pump/'s own DS18B20-based control
+                           loops don't apply here: a plastic-encapsulated
+                           1-Wire probe rated for ordinary ambient/liquid
+                           temperatures has no business inside a 200+ degC
+                           oven cavity, the same "wrong sensor for the
+                           physical environment" reasoning firmware/
+                           cooktop/'s own header comment already applies to
+                           skipping closed-loop control there too — a real,
+                           high-temperature thermocouple/RTD probe would be
+                           needed for genuine closed-loop control, out of
+                           scope for this pass. `HandleStartStateCallback()`
+                           simply energizes the relay (active-LOW, matching
+                           this repo's own established relay convention)
+                           if the door is confirmed closed, rejecting the
+                           command otherwise — the same real safety
+                           interlock firmware/dishwasher/'s own door check
+                           already establishes, reusing the identical
+                           optional reed-switch pattern (`OVEN_DOOR_GPIO`,
+                           `GPIO_NUM_NC` by default) this repo's other
+                           appliance device types already use for their own
+                           optional door/position sensors. A dedicated
+                           `door_task()` also independently, continuously
+                           polls that same sensor and force-cuts the relay
+                           the instant the door opens mid-run — a real
+                           safety behavior that does NOT wait for or depend
+                           on any Matter command at all, deliberately
+                           separate from the cluster's own command-handling
+                           flow. `OvenMode` offers 9 real modes (Bake/
+                           Convection/Grill/Roast/Clean/Convection Bake/
+                           Convection Roast/Warming/Proofing, confirmed
+                           against connectedhomeip's own generated
+                           `OvenMode::ModeTag` enum) — purely informational,
+                           same "no genuinely different control algorithm
+                           per mode" scope cut firmware/refrigerator/'s own
+                           "Rapid Cool"/"Rapid Freeze" modes and firmware/
+                           laundry-washer/'s own Delicate/Heavy/Whites modes
+                           already establish. Standard quick-power-cycle
+                           factory reset. Build-verified in Docker (two
+                           real, sequential sets of compile errors caught
+                           and fixed — see above; clean on the third
+                           attempt); not hardware-tested (no relay/reed-
+                           switch hardware for this device type physically
+                           available when written). Not exposed in
+                           `tools/product-wizard/` beyond the plain
+                           `driver`+`identify` shape (heating relay +
+                           Identify LED) — the optional door sensor is
+                           deliberately left hand-edit-only, the same
+                           "not every optional peripheral needs its own
+                           wizard field" precedent firmware/cooktop/'s own
+                           non-exposed output-type choice already
+                           establishes, judged not worth a fifth parallel
+                           copy of the statusLed/positionSensor/dockSensor/
+                           plugSensor single-GPIO-checkbox mechanism for
+                           this specific addition.
+  partitions.csv           same OTA + fctry layout as firmware/light/
+  sdkconfig.defaults        same as firmware/light/
 tools/
   dev.sh                  opens the Docker dev environment
   gen_factory.sh          local QR + factory partition generator
@@ -9396,7 +9590,87 @@ SECURITY.md               flash encryption / secure boot / signed OTA guidance
    Docker, clean first attempt; neither hardware-tested (no module of any
    of the six power-monitor chips, and no battery pack/voltage-divider
    hardware, was physically available when written).
-2. Implement Matter **OTA** — partially done. All fifty-seven firmware
+
+   A fifty-eighth device type, `firmware/oven/` (Oven root + Temperature
+   Controlled Cabinet child, with Oven Mode + Oven Cavity Operational
+   State), followed — initially left as a documented "SDK gap" skip
+   during this same session's own full 92-XML CSA device-type catalog
+   sweep (neither of its two real clusters has a legacy top-level wrapper
+   OR a legacy `cluster::xxx::create()` free function at all), then
+   actually built once asked to push past that deferral rather than stop
+   at it. The hardest single device type in this whole catalog pass: both
+   OvenMode and OvenCavityOperationalState had to be hand-assembled from
+   raw `cluster::create()` + individual attribute/command/event calls —
+   one level deeper than firmware/doorbell/'s/firmware/chime/'s own
+   hand-assembled endpoints, since even the CLUSTER shells themselves had
+   no ready-made helper this time, not just the endpoint. Reused generic,
+   cluster-agnostic base classes throughout rather than inventing
+   cluster-specific ones: OvenMode reuses `ModeBase::Delegate`/`Instance`
+   directly with no subclass of its own at all (confirmed via
+   connectedhomeip's own chef reference), and OvenCavityOperationalState
+   reuses the same generic `OperationalState::Delegate`/`Instance` base
+   classes firmware/dishwasher/'s/firmware/laundry-washer/'s/firmware/
+   laundry-dryer/'s own OperationalState clusters already use — confirmed,
+   by reading connectedhomeip's own `CodegenIntegration.h` directly, that
+   its own `Instance` is a trivial one-line derived class already
+   auto-constructed by the SDK's existing `OvenCavityOperationalState
+   DelegateInitCB`, unlike firmware/robot-vacuum/'s own RvcOperationalState
+   (which needed a fully manual `Instance` construction — confirmed this
+   is a property of that specific legacy wrapper, not intrinsic to
+   hand-building an OperationalState-family cluster from scratch). Two
+   real, sequential sets of compile errors were caught and fixed by
+   actual Docker builds, surfacing a genuinely new namespace lesson for
+   this repo: every generic `global::`/`mode_base::`/`operational_state::`
+   helper (and `set_delegate_and_init_callback` itself) needs an explicit
+   `cluster::` prefix when called from app code, and every
+   `*DelegateInitCB` function lives one level deeper still, under
+   `esp_matter::cluster::delegate_cb::` — both real traps when porting an
+   already-working legacy cluster constructor's own internal shape
+   (already inside the `esp_matter::cluster` namespace, so it never needed
+   these prefixes itself) into app code verbatim. See its own
+   repository-layout entry above for the complete detail, including why
+   closed-loop temperature control is deliberately not implemented (no
+   oven-safe 200+ degC probe in this repo's existing sensor library) and
+   the real door-open safety interlock that runs independently of the
+   Matter command flow. Wizard integration needed no new mechanism — the
+   same plain `driver`+`identify` shape firmware/mounted-onoff-control/'s
+   own entry already uses, plus a new oven-body-with-rack icon (distinct
+   from firmware/microwave-oven/'s own wavy-radiation-lines motif and
+   firmware/cooktop/'s own concentric-circles motif). Verified with the
+   established Node.js sandboxed regression check (all 57 wizard device
+   types, zero failures) and a real sed dry-run against a Docker copy,
+   byte-identical against its own shipped defaults. `tools/
+   product-wizard/README.md`'s own device-type list and count were
+   updated to match (fifty-six → fifty-seven wizard-buildable device
+   types; fifty-eight firmware folders total, counting firmware/camera/,
+   which — per its own repository-layout entry above — has never been
+   offered in the wizard). Build-verified in Docker (two real, sequential
+   sets of compile errors caught and fixed — see above; clean on the
+   third attempt); not hardware-tested (no relay/reed-switch hardware for
+   this device type physically available when written).
+
+   With Oven built, this session's full 92-XML CSA device-type catalog
+   sweep is genuinely complete: every device type with a real,
+   affordable, hobbyist-buildable path now has firmware in this repo.
+   What remains a deliberate, documented skip (not a gap still open to
+   revisit) stays skipped for structural reasons this repo cannot change
+   by trying harder — an external-SDK/dual-chip requirement shared with
+   firmware/camera/ (Intercom/Audio-Video Doorbell/Floodlight Camera/
+   Snapshot Camera/Video Doorbell), Matter's own "utility"-class
+   composed-only device types with no standalone product form
+   (ElectricalSensor/PowerSource/DeviceEnergyManagement/Temperature
+   Controlled Cabinet — always composed onto something else, e.g.
+   firmware/refrigerator/'s and firmware/oven/'s own child endpoints, or
+   firmware/heat-pump/'s/firmware/water-heater/'s own composed
+   ElectricalSensor), controller/media/infrastructure device types
+   (Matter's own bridge/controller/gateway/media-endpoint categories,
+   never a hobbyist end-device build), and the genuinely no-honest-sensor
+   cases confirmed during item 8/9's own cluster-level pass (Radon;
+   Electrical Energy Tariff's own no-cloud/no-fabricated-tariff-data
+   conflict). This closes out the "ga verder met het aanvullen van de
+   devices... totdat alle devices zijn toegevoegd" instruction that drove
+   this whole pass.
+2. Implement Matter **OTA** — partially done. All fifty-eight firmware
    types ship `CONFIG_ENABLE_OTA_REQUESTOR=y`, which adds the OTA Requestor
    cluster to the root node endpoint entirely via Kconfig — esp-matter's
    own core startup (`esp_matter_core.cpp`) calls

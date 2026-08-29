@@ -67,10 +67,10 @@ open tools/product-wizard/index.html
   "Mounted Dimmable Load Control"
   (`firmware/mounted-dimmable-load-control/`), "Electrical Utility
   Meter" (`firmware/electrical-utility-meter/`), "Meter Reference
-  Point" (`firmware/meter-reference-point/`), or "Battery Storage"
-  (`firmware/battery-storage/`).
+  Point" (`firmware/meter-reference-point/`), "Battery Storage"
+  (`firmware/battery-storage/`), or "Oven" (`firmware/oven/`).
   All
-  fifty-six are real, buildable
+  fifty-seven are real, buildable
   firmware, not just UI placeholders (`firmware/camera/`, this repo's
   twelfth device type, is deliberately NOT offered here — see its own
   section further down for why: its two-chip/two-firmware/external-SDK

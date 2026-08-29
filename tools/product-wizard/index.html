@@ -4103,6 +4103,41 @@ const DEVICE_TYPES = [
       defaultsByModule: { esp32: 2, esp32c2: 2, esp32c3: 2, esp32c5: 2, esp32c6: 2, esp32c61: 2, esp32s3: 2, esp32h2: 2 },
     },
   },
+  {
+    id: "oven",
+    name: "Oven",
+    desc: "Matter Oven + Temperature Controlled Cabinet: a composed device (root + one child endpoint, same shape as Refrigerator's own Fridge/Freezer pair) — Oven Cavity Operational State (real Start/Stop, a door-open safety interlock) + Oven Mode (9 real modes: Bake/Convection/Grill/Roast/Clean/...) + TemperatureControl (a real setpoint, accepted and stored, but not closed-loop — no oven-safe 200+ degC sensor is available in this repo). Reference device in firmware/oven/.",
+    shortDesc: "Relay-driven oven cavity: Start/Stop + 9 modes.",
+    // Matches project(matter_oven) in firmware/oven/CMakeLists.txt. Same
+    // driver+identify shape as firmware/mounted-onoff-control/'s own
+    // entry. The optional door sensor (OVEN_DOOR_GPIO, GPIO_NUM_NC by
+    // default) is deliberately NOT exposed here — same "hand-edit only"
+    // precedent this wizard already applies to other genuinely optional
+    // peripherals not central to the device's own primary function
+    // (e.g. Cooktop's own non-exposed output-type choice) — adding a
+    // fifth parallel copy of the statusLed/positionSensor/dockSensor/
+    // plugSensor single-GPIO-checkbox mechanism was judged not worth its
+    // own wiring cost for this specific addition.
+    binName: "matter_oven.bin",
+    driver: {
+      summary: "GPIO (relay, active-LOW)",
+      fieldLabel: "Heating relay GPIO pin",
+      blockTitle: "Heating relay · digital output",
+      filePath: "firmware/oven/main/app_main.cpp",
+      defineName: "OVEN_HEATING_RELAY_GPIO",
+      currentGpio: 16,
+      defaultsByModule: { esp32: 16, esp32c2: 16, esp32c3: 16, esp32c5: 16, esp32c6: 16, esp32c61: 16, esp32s3: 16, esp32h2: 16 },
+    },
+    identify: {
+      summary: "GPIO (digital output)",
+      fieldLabel: "Identify LED GPIO pin",
+      blockTitle: "Identify LED · digital output",
+      filePath: "firmware/oven/main/app_main.cpp",
+      defineName: "IDENTIFY_LED_GPIO",
+      currentGpio: 2,
+      defaultsByModule: { esp32: 2, esp32c2: 2, esp32c3: 2, esp32c5: 2, esp32c6: 2, esp32c61: 2, esp32s3: 2, esp32h2: 2 },
+    },
+  },
 ];
 
 function findDeviceType(id) {
@@ -4879,6 +4914,17 @@ const DEVICE_TYPE_ICONS = {
     <path d="M13 27q3-4 6 0t6 0t6 0" stroke-width="2"/>
     <circle cx="39" cy="19" r="1.8" fill="currentColor" stroke="none"/>
     <circle cx="39" cy="27" r="1.8" fill="currentColor" stroke="none"/>
+  </svg>`,
+  // A tall, freestanding oven body with a door window containing a single
+  // horizontal rack line (not microwave-oven's own wavy-radiation motif) —
+  // the standard "oven rack" pictogram — plus a small control knob below
+  // the window, distinct from microwave-oven's own wide/squat proportions
+  // and control-panel-dots placement.
+  oven: `<svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+    <rect x="8" y="4" width="32" height="40" rx="4"/>
+    <rect x="12" y="9" width="24" height="20" rx="2"/>
+    <path d="M14 19H34" stroke-width="2"/>
+    <circle cx="24" cy="36" r="3.5"/>
   </svg>`,
   // A wall-mounted doorbell plate (rounded rect) with a filled circular
   // pushbutton — the real, physical thing this device type is. Distinct
