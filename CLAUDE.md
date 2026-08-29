@@ -3149,11 +3149,49 @@ firmware/water-heater/    Water Heater — twenty-fourth device type, and the
                            extractor-hood/ already hit, added onto the
                            endpoint afterward the same way). An optional
                            composed Electrical Sensor device type is
-                           listed too — not implemented, same "smallest
-                           reasonable next step" scope cut as every other
-                           device type's own optional extras; firmware/
-                           outlet/ already has that exact two-cluster
-                           pattern built if it's ever wanted here.
+                           listed too — originally not implemented, same
+                           "smallest reasonable next step" scope cut as
+                           every other device type's own optional extras;
+                           later revisited ("hobbyist cluster expansion"
+                           pilot, device #4 — see CLAUDE.md's own "Open
+                           next steps"): `WATER_HEATER_POWER_MONITOR`
+                           (defaulting off, unchanged default build) does
+                           exactly what this file's own original comment
+                           already pointed at — firmware/outlet/'s exact
+                           two-cluster pattern, ported verbatim, creating
+                           a genuinely SECOND Matter endpoint (esp-matter's
+                           own `electrical_sensor` device type) when
+                           enabled. Same 6-chip choice (BL0942, BL0937,
+                           HLW8012, CSE7759, CSE7766, ADE7953) every
+                           driver/protocol/citation reused verbatim; GPIO
+                           defaults (18/19 UART, 32/33 I2C, matching
+                           firmware/heat-pump/'s own identical addition)
+                           avoid this file's own existing relay/DS18B20
+                           pins at 4/21. A structurally different
+                           situation from firmware/heat-pump/'s own
+                           identical-sounding gap: that device's
+                           ElectricalSensor clusters already existed
+                           (composed onto its root endpoint by
+                           `endpoint::heat_pump::create()` itself, just
+                           undriven); here nothing exists at all until
+                           this toggle creates the second endpoint. Wizard
+                           integration reuses the `extraPickers` mechanism
+                           (same as heat-pump's own identical addition,
+                           not `clusterOptions`/`chipChoiceGroups` —
+                           still one mutually-exclusive chip choice, not
+                           independently-checkable clusters), zero new
+                           mechanism needed, only new `COMPONENT_LIBRARY`
+                           entries (`WH_POWER_*`). Verified with the same
+                           discipline as every other device in this pass:
+                           Node.js sandboxed checks (all 47 device types
+                           re-swept) plus a real sed dry-run against a
+                           copy of the file, diffed against the original.
+                           Build-verified in Docker: default config
+                           confirmed byte-identical to the pre-change
+                           build; all 6 power-monitor chips individually.
+                           Not hardware-tested — no module of any of the
+                           six chips was physically available when
+                           written.
                            ControlSequenceOfOperation is HeatingOnly — a
                            water heater physically can't cool, so unlike
                            firmware/thermostat/'s own Heat+Cool scope
@@ -8574,14 +8612,14 @@ SECURITY.md               flash encryption / secure boot / signed OTA guidance
    keep going through every remaining device with a closeable "no sensor"
    gap rather than stopping at this one pilot.
 
-9. **"Hobbyist cluster expansion" continued — devices #2 and #3, plus a
-   genuinely different kind of gap** — the user asked to keep going
-   through every remaining device with a closeable "no sensor, no
+9. **"Hobbyist cluster expansion" continued — devices #2, #3, and #4,
+   covering every remaining candidate found** — the user asked to keep
+   going through every remaining device with a closeable "no sensor, no
    fabricated data" gap, not stop at item 8's own single pilot. A
    systematic re-search of this file for that exact phrase (and related
    framings — "deliberately NOT driven," "structurally present but not
    driven by any real sensor," "would want firmware/outlet/'s own...")
-   turned up two more genuinely addressable candidates; every other hit
+   turned up three more genuinely addressable candidates; every other hit
    was either already covered by item 7's own audit, needs hardware this
    repo's "read the datasheet, drive a GPIO" style genuinely can't
    provide (pump's own seventeen-event fault set — current sensing/
@@ -8642,13 +8680,39 @@ SECURITY.md               flash encryption / secure boot / signed OTA guidance
    monitor chips). Neither hardware-tested — no physical module for
    either addition was available when written.
 
-   Not yet done: `firmware/water-heater/`'s own identical "an optional
-   composed Electrical Sensor device type is listed too — not
+   **firmware/water-heater/ (device #4)**: its own identical-sounding "an
+   optional composed Electrical Sensor device type is listed too — not
    implemented... firmware/outlet/ already has that exact two-cluster
-   pattern built if it's ever wanted here" gap — a genuinely different
-   case again (no cluster exists there at all yet, unlike heat-pump's
-   already-present-but-undriven pair), the next planned step in this
-   same pass.
+   pattern built if it's ever wanted here" gap — a structurally different
+   case from heat-pump's own: no cluster existed there at all until
+   `WATER_HEATER_POWER_MONITOR` (defaulting off) creates a genuinely
+   SECOND Matter endpoint (esp-matter's own `electrical_sensor` device
+   type), the same two-endpoint composition firmware/outlet/'s own power-
+   monitoring feature already establishes, rather than wiring a Delegate
+   onto an already-existing cluster. Same 6-chip subsystem reused
+   verbatim; GPIO defaults match heat-pump's own choice (18/19 UART,
+   32/33 I2C) to avoid this file's own existing relay/DS18B20 pins.
+   Wizard: `extraPickers`, same as heat-pump's own addition, zero new
+   mechanism. Verified and build-tested with the exact same discipline as
+   devices #2/#3 (Node.js sandboxed checks across all 47 device types,
+   real sed dry-run diff, default config confirmed byte-identical, all 6
+   chips individually build-verified); not hardware-tested. See firmware/
+   water-heater/'s own repository-layout entry above for the complete
+   detail.
+
+   With device #4 done, the systematic re-search this item opened with
+   has been worked through completely — every "no sensor, no fabricated
+   data" gap this repo's own text named as genuinely closeable with a
+   real, affordable, hobbyist-sourceable sensor (not needing SDK support
+   this repo doesn't have, and not needing hardware tightly integrated
+   into an actuator's own internals, like pump's own fault-event set) now
+   has one. Not yet done: rolling `clusterOptions`/`chipChoiceGroups` out
+   to any device type beyond air-quality-sensor/smoke-co-alarm (there's
+   no further candidate needing a NEW checkable-cluster picker right now
+   — heat-pump's and water-heater's own gaps both mapped onto the older,
+   already-proven `extraPickers` shape instead), and hardware-testing any
+   of the new chips/sensors across all four devices (none was physically
+   available when written).
 
 ## Note on hardware/USB
 

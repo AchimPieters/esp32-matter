@@ -1114,6 +1114,39 @@ const COMPONENT_LIBRARY = {
     { key: "sda", label: "SDA", defineName: "ADE7953_SDA_GPIO", defaultsByModule: { esp32: 32, esp32c2: 32, esp32c3: 32, esp32c5: 32, esp32c6: 32, esp32c61: 32, esp32s3: 32, esp32h2: 32 } },
     { key: "scl", label: "SCL", defineName: "ADE7953_SCL_GPIO", defaultsByModule: { esp32: 33, esp32c2: 33, esp32c3: 33, esp32c5: 33, esp32c6: 33, esp32c61: 33, esp32s3: 33, esp32h2: 33 } },
   ] },
+  // Water Heater's own Power Monitoring picker ("hobbyist cluster
+  // expansion" pilot, device #4) — same 6 real chips/drivers/citations
+  // as outlet's/electrical-meter's/heat-pump's own entries above, same
+  // GPIO defaults as heat-pump's own (18/19 UART, 32/33 I2C — avoids this
+  // device's own existing relay/DS18B20/identify pins at 4/21/2; the
+  // shared PULSE_METER_* pins reused unchanged at 25/26/27).
+  WH_POWER_NONE: { name: "None", category: "wh-power-monitor", bus: "—", verified: true, defineValue: "WATER_HEATER_POWER_MONITOR_NONE", pins: [] },
+  WH_POWER_BL0942: { name: "BL0942", category: "wh-power-monitor", bus: "UART", verified: false, defineValue: "WATER_HEATER_POWER_MONITOR_BL0942", pins: [
+    { key: "rx", label: "UART RX", defineName: "BL0942_UART_RX_GPIO", defaultsByModule: { esp32: 18, esp32c2: 18, esp32c3: 18, esp32c5: 18, esp32c6: 18, esp32c61: 18, esp32s3: 18, esp32h2: 18 } },
+    { key: "tx", label: "UART TX", defineName: "BL0942_UART_TX_GPIO", defaultsByModule: { esp32: 19, esp32c2: 19, esp32c3: 19, esp32c5: 19, esp32c6: 19, esp32c61: 19, esp32s3: 19, esp32h2: 19 } },
+  ] },
+  WH_POWER_BL0937: { name: "BL0937", category: "wh-power-monitor", bus: "GPIO (pulse)", verified: false, defineValue: "WATER_HEATER_POWER_MONITOR_BL0937", pins: [
+    { key: "sel", label: "SEL", defineName: "PULSE_METER_SEL_GPIO", defaultsByModule: { esp32: 25, esp32c2: 25, esp32c3: 25, esp32c5: 25, esp32c6: 25, esp32c61: 25, esp32s3: 25, esp32h2: 25 } },
+    { key: "cf", label: "CF (power pulse)", defineName: "PULSE_METER_CF_GPIO", defaultsByModule: { esp32: 26, esp32c2: 26, esp32c3: 26, esp32c5: 26, esp32c6: 26, esp32c61: 26, esp32s3: 26, esp32h2: 26 } },
+    { key: "cf1", label: "CF1 (V/I pulse)", defineName: "PULSE_METER_CF1_GPIO", defaultsByModule: { esp32: 27, esp32c2: 27, esp32c3: 27, esp32c5: 27, esp32c6: 27, esp32c61: 27, esp32s3: 27, esp32h2: 27 } },
+  ] },
+  WH_POWER_HLW8012: { name: "HLW8012", category: "wh-power-monitor", bus: "GPIO (pulse)", verified: false, defineValue: "WATER_HEATER_POWER_MONITOR_HLW8012", pins: [
+    { key: "sel", label: "SEL", defineName: "PULSE_METER_SEL_GPIO", defaultsByModule: { esp32: 25, esp32c2: 25, esp32c3: 25, esp32c5: 25, esp32c6: 25, esp32c61: 25, esp32s3: 25, esp32h2: 25 } },
+    { key: "cf", label: "CF (power pulse)", defineName: "PULSE_METER_CF_GPIO", defaultsByModule: { esp32: 26, esp32c2: 26, esp32c3: 26, esp32c5: 26, esp32c6: 26, esp32c61: 26, esp32s3: 26, esp32h2: 26 } },
+    { key: "cf1", label: "CF1 (V/I pulse)", defineName: "PULSE_METER_CF1_GPIO", defaultsByModule: { esp32: 27, esp32c2: 27, esp32c3: 27, esp32c5: 27, esp32c6: 27, esp32c61: 27, esp32s3: 27, esp32h2: 27 } },
+  ] },
+  WH_POWER_CSE7759: { name: "CSE7759", category: "wh-power-monitor", bus: "GPIO (pulse)", verified: false, defineValue: "WATER_HEATER_POWER_MONITOR_CSE7759", note: "Assumed to share HLW8012's formula (same chip family) per a secondary source — not independently confirmed against CSE7759's own datasheet.", pins: [
+    { key: "sel", label: "SEL", defineName: "PULSE_METER_SEL_GPIO", defaultsByModule: { esp32: 25, esp32c2: 25, esp32c3: 25, esp32c5: 25, esp32c6: 25, esp32c61: 25, esp32s3: 25, esp32h2: 25 } },
+    { key: "cf", label: "CF (power pulse)", defineName: "PULSE_METER_CF_GPIO", defaultsByModule: { esp32: 26, esp32c2: 26, esp32c3: 26, esp32c5: 26, esp32c6: 26, esp32c61: 26, esp32s3: 26, esp32h2: 26 } },
+    { key: "cf1", label: "CF1 (V/I pulse)", defineName: "PULSE_METER_CF1_GPIO", defaultsByModule: { esp32: 27, esp32c2: 27, esp32c3: 27, esp32c5: 27, esp32c6: 27, esp32c61: 27, esp32s3: 27, esp32h2: 27 } },
+  ] },
+  WH_POWER_CSE7766: { name: "CSE7766", category: "wh-power-monitor", bus: "UART", verified: false, defineValue: "WATER_HEATER_POWER_MONITOR_CSE7766", pins: [
+    { key: "rx", label: "UART RX", defineName: "CSE7766_UART_RX_GPIO", defaultsByModule: { esp32: 18, esp32c2: 18, esp32c3: 18, esp32c5: 18, esp32c6: 18, esp32c61: 18, esp32s3: 18, esp32h2: 18 } },
+  ] },
+  WH_POWER_ADE7953: { name: "ADE7953", category: "wh-power-monitor", bus: "I2C", verified: false, defineValue: "WATER_HEATER_POWER_MONITOR_ADE7953", note: "Least-certain of the six power-monitor drivers — only partially confirmed against Analog Devices' own datasheet across several attempts; double-check before relying on it.", pins: [
+    { key: "sda", label: "SDA", defineName: "ADE7953_SDA_GPIO", defaultsByModule: { esp32: 32, esp32c2: 32, esp32c3: 32, esp32c5: 32, esp32c6: 32, esp32c61: 32, esp32s3: 32, esp32h2: 32 } },
+    { key: "scl", label: "SCL", defineName: "ADE7953_SCL_GPIO", defaultsByModule: { esp32: 33, esp32c2: 33, esp32c3: 33, esp32c5: 33, esp32c6: 33, esp32c61: 33, esp32s3: 33, esp32h2: 33 } },
+  ] },
   // Outlet's Power Monitoring picker's `pins` mechanism (chip choice ->
   // extra GPIO fields) turns out to fit firmware/color-light/'s color-mode
   // choice just as well: RGB vs RGBW vs RGBWW isn't a variable-count or
@@ -2503,8 +2536,8 @@ const DEVICE_TYPES = [
   {
     id: "water-heater",
     name: "Water Heater",
-    desc: "Matter water heater: Thermostat (Heat-only) + WaterHeaterManagement (real Boost/CancelBoost commands, with BoostStarted/BoostEnded events) + WaterHeaterMode (Off/Manual/Timed). A single relay drives an immersion heating element's own contactor — the classic DIY smart-electric-water-heater retrofit — while a waterproof DS18B20 probe reads the tank temperature. Reference device in firmware/water-heater/.",
-    shortDesc: "Relay + DS18B20 probe, real Boost command.",
+    desc: "Matter water heater: Thermostat (Heat-only) + WaterHeaterManagement (real Boost/CancelBoost commands, with BoostStarted/BoostEnded events) + WaterHeaterMode (Off/Manual/Timed). A single relay drives an immersion heating element's own contactor — the classic DIY smart-electric-water-heater retrofit — while a waterproof DS18B20 probe reads the tank temperature. Optionally add a real power-monitor chip (same 6-chip choice as Outlet/Electrical Meter/Heat Pump) for a genuine second Electrical Sensor endpoint. Reference device in firmware/water-heater/.",
+    shortDesc: "Relay + DS18B20 probe, real Boost command; optional power monitor.",
     // Matches project(matter_water_heater) in
     // firmware/water-heater/CMakeLists.txt. Reuses the exact driver+
     // secondary two-independent-GPIO shape firmware/pressure-sensor/'s
@@ -2519,6 +2552,25 @@ const DEVICE_TYPES = [
     // the `secondaryFieldNeeded` check only gates on a selected
     // component's own `usesPin2`, which is simply absent here).
     binName: "matter_water_heater.bin",
+    // "Hobbyist cluster expansion" pilot, device #4 — same extraPickers
+    // shape outlet's/heat-pump's own Power Monitoring pickers already
+    // establish. UNLIKE heat-pump's own gap (that device's Electrical
+    // Sensor clusters already existed on its root endpoint), this device
+    // has NO electrical-sensor endpoint at all until this toggle creates
+    // one — genuinely creates a SECOND Matter endpoint when enabled, the
+    // same two-endpoint composition firmware/outlet/'s own power-
+    // monitoring feature already establishes. Still `extraPickers`, not
+    // `clusterOptions`, since there's still only one mutually-exclusive
+    // chip choice to make, not independently-checkable clusters.
+    extraPickers: [
+      {
+        key: "waterHeaterPowerMonitor",
+        label: "Power Monitoring",
+        prompt: "Optional — adds a second Matter endpoint (Electrical Sensor) reporting real power/energy readings from the selected chip.",
+        options: ["WH_POWER_NONE", "WH_POWER_BL0942", "WH_POWER_BL0937", "WH_POWER_HLW8012", "WH_POWER_CSE7759", "WH_POWER_CSE7766", "WH_POWER_ADE7953"],
+        defineName: "WATER_HEATER_POWER_MONITOR",
+      },
+    ],
     driver: {
       summary: "GPIO (relay, active-LOW)",
       fieldLabel: "Relay GPIO pin",

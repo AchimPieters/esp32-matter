@@ -182,7 +182,11 @@ open tools/product-wizard/index.html
     checkbox list above, since Heat Pump's ElectricalPowerMeasurement/
     ElectricalEnergyMeasurement clusters already exist unconditionally on
     every build, so there's nothing to independently check on/off, only
-    which of the same 6 real chips drives the readings).
+    which of the same 6 real chips drives the readings). Water Heater
+    gained an identical "Power Monitoring" picker too — but there,
+    picking a chip creates a genuinely SECOND Matter endpoint (nothing
+    existed until then), not just a Delegate on an already-present
+    cluster.
   - Real bug fixed alongside that redesign: for single-data-pin sensors
     (DHT11/DHT22/DS18B20's single-wire DATA line, the LDR's ADC pin —
     anything with `usesPin2: false` in `COMPONENT_LIBRARY`), the "pin 2"
