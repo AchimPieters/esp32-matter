@@ -63,11 +63,12 @@ open tools/product-wizard/index.html
   (`firmware/cooktop/`), "On/Off Sensor"
   (`firmware/on-off-sensor/`), "Solar Power"
   (`firmware/solar-power/`), "Mode Select" (`firmware/mode-select/`),
-  "Mounted On/Off Control" (`firmware/mounted-onoff-control/`), or
+  "Mounted On/Off Control" (`firmware/mounted-onoff-control/`),
   "Mounted Dimmable Load Control"
-  (`firmware/mounted-dimmable-load-control/`).
+  (`firmware/mounted-dimmable-load-control/`), or "Electrical Utility
+  Meter" (`firmware/electrical-utility-meter/`).
   All
-  fifty-three are real, buildable
+  fifty-four are real, buildable
   firmware, not just UI placeholders (`firmware/camera/`, this repo's
   twelfth device type, is deliberately NOT offered here — see its own
   section further down for why: its two-chip/two-firmware/external-SDK

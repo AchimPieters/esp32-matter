@@ -6673,6 +6673,157 @@ firmware/mounted-dimmable-load-control/  Mounted Dimmable Load Control —
                            this specific device type when written).
   partitions.csv           same OTA + fctry layout as firmware/light/
   sdkconfig.defaults        same as firmware/light/
+firmware/electrical-utility-meter/  Electrical Utility Meter — fifty-fifth
+                           device type, combining firmware/electrical-
+                           meter/'s own already-proven Electrical Meter
+                           clusters with a new Meter Identification
+                           cluster and this repo's first real root-
+                           endpoint addition.
+  main/app_main.cpp        Confirmed directly against the CSA's own
+                           data_model/1.6/device_types/
+                           ElectricalUtilityMeter.xml (device type 0x0511,
+                           revision 1, classified `superset="Meter
+                           Reference Point"`): Meter Identification
+                           (0x0B06) is the ONLY cluster this device type
+                           itself mandates — but its own
+                           `<conditionRequirements>` block also makes
+                           `TimeSyncCond` mandatoryConform on the Root
+                           Node. No top-level `endpoint::
+                           electrical_utility_meter::create()` helper
+                           exists (confirmed via Docker `grep`) — reuses
+                           `endpoint::electrical_meter::create()` verbatim
+                           for its own already-correct EPM+EEM endpoint,
+                           then layers "Electrical Utility Meter" (0x0511)
+                           onto that SAME endpoint's DeviceTypeList via a
+                           second `add_device_type()` call and adds
+                           `cluster::meter_identification::create()`
+                           alongside it — the same same-endpoint,
+                           multiple-device-types-on-one-DeviceTypeList
+                           composition style firmware/heat-pump/'s own
+                           header comment already confirms valid, and a
+                           genuinely realistic combination (a real "smart
+                           utility meter" both reports live power/energy
+                           AND carries meter identification metadata).
+                           `cluster::meter_identification::create()`'s own
+                           `config_t` is trivial (`common::config_t`) —
+                           confirmed safe left as a real but empty shell by
+                           reading its own `create()` body directly
+                           (MeterType/PointOfDelivery/MeterSerialNumber all
+                           created with harmless empty/zero defaults, no
+                           delegate required despite a misleadingly-named
+                           "Not a delegate but an Initialization callback"
+                           comment in esp-matter's own source).
+
+                           TimeSyncCond needed a genuinely new pattern for
+                           this repo: every prior "add extra clusters onto
+                           an already-correct endpoint" addition has
+                           targeted a device-specific endpoint — this is
+                           the first to target the ROOT endpoint (id 0,
+                           created internally by `node::create()`) itself.
+                           Confirmed by reading `esp_matter_data_model.h`
+                           directly that `esp_matter::endpoint::get(node_t
+                           *node, uint16_t endpoint_id)` is a real, public
+                           API for fetching an already-created endpoint by
+                           ID — used as `endpoint::get(node, 0)` right
+                           after `node::create()` returns, since Matter's
+                           own spec fixes the root endpoint's ID to 0.
+                           `cluster::time_synchronization::create()`'s own
+                           `config_t` (`{ void *delegate; }`) confirmed
+                           safe left null by reading its own `create()`
+                           body directly: with no delegate, `UtcTime`
+                           stays its default nullable-null and
+                           `Granularity` stays 0 (`NoTimeGranularity`) —
+                           both real, spec-legal values honestly
+                           representing "no trusted time source wired up,"
+                           not a fabricated synchronized-time claim. A
+                           real ESP-IDF SNTP client could genuinely
+                           populate these for real time sync — a
+                           reasonable future enhancement, deliberately not
+                           attempted here (same "smallest reasonable next
+                           step" scope cut this repo applies throughout).
+
+                           MeterReferencePoint (0x0512, the device type
+                           this one is classified a superset of) was
+                           considered and NOT built standalone — its own
+                           XML mandates only Identify plus the same
+                           TimeSyncCond, a device type this thin with zero
+                           real measurement substance of its own is a much
+                           weaker standalone candidate than this file's
+                           own combined meter, more plausibly an abstract
+                           topology marker within a larger real utility
+                           installation than a hobbyist product in its own
+                           right — a deliberate, documented skip.
+
+                           Battery Storage (0x0018) was researched and
+                           deliberately NOT built at all: its own
+                           BatteryStorage.xml, confirmed by reading the
+                           raw file directly with `cat -A` (not an
+                           extraction artifact), is genuinely malformed in
+                           the pinned SDK — its own `<composedDeviceTypes>`
+                           block for the mandatory Electrical Sensor
+                           duplicates the SAME cluster requirement twice
+                           instead of declaring two distinct composed
+                           instances (despite the revision-history text
+                           explicitly claiming "Added mandate of two Power
+                           Source and Electrical Sensor composed device
+                           types"), and a second `<composedDeviceTypes>`
+                           block contains a bare `<cluster>` element with
+                           no `<deviceType>` wrapper at all — structurally
+                           inconsistent with every other well-formed
+                           composedDeviceTypes block read this session
+                           (SolarPower's, HeatPump's). Combined with a
+                           genuine hardware-category gap (real battery
+                           charge/discharge monitoring needs bidirectional
+                           DC current sensing — e.g. a Hall-effect sensor
+                           like an ACS712 or a shunt+INA226-class part —
+                           none of this repo's existing 6 power-monitor
+                           chips, all designed for single-direction AC
+                           circuits, can honestly provide that), this is a
+                           genuine, doubly-confirmed blocker rather than a
+                           "weaker candidate" — deferred with this
+                           documented reasoning, the same category of
+                           deliberate, principled skip as Oven's own SDK-
+                           gap deferral, not an oversight.
+
+                           Intercom (0x0140) and Audio Doorbell (0x0141)
+                           were both re-examined by actually reading their
+                           full `<clusters>` blocks (not just their
+                           conditionRequirements, which is as far as an
+                           earlier pass looked) before finalizing them as
+                           skips: both mandate Camera AV Stream Management
+                           + WebRTC Transport Provider/Requestor — the
+                           EXACT SAME external-SDK/two-chip architecture
+                           firmware/camera/'s own header comment already
+                           establishes as a deliberate, one-time exception
+                           to this repo's one-chip/one-firmware/no-
+                           external-SDK pattern — on top of real TLS
+                           Certificate Management and (for Intercom) three
+                           simultaneous root-node time-sync conditions,
+                           genuinely more infrastructure than Camera itself
+                           needs. Confirmed via direct source reading, not
+                           assumption: `cluster::tls_certificate_
+                           management::create()` and `cluster::tls_client_
+                           management::create()` DO have real legacy
+                           helpers with tolerable-looking config_t shapes,
+                           so the TLS piece alone wouldn't have been the
+                           blocker — it's the mandatory WebRTC/Camera AV
+                           Stream Management requirement, needing the same
+                           real ESP32-P4 + external Amazon KVS WebRTC SDK
+                           firmware/camera/ already required, that makes
+                           both genuinely infeasible within this repo's
+                           standard device-type pipeline. Same deliberate,
+                           now concretely-verified skip as firmware/
+                           camera/'s own FloodlightCamera/SnapshotCamera/
+                           VideoDoorbell exception.
+
+                           Standard quick-power-cycle factory reset.
+                           Build-verified in Docker (clean first attempt,
+                           despite the new root-endpoint-targeting
+                           pattern); not hardware-tested (no module of any
+                           of the six power-monitor chips physically
+                           available when written).
+  partitions.csv           same OTA + fctry layout as firmware/light/
+  sdkconfig.defaults        same as firmware/light/
 tools/
   dev.sh                  opens the Docker dev environment
   gen_factory.sh          local QR + factory partition generator
@@ -8983,7 +9134,54 @@ SECURITY.md               flash encryption / secure boot / signed OTA guidance
    updated to match (fifty → fifty-three). None of the three is
    hardware-tested (no pushbutton/relay/MOSFET-dimmer hardware for any of
    them physically available when written).
-2. Implement Matter **OTA** — partially done. All fifty-four firmware
+
+   `firmware/electrical-utility-meter/` (fifty-fifth device type)
+   followed — combining firmware/electrical-meter/'s own already-proven
+   Electrical Meter clusters (same-endpoint composition, confirming
+   firmware/heat-pump/'s own "layer more than one device type onto one
+   endpoint" pattern generalizes to a third device type) with a new Meter
+   Identification cluster and this repo's first real root-endpoint
+   addition — TimeSynchronization, satisfying ElectricalUtilityMeter.xml's
+   own mandatory root-node TimeSyncCond. A genuinely new API for this
+   repo: `esp_matter::endpoint::get(node_t*, uint16_t)`, used to fetch the
+   root endpoint (id 0) after `node::create()` so a cluster could be added
+   onto it directly, the same "add extra clusters onto an already-correct
+   endpoint" pattern this repo has used dozens of times, just targeting
+   the root endpoint for the first time instead of a device-specific one.
+   See firmware/electrical-utility-meter/'s own repository-layout entry
+   above for the complete detail, including why `TimeSynchronization`'s
+   own null-delegate defaults are an honest "no trusted time source," not
+   a fabricated claim.
+
+   This same pass also closed out the remaining research debt from
+   earlier in this session: MeterReferencePoint documented as a thin,
+   deliberate standalone skip; Battery Storage deferred with a concrete,
+   doubly-confirmed blocker (the CSA's own BatteryStorage.xml is
+   genuinely malformed in the pinned SDK, confirmed by reading the raw
+   file directly, combined with a real bidirectional-DC-current-sensing
+   hardware gap this repo's existing AC-only chips can't honestly fill);
+   and Intercom/Audio Doorbell re-examined by actually reading their full
+   `<clusters>` blocks (not just their conditionRequirements, as far as
+   an earlier pass had looked) — both confirmed to mandate the exact same
+   Camera AV Stream Management + WebRTC Transport clusters firmware/
+   camera/'s own external-SDK/two-chip exception already establishes, on
+   top of real TLS Certificate Management, genuinely more infrastructure
+   than Camera itself needs — a concretely-verified skip, not an assumed
+   one. Wizard integration for electrical-utility-meter reused the
+   existing `extraPickers` Power Monitor Chip shape firmware/electrical-
+   meter/'s own entry already establishes (new `UM_CHIP_*` COMPONENT_
+   LIBRARY entries, zero new mechanism), plus a new hand-drawn icon (the
+   same dial-plus-needle motif as Electrical Meter's own icon, with a
+   small filled ID tag added near the bottom edge). Verified with the
+   established Node.js sandboxed regression check (all 54 device types,
+   zero failures) and a real sed dry-run against a Docker copy, byte-
+   identical against its own shipped defaults. `tools/product-wizard/
+   README.md`'s own device-type list and count were updated to match
+   (fifty-three → fifty-four). Build-verified in Docker, clean first
+   attempt despite the new root-endpoint-targeting pattern; not hardware-
+   tested (no module of any of the six power-monitor chips physically
+   available when written).
+2. Implement Matter **OTA** — partially done. All fifty-five firmware
    types ship `CONFIG_ENABLE_OTA_REQUESTOR=y`, which adds the OTA Requestor
    cluster to the root node endpoint entirely via Kconfig — esp-matter's
    own core startup (`esp_matter_core.cpp`) calls

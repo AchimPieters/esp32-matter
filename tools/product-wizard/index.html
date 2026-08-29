@@ -1109,6 +1109,37 @@ const COMPONENT_LIBRARY = {
     { key: "sda", label: "SDA", defineName: "ADE7953_SDA_GPIO", defaultsByModule: { esp32: 21, esp32c2: 21, esp32c3: 21, esp32c5: 21, esp32c6: 21, esp32c61: 21, esp32s3: 21, esp32h2: 21 } },
     { key: "scl", label: "SCL", defineName: "ADE7953_SCL_GPIO", defaultsByModule: { esp32: 22, esp32c2: 22, esp32c3: 22, esp32c5: 22, esp32c6: 22, esp32c61: 22, esp32s3: 22, esp32h2: 22 } },
   ] },
+  // Electrical Utility Meter's own Power Monitor Chip picker — same 6
+  // real chips/drivers/citations/pin defaults as electrical-meter's own
+  // entries (this device reuses that file's own endpoint verbatim), only
+  // needing its own `defineValue` set since this device's own #define is
+  // `UTILITY_METER_CHIP_*`.
+  UM_CHIP_BL0942: { name: "BL0942", category: "utility-meter-chip", bus: "UART", verified: false, defineValue: "UTILITY_METER_CHIP_BL0942", pins: [
+    { key: "rx", label: "UART RX", defineName: "BL0942_UART_RX_GPIO", defaultsByModule: { esp32: 16, esp32c2: 16, esp32c3: 16, esp32c5: 16, esp32c6: 16, esp32c61: 16, esp32s3: 16, esp32h2: 16 } },
+    { key: "tx", label: "UART TX", defineName: "BL0942_UART_TX_GPIO", defaultsByModule: { esp32: 17, esp32c2: 17, esp32c3: 17, esp32c5: 17, esp32c6: 17, esp32c61: 17, esp32s3: 17, esp32h2: 17 } },
+  ] },
+  UM_CHIP_BL0937: { name: "BL0937", category: "utility-meter-chip", bus: "GPIO (pulse)", verified: false, defineValue: "UTILITY_METER_CHIP_BL0937", pins: [
+    { key: "sel", label: "SEL", defineName: "PULSE_METER_SEL_GPIO", defaultsByModule: { esp32: 25, esp32c2: 25, esp32c3: 25, esp32c5: 25, esp32c6: 25, esp32c61: 25, esp32s3: 25, esp32h2: 25 } },
+    { key: "cf", label: "CF (power pulse)", defineName: "PULSE_METER_CF_GPIO", defaultsByModule: { esp32: 26, esp32c2: 26, esp32c3: 26, esp32c5: 26, esp32c6: 26, esp32c61: 26, esp32s3: 26, esp32h2: 26 } },
+    { key: "cf1", label: "CF1 (V/I pulse)", defineName: "PULSE_METER_CF1_GPIO", defaultsByModule: { esp32: 27, esp32c2: 27, esp32c3: 27, esp32c5: 27, esp32c6: 27, esp32c61: 27, esp32s3: 27, esp32h2: 27 } },
+  ] },
+  UM_CHIP_HLW8012: { name: "HLW8012", category: "utility-meter-chip", bus: "GPIO (pulse)", verified: false, defineValue: "UTILITY_METER_CHIP_HLW8012", pins: [
+    { key: "sel", label: "SEL", defineName: "PULSE_METER_SEL_GPIO", defaultsByModule: { esp32: 25, esp32c2: 25, esp32c3: 25, esp32c5: 25, esp32c6: 25, esp32c61: 25, esp32s3: 25, esp32h2: 25 } },
+    { key: "cf", label: "CF (power pulse)", defineName: "PULSE_METER_CF_GPIO", defaultsByModule: { esp32: 26, esp32c2: 26, esp32c3: 26, esp32c5: 26, esp32c6: 26, esp32c61: 26, esp32s3: 26, esp32h2: 26 } },
+    { key: "cf1", label: "CF1 (V/I pulse)", defineName: "PULSE_METER_CF1_GPIO", defaultsByModule: { esp32: 27, esp32c2: 27, esp32c3: 27, esp32c5: 27, esp32c6: 27, esp32c61: 27, esp32s3: 27, esp32h2: 27 } },
+  ] },
+  UM_CHIP_CSE7759: { name: "CSE7759", category: "utility-meter-chip", bus: "GPIO (pulse)", verified: false, defineValue: "UTILITY_METER_CHIP_CSE7759", note: "Assumed to share HLW8012's formula (same chip family) per a secondary source — not independently confirmed against CSE7759's own datasheet.", pins: [
+    { key: "sel", label: "SEL", defineName: "PULSE_METER_SEL_GPIO", defaultsByModule: { esp32: 25, esp32c2: 25, esp32c3: 25, esp32c5: 25, esp32c6: 25, esp32c61: 25, esp32s3: 25, esp32h2: 25 } },
+    { key: "cf", label: "CF (power pulse)", defineName: "PULSE_METER_CF_GPIO", defaultsByModule: { esp32: 26, esp32c2: 26, esp32c3: 26, esp32c5: 26, esp32c6: 26, esp32c61: 26, esp32s3: 26, esp32h2: 26 } },
+    { key: "cf1", label: "CF1 (V/I pulse)", defineName: "PULSE_METER_CF1_GPIO", defaultsByModule: { esp32: 27, esp32c2: 27, esp32c3: 27, esp32c5: 27, esp32c6: 27, esp32c61: 27, esp32s3: 27, esp32h2: 27 } },
+  ] },
+  UM_CHIP_CSE7766: { name: "CSE7766", category: "utility-meter-chip", bus: "UART", verified: false, defineValue: "UTILITY_METER_CHIP_CSE7766", pins: [
+    { key: "rx", label: "UART RX", defineName: "CSE7766_UART_RX_GPIO", defaultsByModule: { esp32: 16, esp32c2: 16, esp32c3: 16, esp32c5: 16, esp32c6: 16, esp32c61: 16, esp32s3: 16, esp32h2: 16 } },
+  ] },
+  UM_CHIP_ADE7953: { name: "ADE7953", category: "utility-meter-chip", bus: "I2C", verified: false, defineValue: "UTILITY_METER_CHIP_ADE7953", note: "Least-certain of the six power-monitor drivers — only partially confirmed against Analog Devices' own datasheet across several attempts; double-check before relying on it.", pins: [
+    { key: "sda", label: "SDA", defineName: "ADE7953_SDA_GPIO", defaultsByModule: { esp32: 21, esp32c2: 21, esp32c3: 21, esp32c5: 21, esp32c6: 21, esp32c61: 21, esp32s3: 21, esp32h2: 21 } },
+    { key: "scl", label: "SCL", defineName: "ADE7953_SCL_GPIO", defaultsByModule: { esp32: 22, esp32c2: 22, esp32c3: 22, esp32c5: 22, esp32c6: 22, esp32c61: 22, esp32s3: 22, esp32h2: 22 } },
+  ] },
   // Heat Pump's own Power Monitoring picker ("hobbyist cluster expansion"
   // pilot, device #3) — same 6 real chips/drivers/citations as outlet's
   // and electrical-meter's own entries above, duplicated for the same
@@ -3955,6 +3986,34 @@ const DEVICE_TYPES = [
       defaultsByModule: { esp32: 4, esp32c2: 4, esp32c3: 4, esp32c5: 4, esp32c6: 4, esp32c61: 4, esp32s3: 4, esp32h2: 4 },
     },
   },
+  {
+    id: "electrical-utility-meter",
+    name: "Electrical Utility Meter",
+    desc: "Matter Electrical Utility Meter: combines Electrical Meter's own real power/energy readings (Electrical Power Measurement + Electrical Energy Measurement, 6 chip choices) with a Meter Identification cluster and this repo's first root-endpoint addition — TimeSynchronization, satisfying this device type's own mandatory root-node time-sync requirement. Reference device in firmware/electrical-utility-meter/.",
+    shortDesc: "Utility meter: power/energy + meter ID, 6 chip choices.",
+    // Matches project(matter_electrical_utility_meter) in
+    // firmware/electrical-utility-meter/CMakeLists.txt. Same shape as
+    // firmware/electrical-meter/'s own entry — no separate `driver` field
+    // at all, every GPIO comes from whichever chip is picked here.
+    extraPickers: [
+      {
+        key: "utilityMeterChip",
+        label: "Power Monitor Chip",
+        prompt: "Pick the chip your board actually has wired up",
+        options: ["UM_CHIP_BL0942", "UM_CHIP_BL0937", "UM_CHIP_HLW8012", "UM_CHIP_CSE7759", "UM_CHIP_CSE7766", "UM_CHIP_ADE7953"],
+        defineName: "UTILITY_METER_CHIP",
+      },
+    ],
+    identify: {
+      summary: "GPIO (digital output)",
+      fieldLabel: "Identify LED GPIO pin",
+      blockTitle: "Identify LED · digital output",
+      filePath: "firmware/electrical-utility-meter/main/app_main.cpp",
+      defineName: "IDENTIFY_LED_GPIO",
+      currentGpio: 2,
+      defaultsByModule: { esp32: 2, esp32c2: 2, esp32c3: 2, esp32c5: 2, esp32c6: 2, esp32c61: 2, esp32s3: 2, esp32h2: 2 },
+    },
+  },
 ];
 
 function findDeviceType(id) {
@@ -4393,6 +4452,16 @@ const DEVICE_TYPE_ICONS = {
     <rect x="13" y="5" width="22" height="38" rx="4"/>
     <path d="M24 11V37"/>
     <circle cx="24" cy="18" r="4" fill="currentColor" stroke="none"/>
+  </svg>`,
+  // Electrical Meter's own dial-face-plus-needle motif, with a small
+  // filled ID tag near the bottom edge — the one real addition this
+  // device type carries over a plain meter: real, registered meter
+  // identification metadata, not just a live reading.
+  "electrical-utility-meter": `<svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+    <circle cx="24" cy="21" r="15"/>
+    <path d="M24 21l7-7" stroke-width="3"/>
+    <circle cx="24" cy="21" r="2.2" fill="currentColor" stroke="none"/>
+    <rect x="17" y="38" width="14" height="6" rx="2" fill="currentColor" stroke="none"/>
   </svg>`,
   // Three identical blade paths, each in its own <g transform="rotate(...
   // 24 24)"> rather than hand-computed rotated coordinates — a plain,
