@@ -1253,6 +1253,16 @@ const COMPONENT_LIBRARY = {
   OCC_PIR: { name: "PIR (e.g. HC-SR501)", category: "occupancy-sensor", bus: "GPIO (digital, active-high)", pin1Label: "OUT", pin2Label: null, usesPin2: false, verified: true, defineValue: "OCCUPANCY_SENSOR_TYPE_PIR", note: "Passive InfraRed. The module's own onboard hold-time potentiometer (commonly ~5s-300s) decides how long OUT stays high after the last detected motion — this firmware only reports it, it doesn't add its own hold timer. Hardware-verified end to end: commissioned and controlled live via Apple Home." },
   OCC_RCWL0516: { name: "RCWL-0516 (microwave Doppler)", category: "occupancy-sensor", bus: "GPIO (digital, active-high)", pin1Label: "OUT", pin2Label: null, usesPin2: false, verified: false, defineValue: "OCCUPANCY_SENSOR_TYPE_RCWL0516", note: "Microwave Doppler radar. OUT is 3.3V TTL, HIGH for a fixed ~2s per detected motion event (no adjustable hold time, unlike PIR) — confirmed against the module's own widely-cited pinout documentation. VIN needs a separate 4-28V supply (5V is typical) — do not power it from the ESP32's own 3.3V rail." },
   OCC_LD2410: { name: "HLK-LD2410 (24GHz mmWave presence)", category: "occupancy-sensor", bus: "GPIO (digital, active-high)", pin1Label: "OUT", pin2Label: null, usesPin2: false, verified: false, defineValue: "OCCUPANCY_SENSOR_TYPE_LD2410", note: "24GHz mmWave human-presence radar. This firmware only uses its simple OUT pin (3.3V logic — confirmed safe to wire directly into an ESP32 GPIO even though the module itself runs on 5V), not its much richer UART protocol (per-target distance/energy, moving-vs-stationary distinction, 256000 baud) — a reasonable future addition, not attempted here. VCC needs a separate 5V supply, not the ESP32's own 3.3V rail." },
+  // Same 3-chip choice as OCC_PIR/OCC_RCWL0516/OCC_LD2410 above, reused for
+  // firmware/on-off-sensor/'s own identical GPIO interface — a separate
+  // `category`/`defineValue` set since that device's own #define is
+  // ON_OFF_SENSOR_TYPE_*, not OCCUPANCY_SENSOR_TYPE_*, and its own
+  // firmware never exposes a server-side sensing cluster at all (the
+  // sensor is a purely local trigger for real On/Off client commands —
+  // see firmware/on-off-sensor/'s own header comment).
+  OOS_PIR: { name: "PIR (e.g. HC-SR501)", category: "on-off-sensor", bus: "GPIO (digital, active-high)", pin1Label: "OUT", pin2Label: null, usesPin2: false, verified: false, defineValue: "ON_OFF_SENSOR_TYPE_PIR", note: "Passive InfraRed. The module's own onboard hold-time potentiometer (commonly ~5s-300s) decides how long OUT stays high after the last detected motion — this firmware only relays it as On/Off commands, it doesn't add its own hold timer." },
+  OOS_RCWL0516: { name: "RCWL-0516 (microwave Doppler)", category: "on-off-sensor", bus: "GPIO (digital, active-high)", pin1Label: "OUT", pin2Label: null, usesPin2: false, verified: false, defineValue: "ON_OFF_SENSOR_TYPE_RCWL0516", note: "Microwave Doppler radar. OUT is 3.3V TTL, HIGH for a fixed ~2s per detected motion event (no adjustable hold time, unlike PIR). VIN needs a separate 4-28V supply (5V is typical) — do not power it from the ESP32's own 3.3V rail." },
+  OOS_LD2410: { name: "HLK-LD2410 (24GHz mmWave presence)", category: "on-off-sensor", bus: "GPIO (digital, active-high)", pin1Label: "OUT", pin2Label: null, usesPin2: false, verified: false, defineValue: "ON_OFF_SENSOR_TYPE_LD2410", note: "24GHz mmWave human-presence radar. This firmware only uses its simple OUT pin (3.3V logic, safe to wire directly into an ESP32 GPIO even though the module itself runs on 5V), not its richer UART protocol. VCC needs a separate 5V supply, not the ESP32's own 3.3V rail." },
 };
 
 /* Optional rotary encoder — firmware/thermostat/'s own local setpoint
@@ -3741,6 +3751,38 @@ const DEVICE_TYPES = [
       defaultsByModule: { esp32: 2, esp32c2: 2, esp32c3: 2, esp32c5: 2, esp32c6: 2, esp32c61: 2, esp32s3: 2, esp32h2: 2 },
     },
   },
+  {
+    id: "on-off-sensor",
+    name: "On/Off Sensor",
+    desc: "Matter On/Off Sensor: a wireless motion trigger with no light of its own and no server-side sensing cluster at all — a PIR or radar module bound to an existing smart bulb/plug, sending real On/Off commands directly (turns the bound device on when it sees motion, off again once it doesn't). Same 3-sensor choice as Occupancy Sensor (PIR/RCWL-0516/HLK-LD2410), but purely a local trigger here — nothing about the motion state is ever reported to a controller. Requires a controller (e.g. Home Assistant) to set up a Binding-cluster entry to an actual target device first. Reference device in firmware/on-off-sensor/.",
+    shortDesc: "PIR or radar motion, sends real On/Off to a bound device.",
+    // Matches project(matter_on_off_sensor) in
+    // firmware/on-off-sensor/CMakeLists.txt. Same componentOptions+driver+
+    // identify shape as firmware/occupancy-sensor/'s own entry — see the
+    // COMPONENT_LIBRARY comment on OOS_PIR/OOS_RCWL0516/OOS_LD2410 for why
+    // this needed its own defineValue set rather than reusing OCC_PIR/etc.
+    binName: "matter_on_off_sensor.bin",
+    componentOptions: ["OOS_PIR", "OOS_RCWL0516", "OOS_LD2410"],
+    componentDefineName: "ON_OFF_SENSOR_TYPE",
+    driver: {
+      summary: "GPIO (digital input, active-high)",
+      fieldLabel: "Sensor OUT GPIO pin",
+      blockTitle: "Sensor OUT · digital GPIO input",
+      filePath: "firmware/on-off-sensor/main/app_main.cpp",
+      defineName: "ON_OFF_SENSOR_GPIO",
+      currentGpio: 4,
+      defaultsByModule: { esp32: 4, esp32c2: 4, esp32c3: 4, esp32c5: 4, esp32c6: 4, esp32c61: 4, esp32s3: 4, esp32h2: 4 },
+    },
+    identify: {
+      summary: "GPIO (digital output)",
+      fieldLabel: "Identify LED GPIO pin",
+      blockTitle: "Identify LED · digital output",
+      filePath: "firmware/on-off-sensor/main/app_main.cpp",
+      defineName: "IDENTIFY_LED_GPIO",
+      currentGpio: 2,
+      defaultsByModule: { esp32: 2, esp32c2: 2, esp32c3: 2, esp32c5: 2, esp32c6: 2, esp32c61: 2, esp32s3: 2, esp32h2: 2 },
+    },
+  },
 ];
 
 function findDeviceType(id) {
@@ -4124,6 +4166,19 @@ const DEVICE_TYPE_ICONS = {
     <circle cx="24" cy="24" r="2.5" fill="currentColor" stroke="none"/>
     <circle cx="24" cy="24" r="9"/>
     <circle cx="24" cy="24" r="16"/>
+  </svg>`,
+  // A small motion sensor (dot + one detection ring, off to the left) with
+  // an arrow reaching toward a small filled target circle on the right —
+  // "sense here, act there," the one real difference from occupancy's own
+  // centered concentric-rings motif: this device never reports its own
+  // sensing state, it only ever triggers a command outward to a bound
+  // device.
+  "on-off-sensor": `<svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+    <circle cx="12" cy="24" r="2" fill="currentColor" stroke="none"/>
+    <circle cx="12" cy="24" r="7"/>
+    <path d="M21 24H33"/>
+    <path d="M28 19L33 24L28 29"/>
+    <circle cx="40" cy="24" r="4" fill="currentColor" stroke="none"/>
   </svg>`,
   // Three identical blade paths, each in its own <g transform="rotate(...
   // 24 24)"> rather than hand-computed rotated coordinates — a plain,

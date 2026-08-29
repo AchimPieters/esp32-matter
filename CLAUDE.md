@@ -6298,6 +6298,101 @@ firmware/cooktop/         Cooktop — forty-ninth device type, and this repo's
                            device type physically available when written).
   partitions.csv           same OTA + fctry layout as firmware/light/
   sdkconfig.defaults        same as firmware/light/
+firmware/on-off-sensor/   On/Off Sensor — fiftieth device type: a wireless
+                           motion trigger with no light of its own and no
+                           server-side sensing cluster at all — a PIR or
+                           radar module bound to an existing smart bulb or
+                           plug, sending real On/Off commands directly.
+  main/app_main.cpp        Confirmed directly against the CSA's own
+                           data_model/1.6/device_types/OnOffSensor.xml
+                           (device type 0x0850, revision 3): Identify
+                           server AND client both mandatoryConform, On/Off
+                           CLIENT mandatoryConform, Groups/Level Control/
+                           Scenes Management/Color Control (all client) are
+                           all optionalConform and not implemented — same
+                           "smallest reasonable next step" scoping
+                           firmware/dimmer-switch/'s own skipped Groups/
+                           Scenes already establishes. This device type has
+                           NO server-side sensing cluster at all — unlike
+                           firmware/occupancy-sensor/'s own OccupancySensing
+                           cluster (a real, controller-visible Occupancy
+                           attribute), this device's own motion detection
+                           is purely a local, internal trigger for its
+                           client-side On/Off commands, a genuinely
+                           different shape from every other sensor device
+                           type in this repo — no code-driven-cluster
+                           registry lookup needed at all despite being
+                           "sensor"-named. Confirmed via Docker `grep`
+                           against `esp_matter_endpoint.cpp` that no
+                           `endpoint::on_off_sensor::create()` top-level
+                           helper exists — same niche-device-type gap
+                           firmware/doorbell/'s and firmware/chime/'s own
+                           header comments already document for their own
+                           device types — so this endpoint is hand-
+                           assembled from lower-level free functions,
+                           reusing both files' own hard-learned discipline
+                           from the start: `cluster::descriptor::create()`
+                           called explicitly right after `endpoint::
+                           create()`, and the literal device-type-ID/
+                           revision values (0x0850/3) passed directly to
+                           `add_device_type()` rather than a per-device-type
+                           header constant (confirmed none exists, matching
+                           firmware/doorbell/'s own `add_device_type(ep,
+                           0x0148, 2)` pattern). Confirmed by reading
+                           `cluster::on_off::create()` directly that,
+                           unlike `dimmer_switch::create()` (whose own
+                           top-level wrapper adds Binding itself, separately
+                           from `add()`'s own cluster additions), the plain
+                           free function does NOT auto-create a Binding
+                           cluster — added explicitly here too
+                           (`cluster::binding::create()`, `common::
+                           config_t` — confirmed trivial by reading its own
+                           header).
+
+                           `ON_OFF_SENSOR_TYPE` reuses firmware/
+                           occupancy-sensor/'s own identical PIR/RCWL-0516/
+                           HLK-LD2410 3-chip GPIO driver verbatim (same
+                           debounce shape: ISR + queue, ANYEDGE, 8 x 5ms
+                           consistent-sample check) — but purely as a local
+                           trigger, never exposed as a Matter attribute at
+                           all, since this device type has no server-side
+                           sensing cluster to expose it through. A
+                           confirmed motion-detected edge sends a real
+                           `OnOff::Commands::On` to whatever this
+                           endpoint's Binding cluster resolves to; a
+                           confirmed motion-cleared edge sends
+                           `OnOff::Commands::Off` — both empty-payload
+                           commands (unlike firmware/dimmer-switch/'s own
+                           LevelControl::Step/Identify commands, On/Off has
+                           no fields to encode). The `app_client_request_cb`/
+                           `send_bound_command()` client-invoke plumbing is
+                           reused near-verbatim from firmware/
+                           dimmer-switch/'s own file. Same "don't
+                           reimplement occupancy-hold timing in software"
+                           precedent firmware/occupancy-sensor/'s own
+                           header comment already establishes — each
+                           sensor module's own onboard timing decides how
+                           long OUT stays HIGH; this firmware just relays
+                           whatever it's currently doing as On/Off
+                           commands. The mandatory client-side Identify
+                           cluster is a shell only — no local gesture
+                           exists on this device (no button, unlike
+                           firmware/dimmer-switch/'s own long-press) to
+                           trigger sending Identify to a bound target, same
+                           "declare the shell, don't invent busy-work"
+                           precedent firmware/switch/'s own unused Groups/
+                           Scenes client shells already establish; this
+                           device's OWN server-side Identify still works
+                           normally. Standard quick-power-cycle factory
+                           reset. Build-verified in Docker (clean first
+                           attempt); not hardware-tested (no PIR/RCWL-0516/
+                           HLK-LD2410 module physically available when
+                           written, and — like every client-invoke device
+                           in this repo — verifying this one for real also
+                           needs a second, already-commissioned bindable
+                           target device on the same fabric).
+  partitions.csv           same OTA + fctry layout as firmware/light/
+  sdkconfig.defaults        same as firmware/light/
 tools/
   dev.sh                  opens the Docker dev environment
   gen_factory.sh          local QR + factory partition generator
@@ -8431,7 +8526,55 @@ SECURITY.md               flash encryption / secure boot / signed OTA guidance
    enforcement) done before writing any code; not hardware-tested (no
    relay/SSR hardware for this device type physically available when
    written).
-2. Implement Matter **OTA** — partially done. All forty-nine firmware
+
+   A fiftieth device type, `firmware/on-off-sensor/` (On/Off Sensor),
+   followed — continuing "verder gaan met het toevoegen van devices".
+   Checked the full remaining Matter 1.6 device type library in the SDK
+   directly (every XML not yet mapped to a firmware/ folder) rather than
+   guessing what was left; most unbuilt candidates were controller/media/
+   infra device types (out of scope, same precedent every prior session
+   already applied) or near-duplicates of already-built device types
+   (Mounted On/Off Control, Mounted Dimmable Load Control — supersets of
+   On/Off Plug-in Unit/Dimmable Plug-In Unit with only a different device-
+   type ID and a couple of always-mandatory clusters, too close to be
+   worth a whole new folder). On/Off Sensor (0x0850) stood out as the
+   strongest real candidate: a genuinely novel shape (every cluster
+   except Identify's server half is CLIENT-side, and there's no server-
+   side sensing cluster at all — a device that senses locally and only
+   ever sends real client commands outward, unlike every prior "sensor"
+   device type in this repo) that reuses two already-proven, datasheet-
+   verified building blocks wholesale — firmware/occupancy-sensor/'s own
+   3-chip PIR/RCWL-0516/HLK-LD2410 GPIO driver as a purely local trigger,
+   and firmware/dimmer-switch/'s own client-invoke plumbing to actually
+   send the resulting On/Off commands. No top-level `endpoint::
+   on_off_sensor::create()` helper exists (confirmed via Docker `grep`,
+   same niche-device-type gap firmware/doorbell/'s and firmware/chime/'s
+   own device types already hit) — hand-assembled from lower-level free
+   functions instead, reusing those two files' own hard-learned
+   Descriptor-cluster-first discipline and literal-device-type-ID
+   `add_device_type()` pattern from the start rather than rediscovering
+   either. See firmware/on-off-sensor/'s own repository-layout entry
+   above for the complete detail. Wizard integration reused the existing
+   `componentOptions`+`driver`+`identify` shape firmware/occupancy-
+   sensor/'s own entry already establishes (new `OOS_PIR`/`OOS_RCWL0516`/
+   `OOS_LD2410` COMPONENT_LIBRARY entries, since this device's own
+   `#define` is `ON_OFF_SENSOR_TYPE_*`, not `OCCUPANCY_SENSOR_TYPE_*` —
+   no new wizard mechanism needed), plus a new hand-drawn icon (a small
+   motion sensor with one detection ring, an arrow reaching toward a
+   filled target circle — "sense here, act there," the one real
+   difference from Occupancy Sensor's own centered concentric-rings
+   motif). Verified with the same Node.js sandboxed regression check (all
+   49 device types re-swept through all 4 render/complete/sed/review
+   functions, zero failures), then the generated sed commands run for
+   real against a copy of the actual `app_main.cpp` and diffed against
+   the original — byte-identical. `tools/product-wizard/README.md`'s own
+   device-type list and count were updated to match (forty-eight →
+   forty-nine). Build-verified in Docker, clean first attempt; not
+   hardware-tested (no PIR/RCWL-0516/HLK-LD2410 module physically
+   available when written, and — like every client-invoke device in this
+   repo — verifying this one for real also needs a second, already-
+   commissioned bindable target device on the same fabric).
+2. Implement Matter **OTA** — partially done. All fifty firmware
    types ship `CONFIG_ENABLE_OTA_REQUESTOR=y`, which adds the OTA Requestor
    cluster to the root node endpoint entirely via Kconfig — esp-matter's
    own core startup (`esp_matter_core.cpp`) calls

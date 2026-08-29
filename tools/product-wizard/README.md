@@ -59,10 +59,11 @@ open tools/product-wizard/index.html
   (`firmware/irrigation-system/`), "Electrical Meter"
   (`firmware/electrical-meter/`), "Dimmer Switch"
   (`firmware/dimmer-switch/`), "Color Dimmer Switch"
-  (`firmware/color-dimmer-switch/`), or "Cooktop"
-  (`firmware/cooktop/`).
+  (`firmware/color-dimmer-switch/`), "Cooktop"
+  (`firmware/cooktop/`), or "On/Off Sensor"
+  (`firmware/on-off-sensor/`).
   All
-  forty-eight are real, buildable
+  forty-nine are real, buildable
   firmware, not just UI placeholders (`firmware/camera/`, this repo's
   twelfth device type, is deliberately NOT offered here — see its own
   section further down for why: its two-chip/two-firmware/external-SDK
