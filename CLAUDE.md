@@ -7181,18 +7181,38 @@ firmware/oven/            Oven — fifty-eighth device type, and this repo's
                            and fixed — see above; clean on the third
                            attempt); not hardware-tested (no relay/reed-
                            switch hardware for this device type physically
-                           available when written). Not exposed in
-                           `tools/product-wizard/` beyond the plain
-                           `driver`+`identify` shape (heating relay +
-                           Identify LED) — the optional door sensor is
-                           deliberately left hand-edit-only, the same
-                           "not every optional peripheral needs its own
-                           wizard field" precedent firmware/cooktop/'s own
-                           non-exposed output-type choice already
-                           establishes, judged not worth a fifth parallel
-                           copy of the statusLed/positionSensor/dockSensor/
-                           plugSensor single-GPIO-checkbox mechanism for
-                           this specific addition.
+                           available when written). The optional door
+                           sensor IS exposed in `tools/product-wizard/`,
+                           as a genuine `doorSensor` field — a fifth
+                           parallel copy of the statusLed/positionSensor/
+                           dockSensor/plugSensor single-GPIO-checkbox
+                           mechanism (same reasoning each of those four
+                           already establishes: reusing positionSensor's
+                           literal field would render its own hardcoded
+                           "the bolt"/"LockState" copy, which misdescribes
+                           an oven door), reusing door-lock's own
+                           "confirm the real mechanical state, don't just
+                           trust the actuator" precedent directly rather
+                           than the field itself. Off by default
+                           (`GPIO_NUM_NC`, wizard default GPIO 17 once
+                           enabled) — sedd via the same broad `.*` pattern
+                           statusLed/positionSensor/dockSensor/plugSensor
+                           already use, confirmed correct both off (a
+                           byte-identical no-op against the shipped
+                           default) and on (rewrites `OVEN_DOOR_GPIO`
+                           cleanly) via a real sed dry-run against a
+                           Docker copy of this file. The firmware's own
+                           `#define OVEN_DOOR_GPIO` line was moved off its
+                           original inline-comment form into a standalone
+                           comment above it once this was wired up — the
+                           broad `.*` sed pattern this mechanism needs (to
+                           also match `GPIO_NUM_NC`, not just a numeric
+                           GPIO) matches the whole rest of the line,
+                           silently dropping a trailing inline comment,
+                           the same reason every other statusLed/
+                           positionSensor/dockSensor/plugSensor `#define`
+                           in this repo already keeps its own explanation
+                           in a standalone comment rather than inline.
   partitions.csv           same OTA + fctry layout as firmware/light/
   sdkconfig.defaults        same as firmware/light/
 tools/
@@ -9632,14 +9652,22 @@ SECURITY.md               flash encryption / secure boot / signed OTA guidance
    closed-loop temperature control is deliberately not implemented (no
    oven-safe 200+ degC probe in this repo's existing sensor library) and
    the real door-open safety interlock that runs independently of the
-   Matter command flow. Wizard integration needed no new mechanism — the
-   same plain `driver`+`identify` shape firmware/mounted-onoff-control/'s
-   own entry already uses, plus a new oven-body-with-rack icon (distinct
-   from firmware/microwave-oven/'s own wavy-radiation-lines motif and
+   Matter command flow. Wizard integration reuses the plain `driver`+
+   `identify` shape firmware/mounted-onoff-control/'s own entry already
+   uses for the heating relay, plus a new `doorSensor` field — a fifth
+   parallel copy of the statusLed/positionSensor/dockSensor/plugSensor
+   single-GPIO-checkbox mechanism (see the repository-layout entry above
+   for why this needed its own field rather than reusing positionSensor's
+   literal one) — and a new oven-body-with-rack icon (distinct from
+   firmware/microwave-oven/'s own wavy-radiation-lines motif and
    firmware/cooktop/'s own concentric-circles motif). Verified with the
    established Node.js sandboxed regression check (all 57 wizard device
-   types, zero failures) and a real sed dry-run against a Docker copy,
-   byte-identical against its own shipped defaults. `tools/
+   types swept through all 4 render/complete/sed/review functions with
+   zero exceptions, plus targeted checks for the door sensor's own
+   off/on/custom-pin/incomplete states) and real sed dry-runs against a
+   Docker copy (door sensor off: byte-identical no-op; on: correctly
+   rewrites `OVEN_DOOR_GPIO` from `GPIO_NUM_NC` to the chosen pin).
+   `tools/
    product-wizard/README.md`'s own device-type list and count were
    updated to match (fifty-six → fifty-seven wizard-buildable device
    types; fifty-eight firmware folders total, counting firmware/camera/,

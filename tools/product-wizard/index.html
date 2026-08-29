@@ -4110,14 +4110,16 @@ const DEVICE_TYPES = [
     shortDesc: "Relay-driven oven cavity: Start/Stop + 9 modes.",
     // Matches project(matter_oven) in firmware/oven/CMakeLists.txt. Same
     // driver+identify shape as firmware/mounted-onoff-control/'s own
-    // entry. The optional door sensor (OVEN_DOOR_GPIO, GPIO_NUM_NC by
-    // default) is deliberately NOT exposed here — same "hand-edit only"
-    // precedent this wizard already applies to other genuinely optional
-    // peripherals not central to the device's own primary function
-    // (e.g. Cooktop's own non-exposed output-type choice) — adding a
-    // fifth parallel copy of the statusLed/positionSensor/dockSensor/
-    // plugSensor single-GPIO-checkbox mechanism was judged not worth its
-    // own wiring cost for this specific addition.
+    // entry. The optional door sensor is a fifth parallel copy of the
+    // statusLed/positionSensor/dockSensor/plugSensor single-GPIO-
+    // checkbox mechanism (see doorSensorIsEnabled()'s own comment for
+    // why this needs its own field, not a reuse of positionSensor's
+    // literal one) — reusing door-lock's own reed-switch-confirming-
+    // real-state shape directly (an oven door and a lock bolt are the
+    // same underlying "did the mechanism actually reach the state we
+    // think it did" problem), just with its own oven-specific copy
+    // since positionSensor's own hardcoded checkbox text talks about
+    // "the bolt"/"LockState", which would misdescribe a door sensor.
     binName: "matter_oven.bin",
     driver: {
       summary: "GPIO (relay, active-LOW)",
@@ -4127,6 +4129,15 @@ const DEVICE_TYPES = [
       defineName: "OVEN_HEATING_RELAY_GPIO",
       currentGpio: 16,
       defaultsByModule: { esp32: 16, esp32c2: 16, esp32c3: 16, esp32c5: 16, esp32c6: 16, esp32c61: 16, esp32s3: 16, esp32h2: 16 },
+    },
+    doorSensor: {
+      summary: "GPIO (digital input)",
+      fieldLabel: "Door sensor GPIO pin",
+      blockTitle: "Door sensor · digital input",
+      filePath: "firmware/oven/main/app_main.cpp",
+      defineName: "OVEN_DOOR_GPIO",
+      currentGpio: 17,
+      defaultsByModule: { esp32: 17, esp32c2: 17, esp32c3: 17, esp32c5: 17, esp32c6: 17, esp32c61: 17, esp32s3: 17, esp32h2: 17 },
     },
     identify: {
       summary: "GPIO (digital output)",
@@ -5154,6 +5165,20 @@ function plugSensorIsEnabled(p) {
   return p.plugSensorEnabled === true;
 }
 
+// Oven's optional door sensor (firmware/oven/ only) — same single-GPIO,
+// off-by-default, checkbox-gated shape as statusLed/positionSensor/
+// dockSensor/plugSensor above, deliberately duplicated for the same
+// reason each of those was: its own checkbox/description text (a reed
+// switch confirming the oven door is actually closed, gating whether
+// the heating relay is allowed to energize at all — see firmware/oven/'s
+// own HandleStartStateCallback()/door_task()) is genuinely different
+// wording from any of the other four, closest in spirit to
+// positionSensor's own "confirm the real mechanical state" framing but
+// for a door, not a lock bolt.
+function doorSensorIsEnabled(p) {
+  return p.doorSensorEnabled === true;
+}
+
 // Rotary encoder (firmware/thermostat/ only, so far) — same off-by-default
 // shape as statusLed/positionSensor/dockSensor/plugSensor above,
 // deliberately parallel rather than sharing its render code (see
@@ -5171,6 +5196,7 @@ function renderConfigureDevice(p) {
   const positionSensor = deviceType ? deviceType.positionSensor : null;
   const dockSensor = deviceType ? deviceType.dockSensor : null;
   const plugSensor = deviceType ? deviceType.plugSensor : null;
+  const doorSensor = deviceType ? deviceType.doorSensor : null;
   const rotaryEncoder = deviceType ? deviceType.rotaryEncoder : null;
   const componentOptions = deviceType ? deviceType.componentOptions : null;
   const extraButtons = deviceType ? deviceType.extraButtons : null;
@@ -5189,6 +5215,8 @@ function renderConfigureDevice(p) {
   const dockSensorOn = dockSensor ? dockSensorIsEnabled(p) : false;
   const defaultPlugSensorGpio = plugSensor ? (plugSensor.defaultsByModule[p.target] != null ? plugSensor.defaultsByModule[p.target] : 16) : 16;
   const plugSensorOn = plugSensor ? plugSensorIsEnabled(p) : false;
+  const defaultDoorSensorGpio = doorSensor ? (doorSensor.defaultsByModule[p.target] != null ? doorSensor.defaultsByModule[p.target] : 17) : 17;
+  const doorSensorOn = doorSensor ? doorSensorIsEnabled(p) : false;
   const rotaryEncoderOn = rotaryEncoder ? rotaryEncoderIsEnabled(p) : false;
   if (rotaryEncoder) {
     if (typeof p.rotaryEncoderPins !== "object" || p.rotaryEncoderPins == null) p.rotaryEncoderPins = {};
@@ -5339,13 +5367,15 @@ function renderConfigureDevice(p) {
   const dockSensorGpioValid = !dockSensorOn || (Number.isInteger(p.dockSensorGpioPin) && p.dockSensorGpioPin >= 0);
   if (plugSensor && p.plugSensorGpioPin == null) p.plugSensorGpioPin = defaultPlugSensorGpio;
   const plugSensorGpioValid = !plugSensorOn || (Number.isInteger(p.plugSensorGpioPin) && p.plugSensorGpioPin >= 0);
+  if (doorSensor && p.doorSensorGpioPin == null) p.doorSensorGpioPin = defaultDoorSensorGpio;
+  const doorSensorGpioValid = !doorSensorOn || (Number.isInteger(p.doorSensorGpioPin) && p.doorSensorGpioPin >= 0);
   // numberField (currently just the addressable light's pixel count): a
   // plain integer #define, not a GPIO — validated against its own
   // min/max rather than the GPIO fields' "0 or higher" rule.
   if (numberField && p[numberField.key] == null) p[numberField.key] = numberField.defaultValue;
   const numberFieldValid = !numberField ||
     (Number.isInteger(p[numberField.key]) && p[numberField.key] >= numberField.min && p[numberField.key] <= numberField.max);
-  const allValid = gpioValid && secondaryGpioValid && identifyGpioValid && extraButtonsValid && statusLedGpioValid && positionSensorGpioValid && dockSensorGpioValid && plugSensorGpioValid && pickerPinsValid && numberFieldValid && rotaryEncoderValid;
+  const allValid = gpioValid && secondaryGpioValid && identifyGpioValid && extraButtonsValid && statusLedGpioValid && positionSensorGpioValid && dockSensorGpioValid && plugSensorGpioValid && doorSensorGpioValid && pickerPinsValid && numberFieldValid && rotaryEncoderValid;
 
   // Component-aware field labels: falls back to the device type's own
   // static text when there's no componentOptions list (every device type
@@ -5706,6 +5736,36 @@ function renderConfigureDevice(p) {
           </div>
         ` : ""}
 
+        ${doorSensor ? `
+          <div class="driver-block">
+            <label class="checkbox-label" for="door-sensor-enabled">
+              <input type="checkbox" id="door-sensor-enabled" ${doorSensorOn ? "checked" : ""}>
+              <h3 style="display:inline; margin:0;">Add a Door Sensor</h3>
+            </label>
+            <p class="field-note" style="margin-top:4px;">
+              An optional reed switch confirming the oven door is actually
+              closed, instead of the firmware just trusting a Start
+              command. Off by default — without it, a Start command is
+              always accepted; with it wired, Start is rejected while the
+              door reads open, and opening the door mid-run force-cuts the
+              heating relay immediately, independent of any Matter
+              command. The firmware ships this pin disabled
+              (<code>GPIO_NUM_NC</code>) until you tick this and set a
+              real pin.
+            </p>
+
+            ${doorSensorOn ? `
+              <label class="field-label" for="door-sensor-gpio-pin" style="margin-top:12px;">${escapeHtml(doorSensor.fieldLabel)}</label>
+              <input type="number" id="door-sensor-gpio-pin" min="0" max="48" value="${p.doorSensorGpioPin}">
+              <div class="field-error">${doorSensorGpioValid ? "" : "Enter a valid GPIO number (0 or higher)."}</div>
+              <p class="field-note">
+                Adjust to match your board — GPIO ${defaultDoorSensorGpio}
+                is a common default for ${escapeHtml(moduleName(p.target))} devkits, not a guarantee for yours.
+              </p>
+            ` : ""}
+          </div>
+        ` : ""}
+
         ${rotaryEncoder ? `
           <div class="driver-block">
             <label class="checkbox-label" for="rotary-encoder-enabled">
@@ -5779,7 +5839,8 @@ function renderConfigureDevice(p) {
           <code>${escapeHtml(statusLed.defineName)}</code>` : ""}${positionSensorOn ? `,
           <code>${escapeHtml(positionSensor.defineName)}</code>` : ""}${dockSensorOn ? `,
           <code>${escapeHtml(dockSensor.defineName)}</code>` : ""}${plugSensorOn ? `,
-          <code>${escapeHtml(plugSensor.defineName)}</code>` : ""}${rotaryEncoderOn ? rotaryEncoder.pins.map((pin) => `,
+          <code>${escapeHtml(plugSensor.defineName)}</code>` : ""}${doorSensorOn ? `,
+          <code>${escapeHtml(doorSensor.defineName)}</code>` : ""}${rotaryEncoderOn ? rotaryEncoder.pins.map((pin) => `,
           <code>${escapeHtml(pin.defineName)}</code>`).join("") : ""}${identifyOn ? `,
           <code>${escapeHtml(identify ? identify.defineName : "IDENTIFY_LED_GPIO")}</code>` : ""}${activePickerPins.map(({ pin }) => `,
           <code>${escapeHtml(pin.defineName)}</code>`).join("")}) happens
@@ -5852,6 +5913,12 @@ function renderConfigureDevice(p) {
           <div class="summary-row">
             <div class="summary-label">PLUG SENSOR</div>
             <div class="summary-detail">${plugSensorOn ? `IO pin: GPIO ${plugSensorGpioValid ? p.plugSensorGpioPin : "?"}` : "Not added"}</div>
+          </div>
+        ` : ""}
+        ${doorSensor ? `
+          <div class="summary-row">
+            <div class="summary-label">DOOR SENSOR</div>
+            <div class="summary-detail">${doorSensorOn ? `IO pin: GPIO ${doorSensorGpioValid ? p.doorSensorGpioPin : "?"}` : "Not added"}</div>
           </div>
         ` : ""}
         ${rotaryEncoder ? `
@@ -6034,6 +6101,8 @@ function isProductComplete(p) {
     (Number.isInteger(p.dockSensorGpioPin) && p.dockSensorGpioPin >= 0);
   const plugSensorOk = !(deviceType && deviceType.plugSensor) || !plugSensorIsEnabled(p) ||
     (Number.isInteger(p.plugSensorGpioPin) && p.plugSensorGpioPin >= 0);
+  const doorSensorOk = !(deviceType && deviceType.doorSensor) || !doorSensorIsEnabled(p) ||
+    (Number.isInteger(p.doorSensorGpioPin) && p.doorSensorGpioPin >= 0);
   const rotaryEncoder = deviceType ? deviceType.rotaryEncoder : null;
   const rotaryEncoderOk = !rotaryEncoder || !rotaryEncoderIsEnabled(p) ||
     rotaryEncoder.pins.every((pin) =>
@@ -6083,7 +6152,7 @@ function isProductComplete(p) {
   });
   return !!p.deviceType && !!p.target &&
     Number.isInteger(p.gpioPin) && p.gpioPin >= 0 &&
-    secondaryOk && identifyOk && buttonsOk && statusLedOk && positionSensorOk && dockSensorOk && plugSensorOk &&
+    secondaryOk && identifyOk && buttonsOk && statusLedOk && positionSensorOk && dockSensorOk && plugSensorOk && doorSensorOk &&
     rotaryEncoderOk && pickerPinsOk && numberFieldOk && clusterChipPinsOk && chipChoiceGroupsOk;
 }
 
@@ -6294,6 +6363,15 @@ function renderCustomiseReview(p) {
             <button class="link" data-goto-step="2">Edit</button>
           </div>
         ` : ""}
+        ${findDeviceType(p.deviceType) && findDeviceType(p.deviceType).doorSensor ? `
+          <div class="review-row">
+            <div>
+              <div class="summary-label">DOOR SENSOR</div>
+              <div class="summary-value">${doorSensorIsEnabled(p) ? `GPIO ${p.doorSensorGpioPin != null ? p.doorSensorGpioPin : "?"}` : "Not added"}</div>
+            </div>
+            <button class="link" data-goto-step="2">Edit</button>
+          </div>
+        ` : ""}
         ${(() => {
           const dt = findDeviceType(p.deviceType);
           if (!dt || !dt.rotaryEncoder) return "";
@@ -6401,7 +6479,7 @@ function renderGenerateFirmware(p) {
       <p class="step-hint">
         For "${escapeHtml(p.name)}" —
         <strong>${escapeHtml(deviceTypeName(p.deviceType))}</strong>${selectedSensor ? ` (<strong>${escapeHtml(selectedSensor.name)}</strong>)` : ""} on
-        <strong>${escapeHtml(moduleName(p.target))}</strong>, GPIO ${p.gpioPin}${extraButtonGpios.length ? ` (+ ${extraButtonNoun}${extraButtonGpios.length === 1 ? "" : "s"} on GPIO ${extraButtonGpios.join(", ")})` : ""}${deviceType && deviceType.secondary ? ` (${escapeHtml((deviceType.secondary.label || "secondary").toLowerCase())} on GPIO ${p.secondaryGpioPin})` : ""}${deviceType && deviceType.statusLed && statusLedIsEnabled(p) ? ` (status LED on GPIO ${p.statusLedGpioPin})` : ""}${deviceType && deviceType.positionSensor && positionSensorIsEnabled(p) ? ` (position sensor on GPIO ${p.positionSensorGpioPin})` : ""}${deviceType && deviceType.dockSensor && dockSensorIsEnabled(p) ? ` (dock sensor on GPIO ${p.dockSensorGpioPin})` : ""}${deviceType && deviceType.plugSensor && plugSensorIsEnabled(p) ? ` (plug sensor on GPIO ${p.plugSensorGpioPin})` : ""}${identifyIsEnabled(p) ? ` (identify LED on GPIO ${p.identifyGpioPin})` : ""}.
+        <strong>${escapeHtml(moduleName(p.target))}</strong>, GPIO ${p.gpioPin}${extraButtonGpios.length ? ` (+ ${extraButtonNoun}${extraButtonGpios.length === 1 ? "" : "s"} on GPIO ${extraButtonGpios.join(", ")})` : ""}${deviceType && deviceType.secondary ? ` (${escapeHtml((deviceType.secondary.label || "secondary").toLowerCase())} on GPIO ${p.secondaryGpioPin})` : ""}${deviceType && deviceType.statusLed && statusLedIsEnabled(p) ? ` (status LED on GPIO ${p.statusLedGpioPin})` : ""}${deviceType && deviceType.positionSensor && positionSensorIsEnabled(p) ? ` (position sensor on GPIO ${p.positionSensorGpioPin})` : ""}${deviceType && deviceType.dockSensor && dockSensorIsEnabled(p) ? ` (dock sensor on GPIO ${p.dockSensorGpioPin})` : ""}${deviceType && deviceType.plugSensor && plugSensorIsEnabled(p) ? ` (plug sensor on GPIO ${p.plugSensorGpioPin})` : ""}${deviceType && deviceType.doorSensor && doorSensorIsEnabled(p) ? ` (door sensor on GPIO ${p.doorSensorGpioPin})` : ""}${identifyIsEnabled(p) ? ` (identify LED on GPIO ${p.identifyGpioPin})` : ""}.
         This is the exact two-step flow validated end to end on real
         hardware for this device type: build, then flash. Nothing runs
         automatically — you paste and run each command yourself.
@@ -6586,6 +6664,7 @@ function buildSedCommands(p) {
   const positionSensor = deviceType ? deviceType.positionSensor : null;
   const dockSensor = deviceType ? deviceType.dockSensor : null;
   const plugSensor = deviceType ? deviceType.plugSensor : null;
+  const doorSensor = deviceType ? deviceType.doorSensor : null;
   const clusterOptions = deviceType ? deviceType.clusterOptions : null;
   const filePath = driver ? driver.filePath.split("/").slice(2).join("/") : "main/app_main.cpp"; // relative to firmwareDir
   const cmds = [];
@@ -6678,6 +6757,12 @@ function buildSedCommands(p) {
     // Same broad `.*` match as statusLed/positionSensor/dockSensor above —
     // this one also ships as GPIO_NUM_NC by default, not a numeric value.
     cmds.push(`sed -i 's/^#define ${plugSensor.defineName} .*/#define ${plugSensor.defineName} GPIO_NUM_${p.plugSensorGpioPin}/' ${filePath}`);
+  }
+  if (doorSensor && doorSensorIsEnabled(p)) {
+    // Same broad `.*` match as statusLed/positionSensor/dockSensor/
+    // plugSensor above — this one also ships as GPIO_NUM_NC by default,
+    // not a numeric value.
+    cmds.push(`sed -i 's/^#define ${doorSensor.defineName} .*/#define ${doorSensor.defineName} GPIO_NUM_${p.doorSensorGpioPin}/' ${filePath}`);
   }
   if (deviceType && deviceType.rotaryEncoder && rotaryEncoderIsEnabled(p)) {
     // Same broad `.*` match as statusLed/positionSensor/dockSensor/
@@ -6974,6 +7059,10 @@ function bindEvents() {
         // statusLed/positionSensor/dockSensor above.
         state.currentProduct.plugSensorGpioPin = null;
         state.currentProduct.plugSensorEnabled = null;
+        // doorSensor (oven only): same stale-GPIO risk as
+        // statusLed/positionSensor/dockSensor/plugSensor above.
+        state.currentProduct.doorSensorGpioPin = null;
+        state.currentProduct.doorSensorEnabled = null;
         // rotaryEncoder (thermostat only, so far): same stale-value risk.
         state.currentProduct.rotaryEncoderPins = null;
         state.currentProduct.rotaryEncoderEnabled = null;
@@ -7200,6 +7289,26 @@ function bindEvents() {
   if (plugSensorEnabledInput) {
     plugSensorEnabledInput.addEventListener("change", () => {
       state.currentProduct.plugSensorEnabled = plugSensorEnabledInput.checked;
+      saveProducts();
+      render();
+    });
+  }
+
+  const doorSensorGpioPinInput = document.getElementById("door-sensor-gpio-pin");
+  if (doorSensorGpioPinInput) {
+    doorSensorGpioPinInput.addEventListener("input", () => {
+      const raw = doorSensorGpioPinInput.value;
+      state.currentProduct.doorSensorGpioPin = raw === "" ? null : parseInt(raw, 10);
+      saveProducts();
+      render();
+      document.getElementById("door-sensor-gpio-pin").focus();
+    });
+  }
+
+  const doorSensorEnabledInput = document.getElementById("door-sensor-enabled");
+  if (doorSensorEnabledInput) {
+    doorSensorEnabledInput.addEventListener("change", () => {
+      state.currentProduct.doorSensorEnabled = doorSensorEnabledInput.checked;
       saveProducts();
       render();
     });

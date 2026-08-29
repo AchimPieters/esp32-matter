@@ -191,7 +191,10 @@ static const char *TAG = "matter_oven";
  * specific relay module" — polarity isn't universal. */
 #define IDENTIFY_LED_GPIO GPIO_NUM_2
 #define OVEN_HEATING_RELAY_GPIO GPIO_NUM_16   /* active-LOW */
-#define OVEN_DOOR_GPIO GPIO_NUM_NC            /* optional, off by default; reed switch, pulled up: LOW=closed, HIGH=open */
+/* Optional door-position reed switch, pulled up: LOW=closed, HIGH=open.
+ * Off by default (GPIO_NUM_NC) — see HandleStartStateCallback()/door_task()
+ * below for what changes once this is wired to a real GPIO. */
+#define OVEN_DOOR_GPIO GPIO_NUM_NC
 
 #define IDENTIFY_BLINK_INTERVAL_MS 500
 
