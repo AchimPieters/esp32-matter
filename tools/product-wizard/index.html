@@ -1074,6 +1074,46 @@ const COMPONENT_LIBRARY = {
     { key: "sda", label: "SDA", defineName: "ADE7953_SDA_GPIO", defaultsByModule: { esp32: 21, esp32c2: 21, esp32c3: 21, esp32c5: 21, esp32c6: 21, esp32c61: 21, esp32s3: 21, esp32h2: 21 } },
     { key: "scl", label: "SCL", defineName: "ADE7953_SCL_GPIO", defaultsByModule: { esp32: 22, esp32c2: 22, esp32c3: 22, esp32c5: 22, esp32c6: 22, esp32c61: 22, esp32s3: 22, esp32h2: 22 } },
   ] },
+  // Heat Pump's own Power Monitoring picker ("hobbyist cluster expansion"
+  // pilot, device #3) — same 6 real chips/drivers/citations as outlet's
+  // and electrical-meter's own entries above, duplicated for the same
+  // `defineValue`-must-match-this-file's-own-#define-name reason. UNLIKE
+  // electrical-meter's own "no None option" scope, this stays genuinely
+  // optional (off by default) — same reasoning as outlet's own convention:
+  // this device already has real substance (the Thermostat child endpoint)
+  // without power monitoring. GPIO defaults are deliberately DIFFERENT
+  // from outlet's/electrical-meter's own (18/19 for UART, 32/33 for I2C
+  // instead of 16/17/21/22) — those would collide with this device's own
+  // existing compressor-relay/reversing-valve-relay/DS18B20 pins; the
+  // shared PULSE_METER_* pins (BL0937/HLW8012/CSE7759) don't collide, so
+  // they're reused unchanged at 25/26/27.
+  HP_POWER_NONE: { name: "None", category: "hp-power-monitor", bus: "—", verified: true, defineValue: "HEAT_PUMP_POWER_MONITOR_NONE", pins: [] },
+  HP_POWER_BL0942: { name: "BL0942", category: "hp-power-monitor", bus: "UART", verified: false, defineValue: "HEAT_PUMP_POWER_MONITOR_BL0942", pins: [
+    { key: "rx", label: "UART RX", defineName: "BL0942_UART_RX_GPIO", defaultsByModule: { esp32: 18, esp32c2: 18, esp32c3: 18, esp32c5: 18, esp32c6: 18, esp32c61: 18, esp32s3: 18, esp32h2: 18 } },
+    { key: "tx", label: "UART TX", defineName: "BL0942_UART_TX_GPIO", defaultsByModule: { esp32: 19, esp32c2: 19, esp32c3: 19, esp32c5: 19, esp32c6: 19, esp32c61: 19, esp32s3: 19, esp32h2: 19 } },
+  ] },
+  HP_POWER_BL0937: { name: "BL0937", category: "hp-power-monitor", bus: "GPIO (pulse)", verified: false, defineValue: "HEAT_PUMP_POWER_MONITOR_BL0937", pins: [
+    { key: "sel", label: "SEL", defineName: "PULSE_METER_SEL_GPIO", defaultsByModule: { esp32: 25, esp32c2: 25, esp32c3: 25, esp32c5: 25, esp32c6: 25, esp32c61: 25, esp32s3: 25, esp32h2: 25 } },
+    { key: "cf", label: "CF (power pulse)", defineName: "PULSE_METER_CF_GPIO", defaultsByModule: { esp32: 26, esp32c2: 26, esp32c3: 26, esp32c5: 26, esp32c6: 26, esp32c61: 26, esp32s3: 26, esp32h2: 26 } },
+    { key: "cf1", label: "CF1 (V/I pulse)", defineName: "PULSE_METER_CF1_GPIO", defaultsByModule: { esp32: 27, esp32c2: 27, esp32c3: 27, esp32c5: 27, esp32c6: 27, esp32c61: 27, esp32s3: 27, esp32h2: 27 } },
+  ] },
+  HP_POWER_HLW8012: { name: "HLW8012", category: "hp-power-monitor", bus: "GPIO (pulse)", verified: false, defineValue: "HEAT_PUMP_POWER_MONITOR_HLW8012", pins: [
+    { key: "sel", label: "SEL", defineName: "PULSE_METER_SEL_GPIO", defaultsByModule: { esp32: 25, esp32c2: 25, esp32c3: 25, esp32c5: 25, esp32c6: 25, esp32c61: 25, esp32s3: 25, esp32h2: 25 } },
+    { key: "cf", label: "CF (power pulse)", defineName: "PULSE_METER_CF_GPIO", defaultsByModule: { esp32: 26, esp32c2: 26, esp32c3: 26, esp32c5: 26, esp32c6: 26, esp32c61: 26, esp32s3: 26, esp32h2: 26 } },
+    { key: "cf1", label: "CF1 (V/I pulse)", defineName: "PULSE_METER_CF1_GPIO", defaultsByModule: { esp32: 27, esp32c2: 27, esp32c3: 27, esp32c5: 27, esp32c6: 27, esp32c61: 27, esp32s3: 27, esp32h2: 27 } },
+  ] },
+  HP_POWER_CSE7759: { name: "CSE7759", category: "hp-power-monitor", bus: "GPIO (pulse)", verified: false, defineValue: "HEAT_PUMP_POWER_MONITOR_CSE7759", note: "Assumed to share HLW8012's formula (same chip family) per a secondary source — not independently confirmed against CSE7759's own datasheet.", pins: [
+    { key: "sel", label: "SEL", defineName: "PULSE_METER_SEL_GPIO", defaultsByModule: { esp32: 25, esp32c2: 25, esp32c3: 25, esp32c5: 25, esp32c6: 25, esp32c61: 25, esp32s3: 25, esp32h2: 25 } },
+    { key: "cf", label: "CF (power pulse)", defineName: "PULSE_METER_CF_GPIO", defaultsByModule: { esp32: 26, esp32c2: 26, esp32c3: 26, esp32c5: 26, esp32c6: 26, esp32c61: 26, esp32s3: 26, esp32h2: 26 } },
+    { key: "cf1", label: "CF1 (V/I pulse)", defineName: "PULSE_METER_CF1_GPIO", defaultsByModule: { esp32: 27, esp32c2: 27, esp32c3: 27, esp32c5: 27, esp32c6: 27, esp32c61: 27, esp32s3: 27, esp32h2: 27 } },
+  ] },
+  HP_POWER_CSE7766: { name: "CSE7766", category: "hp-power-monitor", bus: "UART", verified: false, defineValue: "HEAT_PUMP_POWER_MONITOR_CSE7766", pins: [
+    { key: "rx", label: "UART RX", defineName: "CSE7766_UART_RX_GPIO", defaultsByModule: { esp32: 18, esp32c2: 18, esp32c3: 18, esp32c5: 18, esp32c6: 18, esp32c61: 18, esp32s3: 18, esp32h2: 18 } },
+  ] },
+  HP_POWER_ADE7953: { name: "ADE7953", category: "hp-power-monitor", bus: "I2C", verified: false, defineValue: "HEAT_PUMP_POWER_MONITOR_ADE7953", note: "Least-certain of the six power-monitor drivers — only partially confirmed against Analog Devices' own datasheet across several attempts; double-check before relying on it.", pins: [
+    { key: "sda", label: "SDA", defineName: "ADE7953_SDA_GPIO", defaultsByModule: { esp32: 32, esp32c2: 32, esp32c3: 32, esp32c5: 32, esp32c6: 32, esp32c61: 32, esp32s3: 32, esp32h2: 32 } },
+    { key: "scl", label: "SCL", defineName: "ADE7953_SCL_GPIO", defaultsByModule: { esp32: 33, esp32c2: 33, esp32c3: 33, esp32c5: 33, esp32c6: 33, esp32c61: 33, esp32s3: 33, esp32h2: 33 } },
+  ] },
   // Outlet's Power Monitoring picker's `pins` mechanism (chip choice ->
   // extra GPIO fields) turns out to fit firmware/color-light/'s color-mode
   // choice just as well: RGB vs RGBW vs RGBWW isn't a variable-count or
@@ -2959,8 +2999,8 @@ const DEVICE_TYPES = [
   {
     id: "heat-pump",
     name: "Heat Pump",
-    desc: "Matter Heat Pump: a Heat Pump root endpoint (PowerSource + Electrical Sensor + Device Energy Management, structurally present but not driven by any real sensor) plus a child Thermostat endpoint (Heat+Cool) drives a compressor relay through a hysteresis loop against a DS18B20 reading, plus a separate reversing-valve relay that tracks the commanded mode directly (energized in Cool, common \"O\" terminal convention — always check your own unit's wiring). No defrost-cycle or auxiliary-heat-strip logic. Reference device in firmware/heat-pump/.",
-    shortDesc: "Compressor + reversing-valve relays, Heat+Cool thermostat.",
+    desc: "Matter Heat Pump: a Heat Pump root endpoint (PowerSource + Electrical Sensor + Device Energy Management) plus a child Thermostat endpoint (Heat+Cool) drives a compressor relay through a hysteresis loop against a DS18B20 reading, plus a separate reversing-valve relay that tracks the commanded mode directly (energized in Cool, common \"O\" terminal convention — always check your own unit's wiring). No defrost-cycle or auxiliary-heat-strip logic. Optionally add a real power-monitor chip (same 6-chip choice as Outlet/Electrical Meter) for genuine ElectricalPowerMeasurement/ElectricalEnergyMeasurement readings instead of static zero defaults. Reference device in firmware/heat-pump/.",
+    shortDesc: "Compressor + reversing-valve relays, Heat+Cool thermostat; optional power monitor.",
     // Matches project(matter_heat_pump) in firmware/heat-pump/CMakeLists.txt.
     // Three fixed GPIO fields (driver + 2 extraButtons) — same "fixed set,
     // not a variable count" shape firmware/room-air-conditioner/'s own
@@ -2969,6 +3009,25 @@ const DEVICE_TYPES = [
     // set_parent_endpoint()) but that's invisible to the wizard — it only
     // ever cares about #define GPIO pins, not endpoint topology.
     binName: "matter_heat_pump.bin",
+    // "Hobbyist cluster expansion" pilot, device #3 — same extraPickers
+    // shape outlet's own Power Monitoring picker already established
+    // (single mutually-exclusive chip choice, optional/off-by-default),
+    // NOT the clusterOptions/chipChoiceGroups mechanism air-quality-sensor/
+    // smoke-co-alarm use: the ElectricalPowerMeasurement/
+    // ElectricalEnergyMeasurement clusters already exist unconditionally
+    // on every build (mandatoryConform per the composed Electrical Sensor
+    // device type) — there's no cluster to independently check on/off
+    // here, only which chip (if any) drives the readings already-existing
+    // clusters report.
+    extraPickers: [
+      {
+        key: "heatPumpPowerMonitor",
+        label: "Power Monitoring",
+        prompt: "Optional — drives the ElectricalPowerMeasurement/ElectricalEnergyMeasurement clusters that already exist on every build with real readings instead of static zero defaults.",
+        options: ["HP_POWER_NONE", "HP_POWER_BL0942", "HP_POWER_BL0937", "HP_POWER_HLW8012", "HP_POWER_CSE7759", "HP_POWER_CSE7766", "HP_POWER_ADE7953"],
+        defineName: "HEAT_PUMP_POWER_MONITOR",
+      },
+    ],
     driverLabel: "Compressor Relay",
     driver: {
       summary: "Compressor relay · GPIO (digital output, active-LOW)",

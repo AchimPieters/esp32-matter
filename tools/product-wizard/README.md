@@ -174,7 +174,15 @@ open tools/product-wizard/index.html
     sharing one chip choice) with zero new wizard mechanism needed, only
     new `COMPONENT_LIBRARY` entries — see that device type's own
     `clusterOptions`/`chipChoiceGroups` entry in `index.html` and
-    CLAUDE.md's own updated `firmware/smoke-co-alarm/` entry.
+    CLAUDE.md's own updated `firmware/smoke-co-alarm/` entry. Heat Pump's
+    own Configure Device step separately gained a "Power Monitoring"
+    picker (Configure Device step 3's left sidebar, same `extraPickers`
+    radio-list shape Outlet's and Electrical Meter's own power-monitor
+    pickers already use — a genuinely different situation from the
+    checkbox list above, since Heat Pump's ElectricalPowerMeasurement/
+    ElectricalEnergyMeasurement clusters already exist unconditionally on
+    every build, so there's nothing to independently check on/off, only
+    which of the same 6 real chips drives the readings).
   - Real bug fixed alongside that redesign: for single-data-pin sensors
     (DHT11/DHT22/DS18B20's single-wire DATA line, the LDR's ADC pin —
     anything with `usesPin2: false` in `COMPONENT_LIBRARY`), the "pin 2"

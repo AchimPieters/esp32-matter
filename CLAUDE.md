@@ -4637,14 +4637,67 @@ firmware/heat-pump/       Heat Pump — thirty-third device type, and this
                            static/zero default values with no crash risk —
                            same "no sensor, no fabricated data" honesty
                            precedent firmware/evse/'s own always-NoError
-                           FaultState already establishes; a real product
-                           wanting genuine power telemetry here would want
-                           firmware/outlet/'s own hand-written
-                           ElectricalPowerMeasurement::Instance/Delegate
-                           pair (or one of its 6 real power-monitor chip
-                           drivers) instead. Identify is added manually
-                           onto the root (the top-level helper doesn't
-                           auto-add it).
+                           FaultState already establishes. Identify is
+                           added manually onto the root (the top-level
+                           helper doesn't auto-add it).
+
+                           Later revisited ("hobbyist cluster expansion"
+                           pilot, device #3 — see CLAUDE.md's own "Open
+                           next steps"): exactly the follow-up this file's
+                           own original header comment already named —
+                           `HEAT_PUMP_POWER_MONITOR` (defaulting to
+                           `_NONE`, unchanged default build) offers the
+                           identical 6-chip choice firmware/outlet/'s and
+                           firmware/electrical-meter/'s own power-
+                           monitoring subsystem already establishes
+                           (BL0942, BL0937, HLW8012, CSE7759, CSE7766,
+                           ADE7953), every driver/protocol/citation reused
+                           verbatim. Unlike electrical-meter's own "always
+                           on" scope, this stays a genuinely optional add-
+                           on (off by default) — same convention outlet's
+                           own Power Monitoring picker already establishes
+                           — since this device already has real substance
+                           (the Thermostat child endpoint) without it. The
+                           ElectricalPowerMeasurement Delegate/Instance is
+                           ported verbatim from firmware/electrical-meter/'s
+                           own `MeterPowerDelegate`, but wired against THIS
+                           device's own already-existing root-endpoint
+                           cluster (created by `endpoint::heat_pump::
+                           create()` itself) rather than a cluster this
+                           file creates — no new cluster-creation code
+                           needed, only the Delegate/Instance construction.
+                           GPIO defaults for every chip are deliberately
+                           different from outlet's/electrical-meter's own
+                           (18/19 for UART, 32/33 for I2C instead of
+                           16/17/21/22) — those would collide with this
+                           file's own existing compressor-relay/reversing-
+                           valve-relay/DS18B20 pins; the shared pulse-meter
+                           pins (BL0937/HLW8012/CSE7759) don't collide, so
+                           they're reused unchanged at 25/26/27. Wizard
+                           integration reuses the `extraPickers` mechanism
+                           (not `clusterOptions`/`chipChoiceGroups` —
+                           the ElectricalPowerMeasurement/
+                           ElectricalEnergyMeasurement clusters already
+                           exist unconditionally on every build, so there's
+                           no cluster to independently check on/off here,
+                           only which chip drives the readings already-
+                           existing clusters report), same single-
+                           mutually-exclusive-choice shape outlet's own
+                           Power Monitoring picker already established —
+                           zero new wizard mechanism needed, only new
+                           `COMPONENT_LIBRARY` entries (`HP_POWER_*`).
+                           Verified with the same Node.js sandboxed method
+                           (all 47 device types re-swept, a real sed dry-
+                           run against a copy of the file confirming
+                           exactly the intended `#define` line changed).
+                           Build-verified in Docker: default config
+                           confirmed byte-identical to the pre-change
+                           build; all 6 power-monitor chips individually.
+                           Not hardware-tested — no module of any of the
+                           six chips was physically available when
+                           written, same standard firmware/outlet/'s and
+                           firmware/electrical-meter/'s own header comments
+                           already document for their identical drivers.
 
                            Thermostat child endpoint: Heat+Cool (unlike
                            firmware/room-air-conditioner/'s own deliberately
@@ -8517,9 +8570,85 @@ SECURITY.md               flash encryption / secure boot / signed OTA guidance
    mechanism verified via Node.js sandboxed checks (this environment's
    established substitute for a real browser) plus a real sed-command
    dry-run against a copy of the actual `app_main.cpp`, diffed against the
-   original. Not yet done: rolling `clusterOptions`/`chipChoiceGroups` out
-   to any device type beyond this one pilot, and hardware-testing any of
-   the 6 new chips (none was physically available when written).
+   original. Continued in item 9 below, per the user's own request to
+   keep going through every remaining device with a closeable "no sensor"
+   gap rather than stopping at this one pilot.
+
+9. **"Hobbyist cluster expansion" continued — devices #2 and #3, plus a
+   genuinely different kind of gap** — the user asked to keep going
+   through every remaining device with a closeable "no sensor, no
+   fabricated data" gap, not stop at item 8's own single pilot. A
+   systematic re-search of this file for that exact phrase (and related
+   framings — "deliberately NOT driven," "structurally present but not
+   driven by any real sensor," "would want firmware/outlet/'s own...")
+   turned up two more genuinely addressable candidates; every other hit
+   was either already covered by item 7's own audit, needs hardware this
+   repo's "read the datasheet, drive a GPIO" style genuinely can't
+   provide (pump's own seventeen-event fault set — current sensing/
+   pressure transducers/thermal cutouts embedded in a motor, not a plug-
+   in sensor chip), or is a UI-hardware gap rather than a sensing one
+   (temperature-sensor's own skipped Thermostat User Interface
+   Configuration — needs a display/keypad, not a sensor, so it's out of
+   scope for this specific pattern).
+
+   **firmware/smoke-co-alarm/ (device #2)**: Temperature + Relative
+   Humidity — the same gap firmware/air-quality-sensor/ (device #1, item
+   8) closed for itself, reusing firmware/temperature-sensor/'s own
+   4-chip I2C library verbatim. Unlike air-quality-sensor's own shared
+   I2C bus, this device had no I2C bus at all (MQ2/MQ7 are pure analog
+   ADC), so this adds a genuinely new, dedicated SDA/SCL pin pair. This
+   was also the first real confirmation that `clusterOptions`/
+   `chipChoiceGroups` (built for device #1) is genuinely reusable — zero
+   new wizard mechanism needed, only new `COMPONENT_LIBRARY` entries,
+   each carrying its own `pins` array since this device has no bus to
+   share (the same `pins`-array mechanism air-quality's own MQ7/MQ131/
+   PMS5003/ZE08CH2O entries already use, for a different reason). See
+   firmware/smoke-co-alarm/'s own repository-layout entry above for the
+   complete detail.
+
+   **firmware/heat-pump/ (device #3)**: a genuinely different KIND of gap
+   from devices #1/#2 — not a missing cluster, but an already-mandatory,
+   already-present cluster pair (ElectricalPowerMeasurement/
+   ElectricalEnergyMeasurement, composed via the Electrical Sensor device
+   type) left undriven by any real sensor, exactly as this file's own
+   original header comment for that device predicted: "a real product
+   wanting genuine power telemetry here would want firmware/outlet/'s own
+   hand-written ElectricalPowerMeasurement::Instance/Delegate pair (or
+   one of its 6 real power-monitor chip drivers) instead." `HEAT_PUMP_
+   POWER_MONITOR` (defaulting off, unchanged default build) does exactly
+   that — the identical 6-chip subsystem firmware/outlet/'s and firmware/
+   electrical-meter/'s own power monitoring already establishes, reused
+   verbatim, wired against the device's own already-existing endpoint
+   (no new cluster-creation code needed, only the Delegate/Instance
+   construction). Because the cluster already exists on every build
+   regardless of chip choice, this reuses the OLDER `extraPickers`
+   mechanism (outlet's own proven shape: one mutually-exclusive chip
+   choice, genuinely optional) rather than `clusterOptions`/
+   `chipChoiceGroups` — there's no independent cluster to check on/off
+   here, only which chip drives the readings. See firmware/heat-pump/'s
+   own repository-layout entry above for the complete detail, including
+   the deliberately different GPIO defaults needed to avoid colliding
+   with that device's own existing compressor/reversing-valve/DS18B20
+   pins.
+
+   Both verified with the same discipline as device #1: Node.js
+   sandboxed checks (all 47 device types re-swept through all 4 render/
+   complete/sed/review functions with zero exceptions each time) plus a
+   real sed-command dry-run against a copy of each real `app_main.cpp`,
+   diffed against the original. Docker build-verified: both devices'
+   default configs confirmed byte-identical to their pre-change builds;
+   every new chip/sensor choice individually (smoke-co-alarm: all 4 temp/
+   humidity chips × relevant SENSOR_TYPE combos; heat-pump: all 6 power-
+   monitor chips). Neither hardware-tested — no physical module for
+   either addition was available when written.
+
+   Not yet done: `firmware/water-heater/`'s own identical "an optional
+   composed Electrical Sensor device type is listed too — not
+   implemented... firmware/outlet/ already has that exact two-cluster
+   pattern built if it's ever wanted here" gap — a genuinely different
+   case again (no cluster exists there at all yet, unlike heat-pump's
+   already-present-but-undriven pair), the next planned step in this
+   same pass.
 
 ## Note on hardware/USB
 
