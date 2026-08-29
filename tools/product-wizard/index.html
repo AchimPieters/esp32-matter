@@ -989,6 +989,26 @@ const COMPONENT_LIBRARY = {
   REED_SWITCH: { name: "Reed Switch (magnetic)", category: "contact", bus: "GPIO", pin1Label: "Contact", pin2Label: null, usesPin2: false, verified: true },
   HALL_SENSOR: { name: "Hall-Effect Sensor (e.g. A3144, US5881)", category: "contact", bus: "GPIO", pin1Label: "Contact", pin2Label: null, usesPin2: false, verified: false },
   MICROSWITCH: { name: "Microswitch / mechanical contact", category: "contact", bus: "GPIO", pin1Label: "Contact", pin2Label: null, usesPin2: false, verified: false },
+  // firmware/rf-ir-bridge/'s own two cosmetic module-reference pickers
+  // (see its DEVICE_TYPES entry's `extraPickers`, both `cosmetic: true`) —
+  // same "shows in the UI, zero effect on the generated firmware" contract
+  // color-light's own addressableChipRef picker already establishes,
+  // reused here rather than introducing a second mechanism: unlike a real
+  // sensor, RF433/IR each speak exactly ONE protocol regardless of which
+  // physical receiver module you actually buy (EV1527/PT2262-compatible
+  // 433MHz superheterodyne modules all present the same OOK/ASK data pin;
+  // 38kHz IR demodulator modules all present the same inverted-logic OUT
+  // pin) — so this is purely "here's what to actually buy," not a driver
+  // choice. All six are real, widely-sold, commonly cited parts, not
+  // fabricated — no separate datasheet verification was done for any of
+  // them (unlike this repo's own real sensor drivers), since none of them
+  // changes a single line of the firmware's own decode logic.
+  RF433_MODULE_MXRM5V: { name: "MX-RM-5V", category: "rf433-module", bus: "433.92MHz OOK/ASK, superheterodyne", note: "The cheapest, most common 3-pin 433MHz receiver breakout sold worldwide (often paired with an equally cheap FS1000A transmitter). Fine sensitivity for close-range fixed-code remotes/sensors." },
+  RF433_MODULE_RXB6: { name: "RXB6", category: "rf433-module", bus: "433.92MHz OOK/ASK, superheterodyne", note: "A step up from MX-RM-5V — better sensitivity and a cleaner data output, worth it if your remotes/sensors are further away or intermittently missed." },
+  RF433_MODULE_SRX887: { name: "SRX887", category: "rf433-module", bus: "433.92MHz OOK/ASK, superheterodyne", note: "Another common superheterodyne receiver, comparable in practice to RXB6." },
+  IR_MODULE_TSOP38238: { name: "TSOP38238 (Vishay)", category: "ir-module", bus: "38kHz IR demodulator, inverted logic", note: "A real Vishay part (not a clone) — the same demodulator family this firmware's own header comment already cites for its inverted-output assumption." },
+  IR_MODULE_VS1838B: { name: "VS1838B", category: "ir-module", bus: "38kHz IR demodulator, inverted logic", note: "The extremely common cheap clone/equivalent bundled with most Arduino starter kits — same 38kHz, same inverted output." },
+  IR_MODULE_IRM3638: { name: "IRM-3638", category: "ir-module", bus: "38kHz IR demodulator, inverted logic", note: "Another common 38kHz breakout, same electrical behavior as the other two." },
   // Outlet's Power Monitoring picker (see its DEVICE_TYPES entry's
   // `extraPickers`, a different mechanism from `componentOptions` above —
   // this choice doesn't affect any GPIO field's label the way a sensor's
@@ -4481,6 +4501,32 @@ const DEVICE_TYPES = [
         filePath: "firmware/rf-ir-bridge/main/app_main.cpp",
         defineName: "IR_RX_GPIO",
         defaultsByModule: { esp32: 5, esp32c2: 5, esp32c3: 5, esp32c5: 5, esp32c6: 5, esp32c61: 5, esp32s3: 5, esp32h2: 5 },
+      },
+    ],
+    // Two purely cosmetic module-reference pickers, on request — this
+    // device type has no chip choice the way temperature-sensor's own
+    // left-sidebar picker does (there's exactly one real decode algorithm
+    // per protocol, see app_main.cpp's own header comment), but a user
+    // still benefits from seeing real, commonly-sold receiver modules to
+    // actually go buy. Same `cosmetic: true` extraPickers contract
+    // color-light's own addressableChipRef picker already establishes —
+    // see the COMPONENT_LIBRARY comment above these six entries for the
+    // full reasoning. Two separate pickers (not one combined list) since
+    // RF433 and IR modules are never interchangeable.
+    extraPickers: [
+      {
+        key: "rf433ModuleRef",
+        label: "If you're using a 433MHz receiver module",
+        prompt: "For reference only — every one of these presents the same plain OOK/ASK data pin, so picking one doesn't change the generated firmware at all.",
+        options: ["RF433_MODULE_MXRM5V", "RF433_MODULE_RXB6", "RF433_MODULE_SRX887"],
+        cosmetic: true,
+      },
+      {
+        key: "irModuleRef",
+        label: "If you're using an IR receiver module",
+        prompt: "For reference only — every one of these presents the same 38kHz, inverted-logic OUT pin, so picking one doesn't change the generated firmware at all.",
+        options: ["IR_MODULE_TSOP38238", "IR_MODULE_VS1838B", "IR_MODULE_IRM3638"],
+        cosmetic: true,
       },
     ],
   },

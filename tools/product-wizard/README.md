@@ -1168,6 +1168,18 @@ and diffed against the original, a byte-for-byte match. All checks passed.
   customize at all — every bridged device's own hardware lives on a
   completely separate board/module, not on the bridge itself. Build and
   flash either by hand following their own `README.md`'s instructions.
+  `firmware/thread-border-router/` (a real OpenThread Border Router,
+  device type 0x0091 — a verbatim port of esp-matter's own reference
+  Thread Border Router example) is excluded for the same reason as
+  `firmware/zigbee-bridge/`: a third genuine two-chip/two-firmware
+  device (ESP32-S3 host + ESP32-H2 RCP, on Espressif's own real ESP
+  Thread Border Router board), with no GPIO fields of its own — this one
+  is architecturally different in kind from the bridges above, though:
+  it's Thread's own network-infrastructure role (making a separate
+  Thread mesh's own already-Matter end-devices reachable at all), not
+  another device-exposing bridge — see its own `README.md`'s preamble
+  for the full distinction. Build and flash it by hand following that
+  same README's instructions.
   `firmware/rf-ir-bridge/` (the other bridge built in the same pass, for
   433MHz and infrared) IS offered here — it uses this repo's own
   simplified build pattern and has real GPIO fields (a learn button plus

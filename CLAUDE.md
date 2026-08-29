@@ -7899,6 +7899,37 @@ firmware/rf-ir-bridge/    RF433/IR Bridge — sixty-seventh device type, and
                            algorithm being faithfully reproduced, not on
                            anything this session could independently
                            confirm against a real signal.
+
+                           Later extended, on request: two purely cosmetic
+                           module-reference pickers in `tools/
+                           product-wizard/` (one for real 433MHz receiver
+                           modules — MX-RM-5V/RXB6/SRX887 — one for real IR
+                           receiver modules — TSOP38238/VS1838B/IRM-3638),
+                           prompted directly by the user noticing this
+                           device type had no left-sidebar module picker
+                           the way firmware/temperature-sensor/'s own
+                           SENSOR_TYPE chip picker does. Confirmed, before
+                           adding anything, that this genuinely doesn't
+                           need a REAL chip picker the way temperature-
+                           sensor's does: RF433/IR each speak exactly ONE
+                           protocol regardless of which physical receiver
+                           module is actually wired up (every EV1527/
+                           PT2262-compatible 433MHz superheterodyne module
+                           presents the same OOK/ASK data pin; every 38kHz
+                           IR demodulator module presents the same
+                           inverted-logic OUT pin), so a real driver-
+                           selecting picker would have nothing to actually
+                           select between. Reuses the exact `cosmetic:
+                           true` `extraPickers` contract firmware/
+                           color-light/'s own addressableChipRef picker
+                           already establishes — shows in the wizard,
+                           generates zero sed commands, purely "here's
+                           what to actually go buy." Verified with the
+                           established Node.js sandboxed regression check
+                           (39/39 checks, including confirming picking a
+                           cosmetic module still emits exactly the same 3
+                           sed commands as before — no fourth command ever
+                           appears).
   partitions.csv           same OTA + fctry layout as firmware/light/
   sdkconfig.defaults        same as firmware/light/
 firmware/zigbee-bridge/   Zigbee Bridge — sixty-eighth device type, and
@@ -7959,6 +7990,122 @@ firmware/zigbee-bridge/   Zigbee Bridge — sixty-eighth device type, and
   main/CMakeLists.txt,      unmodified.
   partitions.csv,
   sdkconfig.defaults*
+firmware/thread-border-router/  Thread Border Router — sixty-ninth device
+                           type: a real OpenThread Border Router (device
+                           type 0x0091), the network-infrastructure role
+                           that lets separate Thread end-devices (their
+                           own independent Matter nodes) actually reach
+                           your LAN/controller — genuinely different in
+                           kind from every one of this repo's other three
+                           bridges (firmware/ble-mesh-bridge/, firmware/
+                           rf-ir-bridge/, firmware/zigbee-bridge/), which
+                           all expose OTHER, non-Matter devices as dynamic
+                           endpoints on ONE fabric; this device instead
+                           makes a whole SEPARATE Thread mesh's own
+                           already-Matter nodes reachable at all. This
+                           repo's own earlier "controller/media/
+                           infrastructure device types are always out of
+                           scope" framing had correctly excluded this
+                           exact device type on exactly this basis —
+                           revisited and built anyway on explicit user
+                           request after that reasoning was re-explained
+                           and confirmed, per firmware/thread-border-router/
+                           README.md's own preamble.
+  main/app_main.cpp        Confirmed directly against the CSA's own
+                           ThreadBorderRouter.xml (revision 2) before
+                           porting anything: `class="simple"
+                           scope="endpoint"` — genuinely standalone-
+                           buildable, NOT `class="utility"` (the same
+                           wrong "must always be composed" assumption
+                           this repo's own CLAUDE.md already documents
+                           correcting once, for Temperature Controlled
+                           Cabinet — checked properly from the start this
+                           time). Thread Network Diagnostics (0x0035) +
+                           Thread Border Router Management (0x0452) are
+                           both mandatoryConform; Thread Network Directory
+                           (0x0453, optionalConform) is not implemented.
+                           `endpoint::thread_border_router::create()`
+                           confirmed complete by reading esp-matter's own
+                           legacy `thread_border_router::add()` directly —
+                           it creates BOTH mandatory clusters itself, no
+                           manual cluster addition needed (an initial
+                           regex-based grep pass missed the Diagnostics
+                           line entirely and wrongly suggested a gap here
+                           — corrected by reading the actual function body
+                           before writing anything, the same "read the
+                           real source, don't trust a keyword search"
+                           discipline this repo already applies
+                           elsewhere). `cluster::thread_border_router_
+                           management::create()` is genuinely Delegate-
+                           based (`config->delegate`) — this is a verbatim
+                           port of esp-matter's own real
+                           `examples/thread_border_router` (Public
+                           Domain/CC0), the same "port a real, working
+                           reference rather than guess the integration
+                           shape" principle firmware/camera/'s, firmware/
+                           ble-mesh-bridge/'s, and firmware/
+                           zigbee-bridge/'s own entries already establish
+                           — using connectedhomeip's own real
+                           `GenericOpenThreadBorderRouterDelegate`
+                           (`platform/OpenThread/
+                           GenericThreadBorderRouterDelegate.h`), wired
+                           directly to the actual OpenThread Border
+                           Router stack via
+                           `esp_openthread_border_router_init()` — genuine
+                           working Thread networking (dataset get/set
+                           commands, PAN Change feature), not a stub;
+                           esp-matter's own separate `examples/
+                           all_device_types_app` mock delegate exists for
+                           a non-functional case, confirmed NOT what this
+                           file uses. See firmware/thread-border-router/
+                           README.md's own preamble for the complete
+                           architecture detail, including the ONE real
+                           line changed from Espressif's own original
+                           (`CMakeLists.txt`'s own `EXTRA_COMPONENT_DIRS`
+                           needed the same relative-to-absolute-path fix
+                           firmware/zigbee-bridge/'s own copy of this
+                           identical pattern already needed, since this
+                           repo places the file at a different depth than
+                           the SDK's own `examples/` tree). Two chips, two
+                           firmware images — the exact same ESP32-S3
+                           (host, this application) + ESP32-H2 (RCP,
+                           plain ESP-IDF `examples/openthread/ot_rcp`, not
+                           part of this repo) split firmware/
+                           zigbee-bridge/ already established, on
+                           Espressif's own real **ESP Thread Border Router
+                           board**. Build-verified in Docker for `esp32s3`
+                           — genuinely needed a two-step build to
+                           reproduce for real, not assumed: `CONFIG_
+                           AUTO_UPDATE_RCP=y` (shipped, unmodified, in
+                           this file's own `sdkconfig.defaults`) makes the
+                           S3 build's own CMake step bundle a pre-built
+                           RCP image, which fails outright if the ESP32-H2
+                           `ot_rcp` example hasn't been built first on the
+                           same machine (`FileNotFoundError` on `ot_rcp/
+                           build/rcp_version`, confirmed as a real,
+                           reproducible build-time coupling, not a bug in
+                           this port) — fixed by building `ot_rcp` for
+                           `esp32h2` first in the same Docker container,
+                           then building this device type second, matching
+                           the real two-step order Espressif's own README
+                           documents. Not hardware-tested — no real ESP
+                           Thread Border Router board (or a standalone
+                           ESP32-S3 + ESP32-H2 pair wired the same way)
+                           was physically available when written, and
+                           verifying this one for real also needs a
+                           genuine Thread end-device to actually
+                           commission onto the resulting network. Not
+                           offered in `tools/product-wizard/` — same
+                           reasoning as firmware/camera/, firmware/
+                           ble-mesh-bridge/, and firmware/zigbee-bridge/
+                           (two-chip, no GPIO fields of its own).
+  CMakeLists.txt,           Espressif's own build configuration, with the
+  main/CMakeLists.txt,      one `EXTRA_COMPONENT_DIRS` path fix described
+  partitions.csv,           above — otherwise unmodified.
+  sdkconfig.defaults,
+  main/esp_ot_config.h,
+  main/idf_component.yml,
+  main/linker.lf
 tools/
   dev.sh                  opens the Docker dev environment
   gen_factory.sh          local QR + factory partition generator
@@ -10710,8 +10857,8 @@ SECURITY.md               flash encryption / secure boot / signed OTA guidance
    reasoning firmware/camera/'s own entry already establishes
    (Espressif's own unmodified build files, no GPIO fields of their own
    to customize).
-2. Implement Matter **OTA** — partially done. Sixty-six of the sixty-
-   eight firmware types ship `CONFIG_ENABLE_OTA_REQUESTOR=y`, which adds
+2. Implement Matter **OTA** — partially done. Sixty-seven of the sixty-
+   nine firmware types ship `CONFIG_ENABLE_OTA_REQUESTOR=y`, which adds
    the OTA Requestor cluster to the root node endpoint entirely via
    Kconfig — esp-matter's own core startup (`esp_matter_core.cpp`) calls
    `esp_matter_ota_requestor_init()`/`_start()` automatically once that
@@ -10728,7 +10875,13 @@ SECURITY.md               flash encryption / secure boot / signed OTA guidance
    types' own repository-layout entries above), neither of which sets
    this option — OTA Requestor is genuinely off for those two as
    shipped, matching Espressif's own reference default rather than this
-   repo's own.
+   repo's own. `firmware/thread-border-router/` also keeps its own
+   unmodified reference `sdkconfig.defaults` (like `firmware/camera/`,
+   not counted in the "sixty-three... this repo's own template" figure
+   above) but is NOT a third OTA exception — its own shipped defaults DO
+   set `CONFIG_ENABLE_OTA_REQUESTOR=y`, confirmed by reading that file
+   directly rather than assumed identical to the other two-chip bridges'
+   own defaults.
 
    Still open: a real OTA **transfer** needs an OTA Provider node
    commissioned onto the same fabric, actually serving a `.bin` (e.g.
@@ -11280,6 +11433,75 @@ SECURITY.md               flash encryption / secure boot / signed OTA guidance
    already-proven `extraPickers` shape instead), and hardware-testing any
    of the new chips/sensors across all four devices (none was physically
    available when written).
+10. Two follow-ups after the RF433/IR bridge merge, both from real user
+    feedback rather than this session's own initiative:
+
+    **`firmware/rf-ir-bridge/` gained two purely cosmetic module-
+    reference pickers.** The user noticed this device type had no
+    left-sidebar module picker the way `firmware/temperature-sensor/`'s
+    own SENSOR_TYPE chip picker does, and asked what was missing. Checked
+    first, rather than assumed either way: RF433/IR each genuinely speak
+    exactly ONE protocol regardless of which physical receiver module is
+    wired up (every EV1527/PT2262-compatible 433MHz superheterodyne
+    module presents the same OOK/ASK data pin; every 38kHz IR demodulator
+    module presents the same inverted-logic OUT pin) — so a real driver-
+    selecting picker would have nothing to actually select between, the
+    opposite situation from temperature-sensor's own genuinely different
+    per-chip protocols. Resolved by adding two `cosmetic: true`
+    `extraPickers` entries (real, commonly-sold receiver modules —
+    MX-RM-5V/RXB6/SRX887 for 433MHz, TSOP38238/VS1838B/IRM-3638 for IR —
+    purely "here's what to actually buy," zero effect on the generated
+    firmware), the exact same contract `firmware/color-light/`'s own
+    addressableChipRef picker already establishes, reused rather than
+    inventing a second mechanism. Verified with the established Node.js
+    sandboxed regression check (39/39 checks, including confirming
+    picking a cosmetic module never adds a fourth sed command).
+
+    **`firmware/thread-border-router/` — a real Thread Border Router**
+    (device type 0x0091), added after the user explicitly asked for it
+    despite this repo's own earlier, correct reasoning for excluding it
+    (Matter devices already interoperate directly; "Thread" support in a
+    bridge context would mean a genuine Border Router role, the same
+    network-infrastructure category this repo's own earlier device-type
+    catalog sweep had already ruled out). Confirmed directly against the
+    CSA's own ThreadBorderRouter.xml before porting anything —
+    `class="simple" scope="endpoint"`, genuinely standalone-buildable,
+    not `class="utility"` — and confirmed `endpoint::thread_border_
+    router::create()` is a complete top-level helper (creates both
+    mandatory clusters, Thread Network Diagnostics and Thread Border
+    Router Management, itself) by reading its actual `add()` body
+    directly, not a keyword grep (an initial regex-based search missed
+    the Diagnostics line entirely and wrongly suggested a gap). A
+    verbatim port of esp-matter's own real `examples/
+    thread_border_router` (same "port a real, working reference"
+    principle as `firmware/camera/`, `firmware/ble-mesh-bridge/`, and
+    `firmware/zigbee-bridge/`), using connectedhomeip's own real
+    `GenericOpenThreadBorderRouterDelegate` wired to the actual
+    OpenThread Border Router stack — genuine working Thread networking,
+    not a stub. The same two-chip shape as `firmware/zigbee-bridge/`
+    (ESP32-S3 host + ESP32-H2 RCP, on Espressif's own real ESP Thread
+    Border Router board), and the same one real path-relocation fix that
+    file's own `CMakeLists.txt` already needed (`"../common"` →
+    `"${ESP_MATTER_PATH}/examples/common"`, since this repo places the
+    file at a different depth than the SDK's own `examples/` tree). A
+    real, reproducible build-time coupling was found and worked around,
+    not guessed: `CONFIG_AUTO_UPDATE_RCP=y` (shipped, unmodified) makes
+    the S3 build bundle a pre-built RCP image, which fails outright
+    unless the ESP32-H2 `ot_rcp` example has already been built on the
+    same machine first — fixed by building `ot_rcp` for `esp32h2` before
+    building this device type, in the same Docker container, matching
+    the real two-step order Espressif's own README documents. Build-
+    verified in Docker for `esp32s3`; not hardware-tested — no real ESP
+    Thread Border Router board was physically available when written,
+    and verifying this one for real also needs a genuine Thread
+    end-device to commission onto the resulting network. Not offered in
+    `tools/product-wizard/`, same reasoning as the other two-chip
+    devices. See its own repository-layout entry and its own
+    `README.md`'s preamble for the complete detail, including the
+    explicit architectural distinction from this repo's other three
+    bridges (it makes a separate Thread mesh's own already-Matter
+    end-devices reachable at all, rather than exposing non-Matter
+    devices as new Matter endpoints itself).
 
 ## Note on hardware/USB
 
