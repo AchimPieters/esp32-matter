@@ -1148,73 +1148,62 @@ and diffed against the original, a byte-for-byte match. All checks passed.
   data model assumes one device type = one chip = one firmware image on
   one board. Forcing it into that model would misrepresent how it
   actually needs to be built and flashed. Build and flash it by hand
-  following `firmware/camera/README.md`'s own instructions.
-- Thirteen device types exist (`On/Off Light`, `On/Off Switch`, `Contact
-  Sensor`, `Outlet`, `Temperature Sensor`, `Light Sensor`, `Dimmable
-  Light`, `Window Covering`, `Color Light`, `Addressable LED Strip`,
-  `Thermostat`, `Door Lock`, `Smoke/CO Alarm`) —
-  light/switch/contact/outlet are all digital GPIO, temperature is this
-  repo's first non-GPIO sensor (I2C, single-wire, or 1-Wire depending
-  which of its 7 supported chips you pick), light sensor is the first
-  analog/ADC one, dimmable light is the first with a real actuator
-  beyond simple on/off (PWM output via LEDC), window covering is the
-  first with continuous, multi-second physical movement (two relays +
-  time-based position estimation, no position sensor), color light is
-  the first with more than one PWM output channel driving one light
-  (RGB/RGBW/RGBWW, up to 5 channels), and the addressable LED strip is
-  the first over addressable/digital protocols rather than plain PWM —
-  8 selectable chips across three families (six single-wire NRZ chips
-  via RMT, APA102 over real SPI, and SM2335EGH bit-banged) — though,
-  like color light, it only ever shows one uniform color across the
-  whole strip/fixture, since Matter itself has no ratified per-pixel/
-  effects concept (see its own `app_main.cpp` header comment). All three
-  options from the original "next actuator" offer have now been built.
-- The window covering has no position sensor of any kind — position is
-  estimated purely from calibrated motor-on time (linear interpolation),
-  the same technique ESPHome's/Tasmota's own time-based cover components
-  use. This means the reported position can silently drift from reality if
-  the motor stalls, slips, or the covering is moved by hand; only a full
-  open or full close command re-anchors it to a known point (0% or 100%).
-  Not a bug specific to this implementation — an inherent limitation of
-  time-based (vs. sensor-based) position tracking, documented in
-  `firmware/window-covering/main/app_main.cpp`'s header comment. Also not
-  yet hardware-tested — no motor/relay hardware for this device type was
-  physically available when it was built.
-- The light sensor is the one device type in this list not actually
-  confirmed against real hardware for both of its sensor options — no
-  LDR or BH1750 module was on hand when either was built. Everything
-  upstream of the physical sensor reading (build, factory data, flash)
-  has been verified for both `SENSOR_TYPE` values; only the LDR path has
-  additionally been boot-tested on a real board. `COMPONENT_LIBRARY`'s
-  `verified: false` on both `LDR` and `BH1750` surfaces this in the
-  Configure Device dropdown and the Generate Firmware warning box.
-- The outlet's six power-monitoring chips are build-verified in Docker
-  only, not tested against real hardware — none of the six modules was
-  physically available here. Their protocols were checked against their
-  own manufacturer datasheets rather than trusted from secondary sources,
-  which caught two real bugs (BL0942 byte offsets, CSE7766 status-byte
-  semantics) — but two of the six (CSE7759, ADE7953) could only be
-  partially or indirectly verified even that way; see
-  `firmware/outlet/main/app_main.cpp`'s header comment for exactly which
-  chip got what level of verification. `COMPONENT_LIBRARY`'s per-chip
-  `verified`/`note` fields surface this in the Power Monitoring picker
-  and the Generate Firmware warning box, with an extra explicit caveat
-  for ADE7953 specifically.
-- The switch's buttons each send a real OnOff Toggle to whatever their own
-  endpoint is bound to (`client::cluster_update()`), but those bindings
-  themselves have to be set up through a controller with a Bindings UI
-  (e.g. Home Assistant) — the wizard doesn't help with that part. Only the
-  original single-button configuration (1 button, GPIO 4) has been tested
-  on real hardware; 2-4 buttons is build-verified in Docker only so far —
-  flagged in Generate Firmware's warning box whenever more than one
-  button is selected.
+  following `firmware/camera/README.md`'s own instructions. A handful of
+  other real Matter device types (camera-adjacent controllers/doorbells,
+  real media-playback devices, network/fabric-infrastructure devices,
+  and a couple of spec-forbidden or genuinely still-empty device type
+  definitions in this pinned SDK version) are excluded from the whole
+  repo for the same or related structural reasons, not just from the
+  wizard — see CLAUDE.md's own "Open next steps" for the full, per-
+  device-type reasoning behind each.
+- Sixty-four device types are offered here (see the full list at the top
+  of this file) — this section deliberately doesn't try to itemize the
+  hardware-verification status of every one individually; that level of
+  detail (which chips/sensors/outputs are datasheet-verified vs. build-
+  verified-only vs. real-hardware-tested, and why) lives in each device
+  type's own `main/app_main.cpp` header comment and in CLAUDE.md's own
+  repository-layout section, kept current there as each device type is
+  added rather than duplicated (and inevitably left to go stale) here.
+  As a blanket statement: the large majority of device types in this
+  repo are Docker build-verified but not hardware-tested — no physical
+  module existed for most of them when they were written. Where a device
+  type's own `COMPONENT_LIBRARY` entry is flagged `verified: false` for
+  a particular chip/sensor choice, this wizard surfaces that directly in
+  the Configure Device picker and the Generate Firmware warning box.
+- Most device types show an **Identify LED** checkbox (on by default) in
+  Configure Device — a real Matter cluster, not a wizard-only option.
+  A handful of device types genuinely carry NO Identify cluster at all
+  (confirmed directly against each one's own CSA device type XML) and
+  correspondingly show no such checkbox: Temperature Controlled Cabinet,
+  Door Lock Controller, Thermostat Controller, and Closure Controller
+  among them. This isn't a wizard gap — those device types' own spec
+  simply never lists Identify as a cluster they're allowed to carry.
+- A subset of device types (Dimmer Switch, Color Dimmer Switch, On/Off
+  Sensor, Door Lock Controller, Thermostat Controller, Window Covering
+  Controller, Closure Controller, Pump Controller, Control Bridge) are
+  client-side "remote control" devices: they send real Matter commands
+  to whatever a controller's own Binding-cluster UI (e.g. Home
+  Assistant) points them at, rather than reacting to commands
+  themselves. This wizard has no Binding-cluster UI of its own — setting
+  up that binding is entirely the controller's job, after commissioning.
+  Verifying one of these for real also needs a second, already-
+  commissioned bindable target device on the same fabric, not just the
+  remote device alone.
+- Two of those client-side devices (Door Lock Controller's LockDoor/
+  UnlockDoor, Closure Controller's MoveTo) send genuinely *timed*
+  Matter commands — a real protocol requirement their own target
+  clusters' spec XML marks `timed="true"`, needing a client-chosen
+  timeout window before the command itself is sent. That timeout is a
+  fixed, reasonable `#define` in the firmware (1000ms) — not something
+  this wizard exposes as a configurable field, the same way it doesn't
+  expose Matter protocol-level tuning for any other cluster either.
 - The generated `sed` commands match on the `#define`'s name, not its
   current value, so they're idempotent — but if a line's been hand-edited
   into some other shape entirely (not `#define NAME GPIO_NUM_<digits>`),
   the command silently no-ops instead of erroring. Customise & Review
   shows the exact command if you want to check or run it yourself.
 - The flash command's offsets are only *physically verified* for
-  esp32 — the other four modules follow documented ESP-IDF convention
+  esp32 — the other modules follow documented ESP-IDF convention
   (see the comment above `MODULES` in `index.html`) but haven't been
   tested against real hardware in this repo. `idf.py build` always prints
   its own authoritative flash command at the end of step 1 — cross-check
@@ -1226,23 +1215,6 @@ and diffed against the original, a byte-for-byte match. All checks passed.
   test PAA is never on it. That's an ecosystem-level restriction, not a
   bug here (see the comment at the top of `tools/gen_factory.sh`). Home
   Assistant and chip-tool don't have this restriction.
-- `firmware/thermostat/` had none of its hardware available when it was
-  built: no OpenTherm adapter board (so the OPENTHERM output mode is
-  protocol-verified and Docker build-verified only, never tested against
-  a real boiler), no rotary encoder, and none of the three selectable
-  displays. It's the first genuinely large gap in this repo between
-  "build-verified" and "hardware-verified" for a whole device type —
-  worth closing before relying on it the way most of the others have
-  been.
-- `firmware/door-lock/` has the same kind of gap: no servo, relay, or
-  reed-switch hardware was available when it was built, so it's Docker
-  build-verified across all 3 meaningful configs (servo/no-sensor,
-  servo/with-sensor, relay/no-sensor) but never tested against a real
-  lock.
-- `firmware/smoke-co-alarm/` is the newest device type offered here and
-  has the same kind of gap: no MQ-2 or MQ-7 module was available when it
-  was built, so it's Docker build-verified across all 3 sensor configs
-  (MQ2+MQ7, MQ2-only, MQ7-only) but never tested against real sensors.
 
 ## Design notes
 
