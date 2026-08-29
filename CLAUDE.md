@@ -6477,6 +6477,202 @@ firmware/solar-power/     Solar Power — fifty-first device type: a solar
                            chips was physically available when written).
   partitions.csv           same OTA + fctry layout as firmware/light/
   sdkconfig.defaults        same as firmware/light/
+firmware/mode-select/     Mode Select — fifty-second device type, and this
+                           repo's first over the older, simpler Mode Select
+                           cluster (predating the ModeBase-derived family
+                           used five times elsewhere in this repo): a
+                           physical scene/activity selector, three buttons
+                           (Home/Away/Night).
+  main/app_main.cpp        Confirmed directly against the CSA's own
+                           data_model/1.6/device_types/ModeSelectDeviceType
+                           .xml: Mode Select (0x0027) is the whole device
+                           type, exactly one mandatoryConform cluster, no
+                           options — genuinely thin as a device type on its
+                           own, which is why it was passed over in favor of
+                           Cooktop/On-Off-Sensor/Solar Power before being
+                           picked up as part of working through every
+                           remaining real Matter device type.
+                           `endpoint::mode_select::create()` confirmed
+                           complete/ready-to-use by reading esp-matter's
+                           own legacy `mode_select::add()` directly.
+                           Confirmed NOT code-driven (no `mode_select/`
+                           folder under `data_model_provider/clusters/` —
+                           its own function_list is the classic legacy
+                           pair) — CurrentMode is a plain ember attribute,
+                           written via `attribute::update()` for local
+                           button presses, and (confirmed by reading
+                           `mode-select-server.cpp`'s own `ChangeToMode()`
+                           directly) written automatically by the
+                           cluster's own generic command handler for a
+                           remote ChangeToMode command — no app code
+                           needed to accept that command, only to react to
+                           the resulting attribute change via
+                           `attribute::PRE_UPDATE`.
+
+                           SupportedModes turned out to need a genuinely
+                           new "how do I supply a cluster's supported-
+                           value list" pattern: `cluster::mode_select::
+                           config_t`'s own `delegate` field IS the
+                           mechanism — confirmed by reading
+                           `ModeSelectDelegateInitCB` directly, it casts
+                           that pointer straight to a `ModeSelect::
+                           SupportedModesManager*` and calls `ModeSelect::
+                           setSupportedModesManager()`, a single global
+                           static manager (same "static class method, no
+                           per-cluster-instance construction" shape
+                           firmware/cooktop/'s own `TemperatureControl
+                           Cluster::SetDelegate()` already established).
+                           `ModeSelectManager` here is ported from
+                           connectedhomeip's own real reference
+                           (`examples/chef/common/clusters/mode-select/
+                           chef-supported-modes-manager.h`), simplified
+                           for a single fixed `ModeOptionsProvider`
+                           (begin/end pointers into one static array)
+                           shared by every endpoint. Each `ModeOptionStruct`
+                           uses an EMPTY `SemanticTags` list rather than a
+                           placeholder manufacturer-specific tag — the
+                           field only carries a max-count constraint, no
+                           minimum, so this is more honest than inventing
+                           a tag value with no real meaning for "Home"/
+                           "Away"/"Night" (no CSA-standard semantic tag
+                           namespace exists for this kind of generic
+                           security-panel mode set). A real, quickly-
+                           caught compile error: `SupportedModesManager`'s
+                           own `ModeOptionStructType` member-type alias is
+                           `private` — a derived class's override can't
+                           name it directly, fixed by spelling the fully-
+                           qualified real type (`ModeSelect::Structs::
+                           ModeOptionStruct::Type`) in the override
+                           signature instead, confirmed by an actual
+                           Docker build failure, not guessed.
+
+                           Three buttons (Home/Away/Night), one shared
+                           debounce task (same "one shared task, N
+                           configured inputs" shape firmware/switch/'s own
+                           multi-button design already establishes). No
+                           dedicated per-mode indicator LED — nothing in
+                           the cluster's own spec calls for one, and
+                           CurrentMode is already directly visible to any
+                           bound controller. Boots to mode 0 ("Home").
+                           Standard quick-power-cycle factory reset.
+                           Build-verified in Docker (one real compile
+                           error caught and fixed — see above, clean on
+                           the second attempt); not hardware-tested (no
+                           pushbutton hardware for this specific device
+                           type physically available when written).
+  partitions.csv           same OTA + fctry layout as firmware/light/
+  sdkconfig.defaults        same as firmware/light/
+firmware/mounted-onoff-control/  Mounted On/Off Control — fifty-third
+                           device type: an in-wall relay module (the class
+                           of hardware sold as e.g. "Shelly 1"/"Sonoff
+                           Basic") wired into an existing fixture's own
+                           switch-leg, replacing its dumb wall switch —
+                           rather than a smart bulb (firmware/light/) or a
+                           plug-in outlet (firmware/outlet/).
+  main/app_main.cpp        Confirmed directly against the CSA's own
+                           data_model/1.6/device_types/
+                           MountedOnOffControl.xml (device type 0x010F,
+                           revision 2, explicitly classified as
+                           `superset="On/Off Plug-in Unit"`): Identify
+                           (with TriggerEffect) + Groups + On/Off[Lighting]
+                           + Scenes Management (with CopyScene) are ALL
+                           mandatoryConform — the real, meaningful
+                           difference from firmware/light/'s own OnOffLight
+                           (0x0100): Groups and Scenes Management are
+                           mandatory here, not simply absent.
+                           `endpoint::mounted_on_off_control::create()`
+                           confirmed complete/ready-to-use by reading
+                           esp-matter's own legacy `mounted_on_off_
+                           control::add()` directly: wires up Identify
+                           (with TriggerEffect) + Groups + OnOff[Lighting,
+                           On+Toggle commands] + ScenesManagement [with
+                           CopyScene/CopyScene-response], all from one
+                           `config_t` extending the exact same `on_off_
+                           with_lighting_config` base firmware/light/'s
+                           own `on_off_light::config_t` uses — zero manual
+                           cluster-creation code needed at all.
+
+                           Output is a relay, not an LED — a real,
+                           deliberate framing difference from firmware/
+                           light/'s own bulb-IS-the-load design: this
+                           device type represents a wall-mounted CONTROL
+                           module wired into a separate, non-smart fixture,
+                           gating power to a load it doesn't itself emit
+                           light from. `MOUNTED_ONOFF_RELAY_GPIO`
+                           (active-LOW, matching firmware/outlet/'s own
+                           relay convention) reflects that. No local
+                           physical button — same "purely remote-
+                           controlled, Identify LED is the only local
+                           hardware" shape firmware/light/'s own device
+                           already establishes; a real product in this
+                           category commonly also senses an existing
+                           physical wall switch's own contact closure to
+                           keep local control working, a genuine hardware
+                           variant not attempted here (same "smallest
+                           reasonable next step" scope cut this repo
+                           applies throughout). Occupancy Sensing (client)
+                           — optionalConform, confirmed directly against
+                           the XML — added via the identical NULL-config/
+                           CLUSTER_FLAG_CLIENT shape firmware/light/'s own
+                           identical addition already establishes.
+                           Standard quick-power-cycle factory reset.
+                           Build-verified in Docker (clean first attempt);
+                           not hardware-tested (no relay module physically
+                           available for this specific device type when
+                           written).
+  partitions.csv           same OTA + fctry layout as firmware/light/
+  sdkconfig.defaults        same as firmware/light/
+firmware/mounted-dimmable-load-control/  Mounted Dimmable Load Control —
+                           fifty-fourth device type, and the dimmable
+                           sibling of firmware/mounted-onoff-control/: an
+                           in-wall dimmer module wired into an existing
+                           fixture's own switch-leg, replacing its dumb
+                           dimmer.
+  main/app_main.cpp        Confirmed directly against the CSA's own
+                           data_model/1.6/device_types/
+                           MountedDimmableLoadControl.xml (device type
+                           0x0110, revision 2, explicitly classified as
+                           `superset="Dimmable Plug-In Unit"`): Identify
+                           (with TriggerEffect) + Groups + On/Off[Lighting]
+                           + Level Control[OnOff+Lighting, mandatoryConform
+                           here — not merely optional the way it is on
+                           firmware/light/'s own OnOffLight device type] +
+                           Scenes Management (with CopyScene) are ALL
+                           mandatoryConform. `endpoint::mounted_dimmable_
+                           load_control::create()` confirmed complete/
+                           ready-to-use — and its own `config_t` is
+                           confirmed to be a straight alias (`using
+                           config_t = dimmable_light::config_t;`) for
+                           firmware/dimmable-light/'s own config type, so
+                           this file's own endpoint construction (including
+                           the OnLevel-null fix) is a direct, verbatim
+                           reuse of that file's own proven configuration,
+                           just passed to a different top-level `create()`
+                           function that also wires up Groups +
+                           ScenesManagement automatically.
+
+                           Output is PWM gating a real dimmer module's
+                           control input, same framing firmware/
+                           dimmable-plug/'s own header comment already
+                           establishes for the plug-in case (a real
+                           AC-mains dimmer needs real safety-relevant
+                           power electronics outside this repo's "read the
+                           datasheet, drive the GPIO" style without real
+                           hardware to validate against). `OnLevel` is
+                           left null, reusing the same real, hardware-
+                           confirmed bug fix firmware/dimmable-light/'s,
+                           firmware/color-light/'s, and firmware/
+                           dimmable-plug/'s own LevelControl configs
+                           already apply. Occupancy Sensing (client) —
+                           optionalConform, added the same way firmware/
+                           mounted-onoff-control/'s own identical addition
+                           already establishes. Standard quick-power-cycle
+                           factory reset. Build-verified in Docker (clean
+                           first attempt); not hardware-tested (no MOSFET/
+                           dimmer-module hardware physically available for
+                           this specific device type when written).
+  partitions.csv           same OTA + fctry layout as firmware/light/
+  sdkconfig.defaults        same as firmware/light/
 tools/
   dev.sh                  opens the Docker dev environment
   gen_factory.sh          local QR + factory partition generator
@@ -8704,7 +8900,90 @@ SECURITY.md               flash encryption / secure boot / signed OTA guidance
    fifty). Build-verified in Docker, clean first attempt; not hardware-
    tested (no module of any of the six power-monitor chips physically
    available when written).
-2. Implement Matter **OTA** — partially done. All fifty-one firmware
+
+   At this point the user asked explicitly to keep going "totdat alle
+   devices zijn toegevoegd" (until all devices have been added) — a shift
+   from "pick good candidates" to genuinely exhaustive coverage of the
+   real Matter device type catalog, including candidates previously
+   passed over as "weaker." A full inventory of every device type XML in
+   the pinned SDK (91 files) was taken and classified: `class="utility"`
+   device types (ElectricalSensor, PowerSource — both explicitly
+   `scope="node"`/`scope="endpoint"` utility classification, meaning
+   Matter's own spec intends them ONLY as composed pieces of other device
+   types, never standalone products — confirmed directly in their own
+   XML `<classification>` tags, not assumed; both already exist as
+   composed pieces in outlet/heat-pump/water-heater/solar-power) stay
+   composed-only, not built standalone. TemperatureControlledCabinet is
+   `class="simple"` but its own real clusters (Oven Cavity Operational
+   State/Oven Mode) are the exact same genuine SDK gap Oven's own
+   deferral already documents, and it isn't sold as a standalone product
+   outside a parent Oven/Refrigerator — not built standalone either.
+   Every controller/media/bridge/infra device type already ruled out in
+   earlier sessions (Aggregator, BaseDeviceType, CameraController,
+   CastingVideo*, ContentApp, ControlBridge, DoorLockController,
+   JointFabricAdmin, NetworkInfraManager, OtaProvider/OtaRequestor,
+   PumpController, RootNodeDeviceType, SecondaryNetworkInterface,
+   Speaker, ThermostatController, ThreadBorderRouter, VideoRemoteControl,
+   WindowCoveringController, ClosureController) stays out of scope for
+   the same reasons already established. FloodlightCamera/SnapshotCamera/
+   VideoDoorbell are the same camera-adjacent, external-SDK/two-chip
+   exception firmware/camera/'s own header comment already establishes —
+   not attempted again here, flagged explicitly rather than silently
+   skipped. ElectricalEnergyTariff (Commodity Price + Electrical Grid
+   Conditions + Commodity Tariff) is a hard, principled blocker, not just
+   a weaker candidate: it represents current utility electricity pricing,
+   externally-sourced administrative data no local sensor can honestly
+   measure — building it would mean either fabricating tariff data
+   (violates this repo's own "no sensor, no fabricated data" principle)
+   or reaching out to a cloud pricing API (violates this repo's own
+   "no cloud" principle) — deferred with this documented reasoning, the
+   same category of deliberate, principled skip as Oven's own SDK-gap
+   deferral, not an oversight.
+
+   Three genuinely buildable candidates followed together in one sitting:
+   `firmware/mode-select/` (fifty-second device type — Mode Select, this
+   repo's first over the older, simpler Mode Select cluster, predating
+   the ModeBase family used five times elsewhere), `firmware/
+   mounted-onoff-control/` (fifty-third — a wall-mounted relay-module
+   superset of On/Off Plug-in Unit, with Groups+Scenes genuinely
+   mandatory rather than simply absent), and `firmware/
+   mounted-dimmable-load-control/` (fifty-fourth — the dimmable sibling,
+   its own `config_t` confirmed to be a literal alias for firmware/
+   dimmable-light/'s own config type). See each file's own repository-
+   layout entry above for the complete technical detail, including Mode
+   Select's own genuinely new "global static SupportedModesManager"
+   pattern (its `cluster::mode_select::config_t`'s own `delegate` field
+   IS that manager, confirmed by reading `ModeSelectDelegateInitCB`
+   directly) and a real, quickly-fixed compile error (a private member-
+   type alias in the base class, worked around by spelling the fully-
+   qualified real type in the override signature instead). Both Mounted
+   device types turned out to have complete, ready-to-use top-level
+   helpers doing all the real composition work already — among the
+   lowest-risk additions in this whole session, closely mirroring
+   firmware/light/'s and firmware/dimmable-light/'s own already-proven
+   code with a relay/PWM-into-dimmer-module framing correction (a wall-
+   mounted CONTROL module gating a separate load, not a bulb emitting
+   its own light) and Groups+Scenes now genuinely mandatory rather than
+   optional/absent. All three build-verified in Docker (Mode Select
+   needed one real, Docker-build-caught compile fix; the two Mounted
+   device types built clean on the first attempt). Wizard integration:
+   Mode Select reused the fixed-N `driver`+`extraButtons` shape firmware/
+   color-dimmer-switch/'s own entry already establishes (3 fixed button
+   fields, not a variable count, since a security-panel-style 3-mode set
+   is the product itself, not an open-ended count); both Mounted device
+   types reused the plain `driver`+`identify` shape firmware/light/'s and
+   firmware/dimmable-light/'s own entries already establish — zero new
+   wizard mechanism needed for any of the three, plus three new hand-
+   drawn icons (a 3-position dial; a tall wall plate with a rocker
+   paddle; the same plate with a slider+knob). Verified with the
+   established Node.js sandboxed regression check (all 53 device types,
+   zero failures) and real sed dry-runs against Docker copies, all three
+   byte-identical against their own shipped defaults. `tools/
+   product-wizard/README.md`'s own device-type list and count were
+   updated to match (fifty → fifty-three). None of the three is
+   hardware-tested (no pushbutton/relay/MOSFET-dimmer hardware for any of
+   them physically available when written).
+2. Implement Matter **OTA** — partially done. All fifty-four firmware
    types ship `CONFIG_ENABLE_OTA_REQUESTOR=y`, which adds the OTA Requestor
    cluster to the root node endpoint entirely via Kconfig — esp-matter's
    own core startup (`esp_matter_core.cpp`) calls

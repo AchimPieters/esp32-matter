@@ -61,10 +61,13 @@ open tools/product-wizard/index.html
   (`firmware/dimmer-switch/`), "Color Dimmer Switch"
   (`firmware/color-dimmer-switch/`), "Cooktop"
   (`firmware/cooktop/`), "On/Off Sensor"
-  (`firmware/on-off-sensor/`), or "Solar Power"
-  (`firmware/solar-power/`).
+  (`firmware/on-off-sensor/`), "Solar Power"
+  (`firmware/solar-power/`), "Mode Select" (`firmware/mode-select/`),
+  "Mounted On/Off Control" (`firmware/mounted-onoff-control/`), or
+  "Mounted Dimmable Load Control"
+  (`firmware/mounted-dimmable-load-control/`).
   All
-  fifty are real, buildable
+  fifty-three are real, buildable
   firmware, not just UI placeholders (`firmware/camera/`, this repo's
   twelfth device type, is deliberately NOT offered here — see its own
   section further down for why: its two-chip/two-firmware/external-SDK

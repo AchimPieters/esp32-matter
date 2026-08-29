@@ -3846,6 +3846,115 @@ const DEVICE_TYPES = [
       defaultsByModule: { esp32: 2, esp32c2: 2, esp32c3: 2, esp32c5: 2, esp32c6: 2, esp32c61: 2, esp32s3: 2, esp32h2: 2 },
     },
   },
+  {
+    id: "mode-select",
+    name: "Mode Select",
+    desc: "Matter Mode Select: a physical scene/activity selector — three buttons (Home/Away/Night, the classic security-panel-style mode set) reporting which mode is active via the Mode Select cluster, equally reachable from a controller's own ChangeToMode command. Reference device in firmware/mode-select/.",
+    shortDesc: "3 buttons select Home/Away/Night mode.",
+    // Matches project(matter_mode_select) in
+    // firmware/mode-select/CMakeLists.txt. Fixed 3-button shape (driver +
+    // 2 extraButtons) — same "fixed set, not a variable count" mode of
+    // extraButtons firmware/color-light/'s own RGB channels already
+    // establish, since a security-panel-style 3-mode set is the product
+    // this device represents, not an open-ended count.
+    binName: "matter_mode_select.bin",
+    driver: {
+      summary: "GPIO (digital input, active-low)",
+      fieldLabel: "\"Home\" button GPIO pin",
+      blockTitle: "\"Home\" button · digital GPIO input",
+      filePath: "firmware/mode-select/main/app_main.cpp",
+      defineName: "MODE_SELECT_BUTTON_HOME_GPIO",
+      currentGpio: 4,
+      defaultsByModule: { esp32: 4, esp32c2: 4, esp32c3: 4, esp32c5: 4, esp32c6: 4, esp32c61: 4, esp32s3: 4, esp32h2: 4 },
+    },
+    extraButtons: [
+      {
+        label: "\"Away\" Button",
+        fieldLabel: "\"Away\" button GPIO pin",
+        blockTitle: "\"Away\" button · digital GPIO input",
+        filePath: "firmware/mode-select/main/app_main.cpp",
+        defineName: "MODE_SELECT_BUTTON_AWAY_GPIO",
+        currentGpio: 16,
+        defaultsByModule: { esp32: 16, esp32c2: 16, esp32c3: 16, esp32c5: 16, esp32c6: 16, esp32c61: 16, esp32s3: 16, esp32h2: 16 },
+      },
+      {
+        label: "\"Night\" Button",
+        fieldLabel: "\"Night\" button GPIO pin",
+        blockTitle: "\"Night\" button · digital GPIO input",
+        filePath: "firmware/mode-select/main/app_main.cpp",
+        defineName: "MODE_SELECT_BUTTON_NIGHT_GPIO",
+        currentGpio: 17,
+        defaultsByModule: { esp32: 17, esp32c2: 17, esp32c3: 17, esp32c5: 17, esp32c6: 17, esp32c61: 17, esp32s3: 17, esp32h2: 17 },
+      },
+    ],
+    identify: {
+      summary: "GPIO (digital output)",
+      fieldLabel: "Identify LED GPIO pin",
+      blockTitle: "Identify LED · digital output",
+      filePath: "firmware/mode-select/main/app_main.cpp",
+      defineName: "IDENTIFY_LED_GPIO",
+      currentGpio: 2,
+      defaultsByModule: { esp32: 2, esp32c2: 2, esp32c3: 2, esp32c5: 2, esp32c6: 2, esp32c61: 2, esp32s3: 2, esp32h2: 2 },
+    },
+  },
+  {
+    id: "mounted-onoff-control",
+    name: "Mounted On/Off Control",
+    desc: "Matter Mounted On/Off Control: an in-wall relay module (the class of hardware sold as e.g. \"Shelly 1\"/\"Sonoff Basic\") wired into an existing fixture's own switch-leg, replacing its dumb wall switch. A superset of On/Off Plug-in Unit — Groups + Scenes Management are mandatory here, not merely absent. Reference device in firmware/mounted-onoff-control/.",
+    shortDesc: "In-wall relay module, Groups+Scenes mandatory.",
+    // Matches project(matter_mounted_on_off_control) in
+    // firmware/mounted-onoff-control/CMakeLists.txt. Same driver+identify
+    // shape firmware/light/'s own entry already uses — no local button
+    // (purely remote-controlled), same as that file.
+    binName: "matter_mounted_on_off_control.bin",
+    driver: {
+      summary: "GPIO (relay, active-LOW)",
+      fieldLabel: "Relay GPIO pin",
+      blockTitle: "Relay · digital output",
+      filePath: "firmware/mounted-onoff-control/main/app_main.cpp",
+      defineName: "MOUNTED_ONOFF_RELAY_GPIO",
+      currentGpio: 2,
+      defaultsByModule: { esp32: 2, esp32c2: 2, esp32c3: 2, esp32c5: 2, esp32c6: 2, esp32c61: 2, esp32s3: 2, esp32h2: 2 },
+    },
+    identify: {
+      summary: "GPIO (digital output)",
+      fieldLabel: "Identify LED GPIO pin",
+      blockTitle: "Identify LED · digital output",
+      filePath: "firmware/mounted-onoff-control/main/app_main.cpp",
+      defineName: "IDENTIFY_LED_GPIO",
+      currentGpio: 4,
+      defaultsByModule: { esp32: 4, esp32c2: 4, esp32c3: 4, esp32c5: 4, esp32c6: 4, esp32c61: 4, esp32s3: 4, esp32h2: 4 },
+    },
+  },
+  {
+    id: "mounted-dimmable-load-control",
+    name: "Mounted Dimmable Load Control",
+    desc: "Matter Mounted Dimmable Load Control: an in-wall dimmer module wired into an existing fixture's own switch-leg, replacing its dumb dimmer. A superset of Dimmable Plug-In Unit — Groups + Scenes Management are mandatory here, not merely absent. PWM gates a real dimmer module's own control input, same as firmware/dimmable-plug/. Reference device in firmware/mounted-dimmable-load-control/.",
+    shortDesc: "In-wall dimmer module, Groups+Scenes mandatory.",
+    // Matches project(matter_mounted_dimmable_load_control) in
+    // firmware/mounted-dimmable-load-control/CMakeLists.txt. Same
+    // driver+identify shape firmware/dimmable-light/'s own entry already
+    // uses.
+    binName: "matter_mounted_dimmable_load_control.bin",
+    driver: {
+      summary: "GPIO (PWM output)",
+      fieldLabel: "Dimmer PWM GPIO pin",
+      blockTitle: "Dimmer PWM · LEDC output",
+      filePath: "firmware/mounted-dimmable-load-control/main/app_main.cpp",
+      defineName: "MOUNTED_DIMMER_PWM_GPIO",
+      currentGpio: 2,
+      defaultsByModule: { esp32: 2, esp32c2: 2, esp32c3: 2, esp32c5: 2, esp32c6: 2, esp32c61: 2, esp32s3: 2, esp32h2: 2 },
+    },
+    identify: {
+      summary: "GPIO (digital output)",
+      fieldLabel: "Identify LED GPIO pin",
+      blockTitle: "Identify LED · digital output",
+      filePath: "firmware/mounted-dimmable-load-control/main/app_main.cpp",
+      defineName: "IDENTIFY_LED_GPIO",
+      currentGpio: 4,
+      defaultsByModule: { esp32: 4, esp32c2: 4, esp32c3: 4, esp32c5: 4, esp32c6: 4, esp32c61: 4, esp32s3: 4, esp32h2: 4 },
+    },
+  },
 ];
 
 function findDeviceType(id) {
@@ -4256,6 +4365,34 @@ const DEVICE_TYPE_ICONS = {
     <path d="M34.4 34.4L38.5 38.5"/>
     <path d="M9.5 38.5L13.6 34.4"/>
     <path d="M34.4 13.6L38.5 9.5"/>
+  </svg>`,
+  // A 3-position dial: three dots on an arc, the leftmost one filled —
+  // "one of a small fixed set of physical positions is currently
+  // selected," the natural pictogram for a scene/mode selector, distinct
+  // from every knob/encoder icon elsewhere in this wizard (those show a
+  // continuous pointer-on-a-circle, not discrete positions).
+  "mode-select": `<svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M10 32C10 19.85 19.85 10 32 10"/>
+    <circle cx="10" cy="32" r="4" fill="currentColor" stroke="none"/>
+    <circle cx="15.5" cy="17" r="3"/>
+    <circle cx="27" cy="9.5" r="3"/>
+  </svg>`,
+  // A tall wall plate (distinct proportions from outlet's own rounded-
+  // square plate) with a single rocker paddle near the top — "the switch
+  // is in its ON position" — the standard in-wall-toggle pictogram.
+  "mounted-onoff-control": `<svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+    <rect x="13" y="5" width="22" height="38" rx="4"/>
+    <rect x="18" y="11" width="12" height="14" rx="3" fill="currentColor" stroke="none"/>
+  </svg>`,
+  // Same wall-plate proportions as mounted-onoff-control's own icon, with
+  // a slider track + knob instead of a rocker paddle — the standard
+  // in-wall-dimmer pictogram, the one real visual difference from that
+  // device's own icon matching the one real functional difference
+  // between them.
+  "mounted-dimmable-load-control": `<svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+    <rect x="13" y="5" width="22" height="38" rx="4"/>
+    <path d="M24 11V37"/>
+    <circle cx="24" cy="18" r="4" fill="currentColor" stroke="none"/>
   </svg>`,
   // Three identical blade paths, each in its own <g transform="rotate(...
   // 24 24)"> rather than hand-computed rotated coordinates — a plain,
