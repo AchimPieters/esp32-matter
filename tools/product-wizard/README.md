@@ -1221,3 +1221,116 @@ and diffed against the original, a byte-for-byte match. All checks passed.
 - Single self-contained `index.html` — plain HTML/CSS/vanilla JS, no
   dependencies, matches the "no hidden code" principle in `CLAUDE.md`.
 - State persists only in `localStorage`; clearing browser data resets it.
+- Every device type is one entry in a single `DEVICE_TYPES` array. What
+  actually varies between 65 device types is which optional GPIO/config
+  "field" mechanisms a given entry declares — reused across device types
+  wherever a new one's own shape genuinely matches an existing one, and
+  deliberately duplicated (not force-shared) wherever it doesn't. In the
+  rough order they were introduced:
+  - `driver`/`secondary`/`identify` — up to three always-rendered GPIO
+    fields (the primary output/input, an optional second pin, and the
+    Identify LED). Each is its own object on the device type entry, not
+    a fixed positional list — a device type simply omits the key it
+    doesn't have (see "Known limitations" above for the handful of
+    device types with no `identify` field at all, since their own CSA
+    spec carries no Identify cluster to back a checkbox for).
+  - `componentOptions` — a single-select radio list of interchangeable
+    chip/sensor choices for one field (Temperature Sensor's 7 chips,
+    Light Sensor's LDR/BH1750, Occupancy Sensor's PIR/RCWL-0516/
+    HLK-LD2410), each option resolved by id from the shared
+    `COMPONENT_LIBRARY` dictionary below.
+  - `extraButtons` — one or more additional fixed GPIO fields beyond
+    `driver` (Color Light's Green/Blue PWM channels, Robot Vacuum's 5
+    motor/vacuum/mop pins), or — when the device type also sets
+    `buttonCountDefineName` — a variable "how many?" picker (the
+    Switch's 1-4 independent buttons) that reveals only that many of the
+    array's own entries.
+  - `extraPickers` — one or more independently-checkable single-select
+    "which chip drives this optional feature" pickers, each entry
+    carrying its own `pins` array rendered only once that chip is
+    selected (Outlet's Power Monitoring chip, Thermostat's Output/
+    Display choices). Kept deliberately separate from `componentOptions`
+    since a chip choice here doesn't drive the primary GPIO field's own
+    label the way `componentOptions` does.
+  - `statusLed`/`positionSensor`/`dockSensor`/`plugSensor`/`doorSensor`
+    — five parallel, near-identical single-GPIO checkbox-gated optional
+    fields (off by default, `GPIO_NUM_NC` in the shipped firmware),
+    each with its own hardcoded checkbox label and description text
+    rather than one shared, parameterized mechanism. Deliberate: each
+    represents a genuinely different physical thing (an on/off-mirroring
+    LED, a lock bolt's real position, a robot's charging-dock contact,
+    an EV's plug-detect signal, an oven door's real open/closed state)
+    — a single shared field's own copy would misdescribe at least four
+    of the five uses. Every one of the four render/complete/sed/review
+    sites this shape touches is duplicated by hand for each new use
+    rather than generalized, on the theory that five short, honest,
+    purpose-written blocks read better than one contorted generic one.
+  - `rotaryEncoder` — a self-contained optional checkbox + N-pin block
+    for a local physical control (Thermostat's own setpoint knob),
+    rendered separately from the button-shaped mechanisms above since a
+    quadrature encoder needs two correlated GPIOs, not one.
+  - `numberField` — a single plain-integer `#define` (Addressable
+    Light's pixel count) — the one field shape that isn't a GPIO pin at
+    all, validated against its own `min`/`max` instead of "0 or higher."
+  - `clusterOptions`/`chipChoiceGroups` — this wizard's only multi-select
+    checkbox mechanism (every other list-style picker above is single-
+    select), built for Air Quality Sensor's and Smoke/CO Alarm's own
+    independently-checkable optional Matter clusters. Checking a cluster
+    auto-enables whichever chip backs it (and, where one chip honestly
+    backs several clusters at once in one transaction — e.g. a PM sensor
+    reporting PM1/PM2.5/PM10 together — auto-checks the others too,
+    never a partial/dishonest subset); `chipChoiceGroups` layers a
+    nested single-select radio underneath a cluster whose chip can be
+    one of several interchangeable options (Temperature/Relative
+    Humidity's own 4-chip choice). A chip's enabled-ness is always
+    *derived* from which clusters are currently checked, never stored as
+    a separate flag, so it can never drift out of sync with the
+    checkboxes themselves.
+- `COMPONENT_LIBRARY` is one shared dictionary, keyed by component id,
+  holding every chip/sensor's own metadata (label, GPIO pin
+  requirements, hardware-verified flag, sourcing note) once — referenced
+  by id from `componentOptions`, `extraPickers`, and `clusterOptions`
+  alike, rather than duplicating the same chip's own facts across every
+  device type that happens to offer it (e.g. the six power-monitoring
+  chips shared by Outlet, Electrical Meter, Heat Pump, Water Heater, and
+  Solar Power).
+- Generate Firmware applies every change as a real `sed -i` command
+  anchored on the `#define`'s own name, not a diff/patch — a deliberate
+  fix, not the original design: the unified-diff format Customise &
+  Review's own preview once used turned out NOT to be a format `patch`
+  itself actually accepts (`patch: **** Only garbage was found in the
+  patch input.`, caught by actually running it, not by inspecting the
+  text). A `sed` substitution has no such format to get wrong, tolerates
+  whatever value is currently on the line, and needs no line numbers —
+  naturally idempotent as a side effect, not by design.
+- This environment has no real browser, so every wizard change is
+  verified by extracting `index.html`'s own `<script>` content into a
+  Node.js `vm` sandbox (`document`/`localStorage`/`window`/`navigator`
+  stubbed with minimal fakes) and calling `renderConfigureDevice`/
+  `isProductComplete`/`buildSedCommands`/`renderCustomiseReview`
+  directly against a constructed product object — this wizard's own
+  established regression-check method, re-run as a full sweep across
+  every device type whenever a shared mechanism changes, not just the
+  device type that prompted the change. The exact generated `sed`
+  commands are then, separately, actually run inside the pinned Docker
+  image against a scratch copy of the real `app_main.cpp` and diffed
+  against the original — confirming the sandboxed JS logic and the real
+  GNU `sed` behavior agree, since macOS's own BSD `sed` doesn't share
+  the same syntax the generated commands assume. A handful of visual-
+  only changes (the outlet icon's own wall-plate frame, field layout)
+  were additionally checked by rendering the page with a headless
+  Chromium instead, when one was available in the working environment.
+- Every device-type card's icon is hand-drawn SVG line art (`DEVICE_
+  TYPE_ICONS` in `index.html`) in the spirit of Apple's own SF Symbols/
+  HomeKit accessory icons — not the actual Apple assets, but drawn to
+  read the same way: light 2.5px strokes, no background chrome baked
+  into the icon itself (the card button it sits inside already has its
+  own border). One deliberate exception: the outlet icon keeps its own
+  square wall-plate frame, found only by actually rendering the page
+  with a headless Chromium and noticing a bare circle-with-2-dots reads
+  as a smiley face at real card size, not an outlet.
+- Each Select Module card also shows a real vector module illustration
+  (one SVG per chip, from the repo-root `modules/` directory, loaded via
+  a plain relative `<img src>` rather than inlined — these are full
+  illustrations, not small hand-drawn line art like the device-type
+  icons above) alongside its own connectivity badges.
