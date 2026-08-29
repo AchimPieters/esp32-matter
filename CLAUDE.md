@@ -6824,6 +6824,183 @@ firmware/electrical-utility-meter/  Electrical Utility Meter — fifty-fifth
                            available when written).
   partitions.csv           same OTA + fctry layout as firmware/light/
   sdkconfig.defaults        same as firmware/light/
+firmware/meter-reference-point/  Meter Reference Point — fifty-sixth
+                           device type, and the simplest firmware in this
+                           entire repository: exactly one cluster
+                           (Identify), plus this repo's second real
+                           root-endpoint addition (TimeSynchronization,
+                           reusing firmware/electrical-utility-meter/'s
+                           own newly-established pattern verbatim).
+  main/app_main.cpp        Confirmed directly against the CSA's own
+                           data_model/1.6/device_types/
+                           MeterReferencePoint.xml (device type 0x0512,
+                           revision 1): `<clusters>` lists exactly one
+                           entry, Identify (mandatoryConform) — genuinely
+                           the device type's entire cluster surface. Its
+                           own `<conditions>` block declares a named
+                           condition, "ElectricalEnergy," confirmed by
+                           reading the whole file directly to never
+                           actually be referenced by any conditional
+                           clause anywhere in the same file — a declared-
+                           but-unused condition, likely meant only for
+                           downstream composition into a larger topology
+                           this repo doesn't model. Its own
+                           `<conditionRequirements>` block makes
+                           `TimeSyncCond` mandatoryConform on the Root
+                           Node — the exact same requirement firmware/
+                           electrical-utility-meter/'s own device type
+                           already satisfies, confirmed the same fix
+                           applies here directly with no new research
+                           needed. No top-level `endpoint::
+                           meter_reference_point::create()` helper exists
+                           (confirmed via Docker `grep`) — hand-assembled
+                           from the same lower-level free functions
+                           firmware/on-off-sensor/'s own device type
+                           already establishes: `endpoint::create()` +
+                           `cluster::descriptor::create()` (always first)
+                           + `add_device_type(endpoint, 0x0512, 1)`
+                           (literal hex values) + a single `cluster::
+                           identify::create()` call. With no measurement
+                           cluster at all, the Identify LED is the only
+                           hardware this device type needs or gets.
+                           Standard quick-power-cycle factory reset.
+                           Build-verified in Docker (clean first attempt);
+                           not hardware-tested (nothing beyond a plain LED
+                           is needed — this repo's own standard identify-
+                           LED wiring is already confirmed working on real
+                           hardware many times over).
+  partitions.csv           same OTA + fctry layout as firmware/light/
+  sdkconfig.defaults        same as firmware/light/
+firmware/battery-storage/  Battery Storage — fifty-seventh device type: an
+                           AC-coupled home battery storage system (the
+                           class of hardware built around a real hybrid
+                           inverter/battery bank, e.g. Victron/Growatt-
+                           class or a simpler DIY off-grid inverter+
+                           battery setup) — real AC-side power/energy
+                           metering via firmware/solar-power/'s own
+                           already-proven 6-chip subsystem, plus real
+                           battery state (voltage + a derived percent-
+                           remaining) via a simple ADC voltage divider.
+  main/app_main.cpp        The CSA's own data_model/1.6/device_types/
+                           BatteryStorage.xml (device type 0x0018,
+                           revision 2) was previously deferred (see
+                           firmware/electrical-utility-meter/'s own
+                           repository-layout entry above) as genuinely
+                           malformed in this SDK — confirmed by reading
+                           the raw file directly with `cat -A`, its own
+                           revision-history text claims "Added mandate of
+                           two Power Source and Electrical Sensor composed
+                           devices types," but the actual XML body only
+                           contains ONE `<composedDeviceTypes>` block
+                           (with duplicated, not distinct, cluster
+                           requirements) plus a second, structurally
+                           invalid block containing a bare `<cluster>`
+                           element with no `<deviceType>` wrapper at all.
+                           Rather than continue deferring or guess at the
+                           CSA's unpublished intent, this device instead
+                           uses esp-matter's own complete, ready-to-use
+                           top-level helper — `endpoint::battery_
+                           storage::create()`, confirmed to exist by
+                           reading `esp_matter_endpoint.cpp`'s own
+                           `battery_storage::add()` directly — which
+                           represents Espressif's own SDK engineers'
+                           authoritative resolution of the same ambiguity:
+                           ONE endpoint composing a real PowerSource
+                           (Battery + Rechargeable features, with a
+                           genuine battery-metrics attribute set:
+                           BatVoltage, BatPercentRemaining,
+                           BatTimeRemaining, BatCapacity,
+                           BatTimeToFullCharge, BatChargingCurrent,
+                           ActiveBatFaults, ActiveBatChargeFaults)
+                           alongside ONE composed Electrical Sensor
+                           (EPM+EEM, ExportedEnergy+CumulativeEnergy
+                           features force-set — same "generates/exports
+                           power" framing firmware/solar-power/'s own
+                           device type already establishes) and
+                           DeviceEnergyManagement[PowerAdjustment] — not
+                           two of anything. Same same-endpoint,
+                           multiple-device-types-on-one-DeviceTypeList
+                           composition style firmware/heat-pump/'s and
+                           firmware/solar-power/'s own header comments
+                           already confirm valid, applied here to resolve
+                           a genuinely ambiguous spec document rather than
+                           an unambiguous one.
+
+                           A real `data_model_provider/clusters/
+                           power_source/` folder DOES exist in this SDK —
+                           but reading its own `integration.cpp` directly
+                           shows it only implements cross-endpoint
+                           bookkeeping (EndpointList, multi-power-source-
+                           per-node Order/Status), confirmed by its own
+                           source comment ("to keep generated-data-model
+                           behavior consistent," not to replace the plain
+                           ember attribute store for the individual
+                           battery metrics) — `battery_storage::add()`
+                           itself populates BatVoltage/BatPercentRemaining/
+                           etc. via the same plain `attribute::create_
+                           bat_voltage()`-style calls every other plain-
+                           ember cluster in this repo already uses, so
+                           this file writes them at runtime via the
+                           ordinary `attribute::update()` +
+                           `esp_matter_nullable_uint32()`/
+                           `esp_matter_nullable_uint8()` helpers, not a
+                           registry-lookup-and-cast pattern.
+
+                           `BATTERY_STORAGE_VOLTAGE_ADC_GPIO` reads the
+                           actual battery pack voltage through a plain
+                           resistive divider — the same ADC1 +
+                           `esp_adc/adc_cali.h` calibration pattern
+                           firmware/light-sensor/'s own LDR and firmware/
+                           soil-sensor/'s own capacitive probe already
+                           establish — reported directly as `BatVoltage`.
+                           `BatPercentRemaining` is derived via a plain
+                           two-point linear map between
+                           `BATTERY_STORAGE_EMPTY_MV`/`_FULL_MV` (both
+                           adjustable, defaulting to a 4S LiFePO4 pack's
+                           own typical range) — same "adjustable, not a
+                           calibrated reading" honesty precedent firmware/
+                           soil-sensor/'s own two-point moisture
+                           calibration already establishes. `BatCapacity`
+                           is a plain adjustable `#define` (the owner's
+                           own real pack's rated mAh spec) — same
+                           "adjustable, real per-unit config" precedent
+                           firmware/cooktop/'s own description string
+                           already establishes, not a measurement.
+                           `BatTimeRemaining`/`BatTimeToFullCharge`/
+                           `BatChargingCurrent` are deliberately left at
+                           their created null defaults — this file has no
+                           dedicated charging-current sensor (a genuinely
+                           different hardware category from the AC-side
+                           power-monitor chips, which measure the whole
+                           system's net AC power flow, not the DC charging
+                           current specifically) — same "no sensor, no
+                           fabricated data" honesty precedent this repo
+                           applies throughout, not a technical limitation
+                           of the cluster itself.
+
+                           `BATTERY_STORAGE_CHIP` is the exact same 6-way
+                           choice firmware/solar-power/'s and firmware/
+                           electrical-meter/'s own equivalent `#define`s
+                           already offer — every driver, protocol detail,
+                           and sourcing citation reused unchanged. Wiring
+                           one of these chips onto the inverter's own AC
+                           port measures exactly the same physics as
+                           measuring any other AC circuit; the
+                           `ExportedEnergy` framing `battery_storage::
+                           add()` itself force-sets matches a battery
+                           system's own most natural interpretation
+                           (energy flowing OUT of storage to loads), the
+                           same semantic reasoning firmware/solar-power/'s
+                           own header comment already establishes for its
+                           own Exported-not-Imported correction. Standard
+                           quick-power-cycle factory reset. Build-verified
+                           in Docker (clean first attempt); not hardware-
+                           tested (no module of any of the six power-
+                           monitor chips, and no battery pack/voltage-
+                           divider hardware, was physically available when
+                           written).
+  partitions.csv           same OTA + fctry layout as firmware/light/
+  sdkconfig.defaults        same as firmware/light/
 tools/
   dev.sh                  opens the Docker dev environment
   gen_factory.sh          local QR + factory partition generator
@@ -9181,7 +9358,45 @@ SECURITY.md               flash encryption / secure boot / signed OTA guidance
    attempt despite the new root-endpoint-targeting pattern; not hardware-
    tested (no module of any of the six power-monitor chips physically
    available when written).
-2. Implement Matter **OTA** — partially done. All fifty-five firmware
+
+   The user then asked explicitly to keep going even further than the
+   earlier "documented skip" stance — genuinely attempt every remaining
+   candidate rather than stop at a principled deferral, given enough
+   determination and creativity. Two more device types followed as a
+   direct result of re-examining what had been called "hard blockers"
+   with fresh eyes: `firmware/meter-reference-point/` (fifty-sixth device
+   type — the simplest firmware in this whole repo, reusing firmware/
+   electrical-utility-meter/'s own just-established root-TimeSync pattern
+   directly) and `firmware/battery-storage/` (fifty-seventh — genuinely
+   revisiting the malformed-XML deferral from the previous pass, this
+   time found to be UNBLOCKED by esp-matter's own complete top-level
+   `endpoint::battery_storage::create()` helper, which represents
+   Espressif's own SDK engineers' authoritative resolution of the same
+   spec ambiguity: one endpoint, real PowerSource battery attributes plus
+   one composed Electrical Sensor, not the "two of everything" the CSA's
+   own broken revision-history text claimed). This is a real, worth-
+   remembering lesson: a first pass's "documented skip" is not always the
+   final word — re-reading the SDK's own top-level endpoint helpers
+   directly, rather than only the low-level cluster/config primitives a
+   first pass happened to check, surfaced a real, working resolution the
+   first pass's own more narrowly-scoped research had missed. See both
+   files' own repository-layout entries above for the complete technical
+   detail. Wizard integration for meter-reference-point needed no driver
+   field at all (identify-only, matching electrical-meter's/solar-power's
+   own no-driver precedent); battery-storage reused the existing
+   `extraPickers` Power Monitor Chip shape (new `BS_CHIP_*` COMPONENT_
+   LIBRARY entries) plus a new `driver` field for the battery-voltage ADC
+   pin — zero new wizard mechanism for either, plus two new hand-drawn
+   icons (a map-pin outline; a battery body with a fill bar). Verified
+   with the established Node.js sandboxed regression check (all 56 device
+   types, zero failures) and real sed dry-runs against Docker copies, both
+   byte-identical against their own shipped defaults. `tools/
+   product-wizard/README.md`'s own device-type list and count were
+   updated to match (fifty-four → fifty-six). Both build-verified in
+   Docker, clean first attempt; neither hardware-tested (no module of any
+   of the six power-monitor chips, and no battery pack/voltage-divider
+   hardware, was physically available when written).
+2. Implement Matter **OTA** — partially done. All fifty-seven firmware
    types ship `CONFIG_ENABLE_OTA_REQUESTOR=y`, which adds the OTA Requestor
    cluster to the root node endpoint entirely via Kconfig — esp-matter's
    own core startup (`esp_matter_core.cpp`) calls
