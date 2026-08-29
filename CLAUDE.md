@@ -2120,8 +2120,256 @@ firmware/air-quality-sensor/  Air Quality Sensor — seventeenth device type,
                            genuinely different sensor hardware (e.g. an
                            NDIR CO2/formaldehyde sensor, an optical
                            particulate sensor, or a dedicated CO/NO2/ozone
-                           electrochemical cell) — out of scope for this
+                           electrochemical cell) — out of scope for that
                            pass.
+
+                           Later revisited (see "Open next steps" below,
+                           the "hobbyist cluster expansion" pilot): the
+                           user asked that every remaining optional cluster
+                           this device type can honestly back with a real,
+                           affordable, hobbyist-sourceable sensor actually
+                           get one — closing most of the gap the paragraph
+                           above once treated as out of scope, rather than
+                           leaving it there indefinitely. 8 of the 10 now
+                           have a real chip; Radon stays the one confirmed-
+                           impossible case (no affordable hobbyist-
+                           accessible sensor exists — real radon detection
+                           needs alpha-spectrometry/ionization-chamber
+                           hardware). Every new chip is its own independent
+                           `#define AIR_QUALITY_HAS_<CHIP> 0/1` toggle
+                           (CCS811 stays unconditional/always-on, exactly
+                           as it originally shipped) rather than a single
+                           mutually-exclusive `SENSOR_TYPE`-style choice,
+                           since a real product combining several of these
+                           at once (e.g. CO2/TVOC + PM + temp/humidity +
+                           CO) needs several chips wired up simultaneously
+                           — confirmed directly inside the real esp-matter
+                           SDK (grepped inside the pinned Docker image
+                           before writing any code) that every one of the
+                           nine gas-concentration namespaces
+                           (CO/CO2/NO2/Ozone/PM1/PM25/PM10/Formaldehyde/
+                           Radon/TVOC — note `pm25_concentration_
+                           measurement`, no underscore between "pm" and
+                           "25") share one underlying `concentration_
+                           measurement::create()` implementation and one
+                           shared `config_t`, so every new cluster added
+                           here reuses the exact same config-struct shape
+                           this file's own pre-existing CO2/TVOC clusters
+                           already established — no new esp-matter pattern
+                           needed, just more instances of an already-
+                           confirmed one.
+
+                           Temperature + RelativeHumidity
+                           (`AIR_QUALITY_HAS_TEMP_HUMIDITY`, a nested
+                           `AIR_QUALITY_TEMP_HUMIDITY_CHIP` choosing
+                           between SHT3x/SHT4x/AHT20/BME280) ports firmware/
+                           temperature-sensor/'s own already-datasheet-
+                           verified 4-chip I2C driver library verbatim
+                           (DHT11/DHT22/DS18B20 deliberately excluded here
+                           — single-wire/1-Wire, a worse fit than this
+                           device's own shared I2C bus, and DS18B20 has no
+                           humidity output at all) — both clusters land on
+                           this SAME AirQualitySensor endpoint, not the
+                           separate Temperature/Humidity Sensor device-type
+                           endpoints that file creates. CO
+                           (`AIR_QUALITY_HAS_MQ7_CO`) is a near-verbatim
+                           port of firmware/smoke-co-alarm/'s own MQ-7
+                           driver and LevelIndication-only
+                           CarbonMonoxideConcentrationMeasurement cluster.
+                           Ozone (`AIR_QUALITY_HAS_MQ131_OZONE`) is a
+                           genuinely new chip (MQ-131, Winsen "Low
+                           Concentration" variant) verified directly
+                           against Winsen's own manual (v1.6, fetched as a
+                           PDF and read via `pdftotext`): VC=VH=5.0V±0.1V
+                           DC, RL=1MΩ per the datasheet's own sensitivity-
+                           curve test circuit, 10-1000ppb range, "Over 48
+                           hours" preheat (documented, not enforced, same
+                           "not a substitute for real burn-in" framing
+                           MQ-7/MQ-2 already use) — and a genuinely
+                           different, worth-remembering electrical detail
+                           caught by actually reading the datasheet rather
+                           than assuming "one more MQ-series sensor behaves
+                           like the others": this sensor's own AOUT FALLS
+                           as ozone rises (confirmed both by the datasheet's
+                           own conductivity description and by working
+                           through the voltage-divider physics), the
+                           OPPOSITE polarity from MQ-7/MQ-2's own AOUT,
+                           which typically rises — a separate
+                           `classify_falling()` function (distinct from the
+                           existing rising-polarity `classify_rising()`)
+                           handles this rather than reusing one classifier
+                           for both. PM1 + PM2.5 + PM10
+                           (`AIR_QUALITY_HAS_PMS5003_PM`) is a Plantower
+                           PMS5003 — one UART frame genuinely reports all
+                           three particle-size concentrations together, so
+                           checking any ONE of these three clusters in the
+                           wizard auto-checks the other two as well (see
+                           the wizard-integration paragraph below) rather
+                           than allowing a partial, dishonest subset;
+                           protocol confirmed against Plantower's own
+                           "PMS5003 series data manual" (v2.3): default
+                           Active Mode (no command needed — RX-only wiring
+                           is enough), 32-byte frames, checksum = sum of
+                           bytes 0-29, and — confirmed by reading the
+                           manual's own field descriptions, not assumed —
+                           the "atmospheric environment" PM1.0/PM2.5/PM10
+                           triplet (bytes 10-15) is used, not the separate
+                           "CF=1 standard particle" triplet the same frame
+                           also carries, matching the convention every
+                           other real open-source PMS5003 integration
+                           (ESPHome, Home Assistant) already uses. The
+                           sensor's own onboard fan genuinely needs a real,
+                           separate 5V supply (its RX/TX lines are 3.3V TTL
+                           and connect directly to the ESP32, confirmed
+                           from the manual's own "Circuit Attentions"
+                           section). Formaldehyde
+                           (`AIR_QUALITY_HAS_ZE08CH2O_HCHO`) is a Winsen
+                           ZE08-CH2O electrochemical module, protocol
+                           confirmed against Winsen's own user's manual
+                           (v1.7) down to the exact byte-level frame tables
+                           and the manual's own published `FucCheckSum()`
+                           reference function (`~(sum of bytes 1-7) + 1`)
+                           — a real calibrated ppm reading (0-5ppm range),
+                           so NumericMeasurement is genuinely warranted
+                           here, not LevelIndication; the device's own
+                           default active-upload mode needs no command at
+                           all, though this file's driver defensively
+                           re-sends the documented "switch to active
+                           upload" command once at startup anyway, in case
+                           a previous owner left the module in Q&A mode.
+
+                           NO2 (`AIR_QUALITY_HAS_MICS4514_NO2`) is the
+                           lowest-confidence chip in this whole pass,
+                           flagged as such rather than silently treated as
+                           equally solid: no register-level datasheet
+                           exists for a bare MiCS-4514, but DFRobot sells a
+                           real, currently-available I2C breakout for it
+                           (SKU SEN0377) with a real, open-source Arduino
+                           library (github.com/DFRobot/DFRobot_MICS,
+                           MIT-licensed) — same "port a real reference
+                           rather than guess the integration shape"
+                           precedent already used in this repo for
+                           SM2335EGH (firmware/addressable-light/) when no
+                           clean official datasheet existed for it either.
+                           Fetched and read directly (not assumed from a
+                           library README): I2C address 0x78 (the module's
+                           own dial-switch "ADDRESS_3" default), one 6-byte
+                           read transaction starting at register 0x04
+                           returns OX/RED/POWER as three big-endian uint16
+                           values, a real wake-up sequence (write 0x01 to
+                           register 0x0A, wait 100ms) precedes any read,
+                           and NO2 is computed from the OX channel via a
+                           real coefficient-based formula
+                           (`(ratio - 0.045) / 6.13`, clamped to the
+                           library's own documented [0.1, 10.0] ppm range)
+                           — closer to CCS811's own category of "real
+                           calibrated reading" than to the MQ-series' own
+                           "no formula, adjustable threshold only"
+                           category, so NumericMeasurement is used here
+                           too. The library's own R0 (clean-air) baseline
+                           calibration normally needs a genuine several-
+                           minute warm-up wait before it's trustworthy;
+                           this file takes that baseline as a single
+                           reading shortly after boot instead (same "don't
+                           block this device's own startup for a sensor's
+                           real warm-up time" precedent CCS811's own
+                           skipped 20-minute conditioning delay already
+                           establishes), honestly documented as making
+                           early NO2 readings less trustworthy the sooner
+                           after boot they're taken, not hidden.
+
+                           Wizard integration (`tools/product-wizard/`)
+                           needed a genuinely new mechanism — this wizard's
+                           first multi-select checkbox list (every prior
+                           list-style picker, componentOptions/extraPickers/
+                           button-count, is single-select-radio only): a
+                           new `clusterOptions` array on `DEVICE_TYPES`
+                           (one entry per independently-checkable optional
+                           cluster, each naming either a single fixed
+                           backing `chip` or a `group` key into a new
+                           `chipChoiceGroups` array for a cluster with more
+                           than one possible chip — currently just
+                           Temperature/RelativeHumidity's own 4-way
+                           choice), plus two new shared helper functions
+                           (`clusterBackingChip()`, `chipIsEnabledForClusters()`)
+                           that every one of `renderConfigureDevice`/
+                           `isProductComplete`/`buildSedCommands`/
+                           `renderCustomiseReview` now calls, so a chip's
+                           own enabled-ness is always DERIVED from which
+                           clusters are currently checked — never stored
+                           as a separate flag — and can never drift out of
+                           sync with the checkboxes themselves. Checking a
+                           cluster whose chip also backs other clusters
+                           (PMS5003's own PM1/PM2.5/PM10 trio) auto-checks
+                           those too, a real correctness requirement (not
+                           just UX polish) given there's no way to read
+                           only part of one UART transaction. GPIO fields
+                           for chips needing dedicated pins (MQ-7/MQ-131's
+                           own ADC channel, PMS5003/ZE08-CH2O's own UART
+                           RX/TX pairs) reuse the EXISTING shared
+                           `p.pickerPins` object and the existing generic
+                           `data-pin-define` input handler verbatim — no
+                           new pin-input mechanism needed at all; chips
+                           sharing this device's own existing I2C bus
+                           (the four temp/humidity chip choices, plus
+                           MiCS-4514) need no new pins whatsoever. Named
+                           generically (`clusterOptions`/`chipChoiceGroups`,
+                           not air-quality-specific) so a future device
+                           type can reuse the same mechanism, per the
+                           user's own stated end goal of eventually
+                           rolling this out beyond this one pilot device
+                           type — though only air-quality-sensor actually
+                           uses it so far. Building this also caught one
+                           real, pre-existing, unrelated wizard bug:
+                           `renderCustomiseReview`'s own "DRIVER" review
+                           row was rendered unconditionally for every
+                           device type, but `driverSummary()` crashes on a
+                           device type with no `driver` field at all
+                           (firmware/electrical-meter/ — confirmed by
+                           actually calling `renderCustomiseReview` for
+                           every one of this wizard's 47 device types in a
+                           sandboxed check, not assumed safe) — fixed by
+                           making that row conditional on `driver` existing
+                           and hardening `driverSummary()` itself
+                           defensively too.
+
+                           Verified with a Node.js sandboxed check (this
+                           wizard's own established method, since no real
+                           browser is available in this environment):
+                           `clusterBackingChip()`/`chipIsEnabledForClusters()`/
+                           `clusterIdsBackedByChip()` exercised directly;
+                           the real `data-cluster-id` change-handler logic
+                           simulated end to end (checking PM2.5 alone, then
+                           confirming PM1/PM10 both auto-checked and both
+                           show up in the generated review AND the
+                           generated sed commands); every one of this
+                           wizard's 47 device types round-tripped through
+                           all 4 render/complete/sed/review functions with
+                           zero exceptions after the DRIVER-row fix above.
+                           `buildSedCommands`' own output was then run for
+                           real against a copy of the actual `app_main.cpp`
+                           (inside the pinned Docker image, since the
+                           generated commands are GNU-sed syntax, not
+                           macOS's BSD sed) and diffed against the
+                           original — exactly one line changed
+                           (`AIR_QUALITY_HAS_PMS5003_PM` 0→1), confirming
+                           every other generated command was a correct,
+                           harmless no-op against the file's own shipped
+                           defaults.
+
+                           Firmware build-verified in Docker across every
+                           new toggle individually (including all 4
+                           Temperature/Humidity chip choices), a realistic
+                           multi-chip combo (Temp+Humidity+CO+PM), and
+                           every toggle on at once (confirming the ADC1/
+                           UART/I2C peripheral budget isn't exceeded even
+                           in the maximal configuration) — the reverted
+                           default-config build was also re-confirmed
+                           byte-identical (same binary size) to the
+                           original CCS811-only build before any of this
+                           work started. None of the 6 new chips is
+                           hardware-tested — no physical module of any of
+                           them was available when written.
   partitions.csv           same OTA + fctry layout as firmware/light/
   sdkconfig.defaults        same as firmware/light/
 firmware/water-leak-detector/  Water Leak Detector — eighteenth device
@@ -8143,6 +8391,64 @@ SECURITY.md               flash encryption / secure boot / signed OTA guidance
    been hardware-tested — every device type they touch was already
    flagged as build-verified-only before this pass began, for hardware
    reasons unrelated to these specific changes.
+
+8. **"Hobbyist cluster expansion" pilot** — the user asked, beyond the
+   audit above, that every optional cluster still skipped anywhere in
+   this repo purely for "no sensor" reasons actually get a real,
+   affordable, hobbyist-sourceable sensor wherever one honestly exists,
+   framed explicitly around making a real Matter device buildable with
+   real, buyable parts — not a completeness exercise for its own sake.
+   Scoped deliberately as a PILOT on one device type first
+   (`firmware/air-quality-sensor/`, the device type with by far the
+   largest remaining gap — 10 skipped clusters), with the wizard
+   mechanism this produces designed generically enough to extend to other
+   device types later, per the user's own stated end goal, but not rolled
+   out further yet. Clusters with genuinely no realistic hobbyist sensor
+   stay documented skips, never faked — confirmed case by case, not
+   assumed: Radon (real detection needs alpha-spectrometry/ionization-
+   chamber hardware) was agreed skipped from the start; NO2 was initially
+   flagged as the pilot's own lowest-confidence candidate and only
+   implemented once a real DFRobot I2C breakout + its own open-source
+   library were independently confirmed to exist and actually documented.
+
+   See firmware/air-quality-sensor/'s own repository-layout entry above
+   for the complete technical detail (6 new chips — MQ-7 reused from
+   smoke-co-alarm, MQ-131, PMS5003, ZE08-CH2O, MiCS-4514, plus firmware/
+   temperature-sensor/'s own 4-chip I2C library reused verbatim — every
+   one independently datasheet/library-verified, most via real PDF
+   manuals fetched and read with `pdftotext`, this repo's established
+   discipline). Headline technical points worth remembering beyond that
+   file's own entry:
+   - Confirmed directly inside the real esp-matter SDK (grepped inside
+     the pinned Docker image before writing any code, not extrapolated)
+     that every one of Matter's nine gas-concentration-measurement
+     clusters shares one underlying `concentration_measurement::create()`
+     implementation and one shared `config_t` — a real, general finding
+     for any future device type touching one of these clusters, not
+     specific to air-quality-sensor.
+   - `tools/product-wizard/` gained a genuinely new mechanism —
+     `clusterOptions`/`chipChoiceGroups`, this wizard's first multi-select
+     checkbox list (every prior list-style picker was single-select-radio
+     only) — with a chip's own enabled-ness always DERIVED from which
+     clusters are currently checked rather than stored separately, so it
+     can never drift out of sync. Named generically, not air-quality-
+     specific, so a future device type can reuse it directly.
+   - Building this incidentally caught and fixed one real, pre-existing,
+     unrelated wizard bug (`renderCustomiseReview`'s own "DRIVER" review
+     row crashing for `firmware/electrical-meter/`, which has no `driver`
+     field at all) — found only because this pass's own verification
+     sandboxed every one of this wizard's 47 device types through all 4
+     render/complete/sed/review functions at once, a broader check than
+     any single device-type addition had exercised before.
+
+   Firmware build-verified in Docker across every new toggle individually,
+   a realistic multi-chip combo, and every toggle on at once; the wizard
+   mechanism verified via Node.js sandboxed checks (this environment's
+   established substitute for a real browser) plus a real sed-command
+   dry-run against a copy of the actual `app_main.cpp`, diffed against the
+   original. Not yet done: rolling `clusterOptions`/`chipChoiceGroups` out
+   to any device type beyond this one pilot, and hardware-testing any of
+   the 6 new chips (none was physically available when written).
 
 ## Note on hardware/USB
 

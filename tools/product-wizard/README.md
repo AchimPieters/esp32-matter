@@ -148,6 +148,27 @@ open tools/product-wizard/index.html
     sensor-specific `has-sensor-sidebar`) is shared with the switch's
     button-count picker below — same layout, same `.component-list`
     checkable-row styling, different content.
+  - Air Quality Sensor's own sidebar additionally shows a **multi-select
+    checkbox list** — "Other clusters" — this wizard's first (every
+    other list-style picker here, including the one just above, is
+    single-select-radio). Check off any optional Matter cluster you have
+    a real sensor for (Temperature, Relative Humidity, CO, Ozone, PM1/
+    PM2.5/PM10, Formaldehyde, NO2 — Radon isn't offered at all, no
+    affordable hobbyist sensor exists for it); checking one auto-checks
+    every other cluster the same backing chip also covers (e.g. checking
+    PM2.5 alone auto-checks PM1 and PM10 too, since one PMS5003 sensor
+    reports all three from a single UART frame — there's no honest way to
+    read only part of it). A chip needing its own dedicated GPIOs (an
+    analog gas sensor, a UART particulate/formaldehyde module) shows its
+    pin fields once any cluster it backs is checked; a chip that shares
+    this device's existing I2C bus (the four Temperature/Humidity chip
+    choices, plus the NO2 module) needs no extra fields at all. Built on
+    a new, deliberately generic `clusterOptions`/`chipChoiceGroups`
+    mechanism (not air-quality-specific) so a future device type can
+    reuse the same shape — see CLAUDE.md's own "hobbyist cluster
+    expansion" entry under "Open next steps" for the complete detail,
+    including the real esp-matter/wizard sourcing behind every one of the
+    6 new sensor chips this unlocked.
   - Real bug fixed alongside that redesign: for single-data-pin sensors
     (DHT11/DHT22/DS18B20's single-wire DATA line, the LDR's ADC pin —
     anything with `usesPin2: false` in `COMPONENT_LIBRARY`), the "pin 2"

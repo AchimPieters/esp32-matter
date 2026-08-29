@@ -574,7 +574,13 @@
   .component-list-item:hover { background: #f8fafc; }
   .component-list-item.selected { background: #f5f8ff; }
 
-  .component-list-item input[type="radio"] {
+  .component-list-item input[type="radio"],
+  .component-list-item input[type="checkbox"] {
+    /* Same hidden-native-input treatment for both — a checkbox list
+       (currently just air-quality's own optional-cluster picker) is a
+       multi-select instead of a single-select radiogroup, but visually
+       identical: a custom .tick square driven by the .selected class,
+       not the native browser control. */
     position: absolute;
     opacity: 0;
     width: 0;
@@ -915,6 +921,42 @@ const COMPONENT_LIBRARY = {
   // SHT3x-only and firmware/light-sensor/'s original LDR-only launches
   // already used, before either grew more chips later on request.
   AQ_CCS811: { name: "CCS811", category: "air-quality", bus: "I2C", pin1Label: "SDA", pin2Label: "SCL", usesPin2: true, verified: false, defineValue: "AIR_QUALITY_SENSOR_CCS811", note: "Real calibrated eCO2 (ppm) + eTVOC (ppb) digital gas sensor. Protocol (boot sequence, register map, output ranges) confirmed directly against ams's own CCS811 datasheet — see firmware/air-quality-sensor/main/app_main.cpp's header comment for the full detail. nWAKE must be tied to GND on the module — the datasheet's own recommended simplest wiring when the host doesn't need the sensor's lowest-power idle state, which this firmware doesn't." },
+  // The 9 optional-cluster chips below back Air Quality Sensor's own
+  // `clusterOptions` (see DEVICE_TYPES) — a genuinely new mechanism (this
+  // wizard's first multi-select checkbox list, cross-linked to which
+  // chip(s) back each checked cluster) documented in full where
+  // `clusterOptions`/`chipChoiceGroups` are defined below. Every chip here
+  // shares this device's existing I2C bus (the `driver`/`secondary` pin
+  // fields already rendered for AQ_CCS811 above) EXCEPT the four
+  // AQ_TEMP_* entries and AQ_MICS4514, which also share that same bus at
+  // their own address (no `pins` array — nothing new to wire), and MQ7/
+  // MQ131/PMS5003/ZE08CH2O, which each need their own dedicated `pins`
+  // (ADC or UART), same `pins`-array shape firmware/outlet/'s power-
+  // monitor chips already established. `enableDefineName` is the real
+  // `#define AIR_QUALITY_HAS_<CHIP> 0/1` toggle each one compiles behind
+  // — see app_main.cpp's own header comment for the full sourcing detail
+  // behind every one of these (each chip is real, currently sold, and
+  // independently datasheet/library-verified; only NO2 is flagged
+  // lower-confidence there).
+  AQ_TEMP_SHT3X: { name: "SHT3x", category: "air-quality-temp-humidity", bus: "I2C (shared)", verified: true, defineValue: "AIR_QUALITY_TEMP_HUMIDITY_CHIP_SHT3X", enableDefineName: "AIR_QUALITY_HAS_TEMP_HUMIDITY", note: "Shares this device's existing I2C bus (the Sensor pin 1/2 fields above) at its own address — no extra GPIOs needed. Same driver already verified on real hardware in firmware/temperature-sensor/." },
+  AQ_TEMP_SHT4X: { name: "SHT4x", category: "air-quality-temp-humidity", bus: "I2C (shared)", verified: false, defineValue: "AIR_QUALITY_TEMP_HUMIDITY_CHIP_SHT4X", enableDefineName: "AIR_QUALITY_HAS_TEMP_HUMIDITY", note: "Shares this device's existing I2C bus at its own address — no extra GPIOs needed." },
+  AQ_TEMP_AHT20: { name: "AHT20", category: "air-quality-temp-humidity", bus: "I2C (shared)", verified: false, defineValue: "AIR_QUALITY_TEMP_HUMIDITY_CHIP_AHT20", enableDefineName: "AIR_QUALITY_HAS_TEMP_HUMIDITY", note: "Shares this device's existing I2C bus at its own address — no extra GPIOs needed." },
+  AQ_TEMP_BME280: { name: "BME280", category: "air-quality-temp-humidity", bus: "I2C (shared)", verified: false, defineValue: "AIR_QUALITY_TEMP_HUMIDITY_CHIP_BME280", enableDefineName: "AIR_QUALITY_HAS_TEMP_HUMIDITY", note: "Shares this device's existing I2C bus at its own address — no extra GPIOs needed." },
+  AQ_MQ7: { name: "MQ-7", category: "air-quality-co", bus: "Analog", verified: false, enableDefineName: "AIR_QUALITY_HAS_MQ7_CO", note: "Cheap analog CO sensor — LevelIndication only (Matter's own qualitative Low/Medium/High/Critical scale), not a calibrated ppm reading. Same driver already used in firmware/smoke-co-alarm/.", pins: [
+    { label: "CO sensor", defineName: "AIR_QUALITY_MQ7_CO_GPIO", defaultsByModule: { esp32: 34, esp32c2: 34, esp32c3: 34, esp32c5: 34, esp32c6: 34, esp32c61: 34, esp32s3: 34, esp32h2: 34 } },
+  ] },
+  AQ_MQ131: { name: "MQ-131", category: "air-quality-ozone", bus: "Analog", verified: false, enableDefineName: "AIR_QUALITY_HAS_MQ131_OZONE", note: "Cheap analog ozone sensor — LevelIndication only, same reasoning as MQ-7 above. Its own AOUT falls (not rises) as ozone concentration rises, the opposite polarity from MQ-7/MQ-2 — see app_main.cpp's header comment.", pins: [
+    { label: "Ozone sensor", defineName: "AIR_QUALITY_MQ131_OZONE_GPIO", defaultsByModule: { esp32: 35, esp32c2: 35, esp32c3: 35, esp32c5: 35, esp32c6: 35, esp32c61: 35, esp32s3: 35, esp32h2: 35 } },
+  ] },
+  AQ_PMS5003: { name: "PMS5003", category: "air-quality-pm", bus: "UART", verified: false, enableDefineName: "AIR_QUALITY_HAS_PMS5003_PM", note: "Plantower laser particulate sensor — one UART frame reports PM1.0, PM2.5, and PM10 together, so this one chip backs all three clusters at once. Needs a real, separate 5V supply for its own onboard fan (its RX/TX data lines are 3.3V TTL and connect directly to the ESP32).", pins: [
+    { label: "UART RX", defineName: "AIR_QUALITY_PMS5003_RX_GPIO", defaultsByModule: { esp32: 16, esp32c2: 16, esp32c3: 16, esp32c5: 16, esp32c6: 16, esp32c61: 16, esp32s3: 16, esp32h2: 16 } },
+    { label: "UART TX", defineName: "AIR_QUALITY_PMS5003_TX_GPIO", defaultsByModule: { esp32: 17, esp32c2: 17, esp32c3: 17, esp32c5: 17, esp32c6: 17, esp32c61: 17, esp32s3: 17, esp32h2: 17 } },
+  ] },
+  AQ_ZE08CH2O: { name: "ZE08-CH2O", category: "air-quality-hcho", bus: "UART", verified: false, enableDefineName: "AIR_QUALITY_HAS_ZE08CH2O_HCHO", note: "Winsen electrochemical formaldehyde module — a real calibrated ppm reading (0-5ppm range), protocol confirmed directly against Winsen's own user's manual.", pins: [
+    { label: "UART RX", defineName: "AIR_QUALITY_ZE08CH2O_RX_GPIO", defaultsByModule: { esp32: 18, esp32c2: 18, esp32c3: 18, esp32c5: 18, esp32c6: 18, esp32c61: 18, esp32s3: 18, esp32h2: 18 } },
+    { label: "UART TX", defineName: "AIR_QUALITY_ZE08CH2O_TX_GPIO", defaultsByModule: { esp32: 19, esp32c2: 19, esp32c3: 19, esp32c5: 19, esp32c6: 19, esp32c61: 19, esp32s3: 19, esp32h2: 19 } },
+  ] },
+  AQ_MICS4514: { name: "MiCS-4514 (I2C breakout)", category: "air-quality-no2", bus: "I2C (shared)", verified: false, enableDefineName: "AIR_QUALITY_HAS_MICS4514_NO2", note: "The lowest-confidence chip in this device type — a DFRobot Gravity I2C breakout, ported from that library's own real open-source driver since no register-level datasheet exists for the module itself. Shares this device's existing I2C bus at its own address — no extra GPIOs needed. See app_main.cpp's header comment for the full detail." },
   // Pressure Sensor's own sensor picker — one entry today (BMP280), same
   // "scaffold ready to grow" shape as AQ_CCS811 above.
   PRESSURE_BMP280: { name: "BMP280", category: "pressure", bus: "I2C", pin1Label: "SDA", pin2Label: "SCL", usesPin2: true, verified: false, defineValue: "PRESSURE_SENSOR_BMP280", note: "Real barometric pressure sensor (300-1100 hPa). Register map and Bosch's own 64-bit fixed-point compensation formula confirmed directly against Bosch's official BMP280 datasheet — see firmware/pressure-sensor/main/app_main.cpp's header comment for the full detail." },
@@ -2031,8 +2073,8 @@ const DEVICE_TYPES = [
   {
     id: "air-quality",
     name: "Air Quality Sensor",
-    desc: "Matter air quality sensor: a CCS811 I2C gas sensor reports real calibrated eCO2 (ppm) and eTVOC (ppb) via CarbonDioxideConcentrationMeasurement/TotalVolatileOrganicCompoundsConcentrationMeasurement, plus a plain Good/Poor headline via the AirQuality cluster (a documented esp-matter gap means the finer Fair/Moderate/VeryPoor/ExtremelyPoor states aren't reachable yet — see app_main.cpp's header comment). Reference device in firmware/air-quality-sensor/.",
-    shortDesc: "eCO2 + eTVOC (CCS811), Good/Poor headline.",
+    desc: "Matter air quality sensor: a CCS811 I2C gas sensor reports real calibrated eCO2 (ppm) and eTVOC (ppb) via CarbonDioxideConcentrationMeasurement/TotalVolatileOrganicCompoundsConcentrationMeasurement, plus a plain Good/Poor headline via the AirQuality cluster (a documented esp-matter gap means the finer Fair/Moderate/VeryPoor/ExtremelyPoor states aren't reachable yet — see app_main.cpp's header comment). Every other AirQualitySensor.xml optional cluster this device type can honestly back — Temperature, Relative Humidity, CO, Ozone, PM1/PM2.5/PM10, Formaldehyde, NO2 — is now available too, each behind its own real, currently-sold sensor chip; check the ones you want below. Radon stays unavailable — no realistic hobbyist-accessible sensor exists for it. Reference device in firmware/air-quality-sensor/.",
+    shortDesc: "eCO2 + eTVOC (CCS811); check off any other clusters you have real sensors for.",
     // Matches project(matter_air_quality_sensor) in
     // firmware/air-quality-sensor/CMakeLists.txt. Same componentOptions +
     // driver/secondary I2C shape as firmware/temperature-sensor/'s and
@@ -2040,6 +2082,40 @@ const DEVICE_TYPES = [
     // mechanism needed, only one new COMPONENT_LIBRARY entry (AQ_CCS811).
     componentOptions: ["AQ_CCS811"],
     componentDefineName: "AIR_QUALITY_SENSOR_TYPE",
+    // clusterOptions + chipChoiceGroups — a genuinely new mechanism (this
+    // wizard's first multi-select checkbox list): every OTHER optional
+    // AirQualitySensor.xml cluster this device type can honestly back with
+    // a real chip, independently checkable, cross-linked to which chip
+    // backs it. Each entry names either a single fixed `chip` (COMPONENT_
+    // LIBRARY id — most of these, since one chip backs exactly one or
+    // three clusters and there's no real alternative to choose between) or
+    // a `group` key into chipChoiceGroups (currently just Temperature/
+    // RelativeHumidity, which can be backed by any of 4 interchangeable
+    // I2C chips — the same componentOptions-shaped choice firmware/
+    // temperature-sensor/'s own SENSOR_TYPE picker already offers,
+    // reused here as a nested radio rather than invented fresh). Checking
+    // a cluster auto-enables its backing chip (and, for PMS5003 — which
+    // reports all 3 PM sizes in one UART frame — every other cluster that
+    // same chip backs, since there's no way to read only part of one
+    // transaction); a chip's own `enableDefineName` toggle is always
+    // DERIVED from which clusters are currently checked, never stored
+    // separately, so it can never drift out of sync. See renderConfigureDevice/
+    // isProductComplete/buildSedCommands/renderCustomiseReview for the
+    // shared helper functions this mechanism is built on.
+    clusterOptions: [
+      { id: "Temperature", label: "Temperature", group: "tempHumidityChip" },
+      { id: "RelativeHumidity", label: "Relative Humidity", group: "tempHumidityChip" },
+      { id: "CO", label: "Carbon Monoxide", chip: "AQ_MQ7" },
+      { id: "Ozone", label: "Ozone", chip: "AQ_MQ131" },
+      { id: "PM1", label: "PM1.0 Particulate", chip: "AQ_PMS5003" },
+      { id: "PM2_5", label: "PM2.5 Particulate", chip: "AQ_PMS5003" },
+      { id: "PM10", label: "PM10 Particulate", chip: "AQ_PMS5003" },
+      { id: "Formaldehyde", label: "Formaldehyde", chip: "AQ_ZE08CH2O" },
+      { id: "NO2", label: "Nitrogen Dioxide", chip: "AQ_MICS4514" },
+    ],
+    chipChoiceGroups: [
+      { key: "tempHumidityChip", label: "Temperature/Humidity chip", chips: ["AQ_TEMP_SHT3X", "AQ_TEMP_SHT4X", "AQ_TEMP_AHT20", "AQ_TEMP_BME280"], defineName: "AIR_QUALITY_TEMP_HUMIDITY_CHIP" },
+    ],
     driver: {
       summary: "Sensor pin 1 (SDA)",
       fieldLabel: "Sensor pin 1 (SDA) GPIO",
@@ -3484,6 +3560,49 @@ function findComponent(id) {
   return c ? { id, ...c } : null;
 }
 
+/* --- clusterOptions / chipChoiceGroups shared helpers ------------------
+ * See the DEVICE_TYPES comment on air-quality's own clusterOptions entry
+ * for the full mechanism description. These three functions are the
+ * single source of truth every one of renderConfigureDevice/
+ * isProductComplete/buildSedCommands/renderCustomiseReview builds on, so
+ * "which chip backs this cluster" and "is this chip currently enabled"
+ * can never disagree between them. */
+
+// Resolves which COMPONENT_LIBRARY chip currently backs one clusterOptions
+// entry — either its own fixed `chip`, or (for a `group` entry) whichever
+// chip is currently chosen in p.chipChoices, defaulting to the group's
+// own first option the same way componentOptions/extraPickers already
+// default an unset selection.
+function clusterBackingChip(deviceType, p, cluster) {
+  if (cluster.chip) return findComponent(cluster.chip);
+  const group = (deviceType.chipChoiceGroups || []).find((g) => g.key === cluster.group);
+  if (!group) return null;
+  const chosenId = (p.chipChoices && p.chipChoices[cluster.group]) || group.chips[0];
+  return findComponent(chosenId);
+}
+
+// A chip is enabled exactly when at least one clusterOptions entry that
+// currently resolves to it is checked in p.enabledClusters — DERIVED,
+// never stored separately, so it can never drift out of sync with the
+// checkboxes themselves.
+function chipIsEnabledForClusters(deviceType, p, chipId) {
+  return (deviceType.clusterOptions || []).some((cluster) =>
+    !!(p.enabledClusters && p.enabledClusters[cluster.id]) &&
+    (clusterBackingChip(deviceType, p, cluster) || {}).id === chipId);
+}
+
+// Every cluster id that would need to be (re-)checked if `chipId` is the
+// backing chip for `cluster` and gets enabled — for a chip backing more
+// than one cluster (currently just PMS5003's PM1/PM2.5/PM10 trio), this
+// is every clusterOptions entry currently resolving to that same chip,
+// not just the one the user actually clicked (see the DEVICE_TYPES
+// comment above for why that's a correctness requirement, not just UX).
+function clusterIdsBackedByChip(deviceType, p, chipId) {
+  return (deviceType.clusterOptions || [])
+    .filter((cluster) => (clusterBackingChip(deviceType, p, cluster) || {}).id === chipId)
+    .map((cluster) => cluster.id);
+}
+
 /* Chips this repo's Docker dev flow (tools/dev.sh) targets via
  * `idf.py set-target <chip>`. Connectivity reflects the actual radios on
  * each chip, not marketing copy — ESP32-H2 has no Wi-Fi, for example.
@@ -4363,6 +4482,7 @@ function renderConfigureDevice(p) {
   const componentOptions = deviceType ? deviceType.componentOptions : null;
   const extraButtons = deviceType ? deviceType.extraButtons : null;
   const extraPickers = deviceType ? deviceType.extraPickers : null;
+  const clusterOptions = deviceType ? deviceType.clusterOptions : null;
   let numberField = deviceType ? deviceType.numberField : null;
   const defaultGpio = driver ? (driver.defaultsByModule[p.target] != null ? driver.defaultsByModule[p.target] : 2) : 2;
   const defaultSecondaryGpio = secondary ? (secondary.defaultsByModule[p.target] != null ? secondary.defaultsByModule[p.target] : 4) : 4;
@@ -4434,6 +4554,50 @@ function renderConfigureDevice(p) {
     : [];
   const pickerPinsValid = activePickerPins.every(({ pin }) =>
     Number.isInteger(p.pickerPins[pin.defineName]) && p.pickerPins[pin.defineName] >= 0);
+
+  // clusterOptions (currently just air-quality's own optional-cluster
+  // checkboxes) — default p.enabledClusters to "everything unchecked"
+  // (unlike componentOptions/extraPickers, nothing here is required, so
+  // there's no "first option" to default-select), then default-fill
+  // p.pickerPins for whichever chips are CURRENTLY enabled — same shared
+  // pickerPins object extraPickers already uses (deliberately reused, not
+  // a second parallel pins store, since a GPIO field behaves identically
+  // either way it got enabled).
+  if (clusterOptions) {
+    if (typeof p.enabledClusters !== "object" || p.enabledClusters == null) p.enabledClusters = {};
+    if (typeof p.chipChoices !== "object" || p.chipChoices == null) p.chipChoices = {};
+    if (typeof p.pickerPins !== "object" || p.pickerPins == null) p.pickerPins = {};
+    (deviceType.chipChoiceGroups || []).forEach((group) => {
+      if (p.chipChoices[group.key] == null) p.chipChoices[group.key] = group.chips[0];
+    });
+    COMPONENT_LIBRARY && Object.keys(COMPONENT_LIBRARY).forEach((chipId) => {
+      if (!chipIsEnabledForClusters(deviceType, p, chipId)) return;
+      const chip = findComponent(chipId);
+      if (chip && Array.isArray(chip.pins)) {
+        chip.pins.forEach((pin) => {
+          if (p.pickerPins[pin.defineName] == null) {
+            p.pickerPins[pin.defineName] = pin.defaultsByModule[p.target] != null ? pin.defaultsByModule[p.target] : 0;
+          }
+        });
+      }
+    });
+  }
+  // Every pin field currently active across all enabled cluster chips —
+  // same "flatten once" shape activePickerPins uses above.
+  const activeClusterChipPins = clusterOptions
+    ? Object.keys(COMPONENT_LIBRARY)
+        .filter((chipId) => chipIsEnabledForClusters(deviceType, p, chipId))
+        .flatMap((chipId) => {
+          const chip = findComponent(chipId);
+          return chip && Array.isArray(chip.pins) ? chip.pins.map((pin) => ({ chip, pin })) : [];
+        })
+    : [];
+  const clusterChipPinsValid = activeClusterChipPins.every(({ pin }) =>
+    Number.isInteger(p.pickerPins[pin.defineName]) && p.pickerPins[pin.defineName] >= 0);
+  const chipChoiceGroupsValid = !clusterOptions || (deviceType.chipChoiceGroups || []).every((group) => {
+    const groupInUse = clusterOptions.some((c) => c.group === group.key && p.enabledClusters[c.id]);
+    return !groupInUse || !!p.chipChoices[group.key];
+  });
 
   // Multi-button (currently just the switch): button 1 is always the
   // existing `driver` field, unchanged, so single-button products (every
@@ -4584,6 +4748,52 @@ function renderConfigureDevice(p) {
               `;
             }).join('<hr style="margin:20px 0;border:none;border-top:1px solid var(--border);">')}
           ` : ""}
+          ${clusterOptions && clusterOptions.length ? `
+            ${(componentOptions || hasVariableButtonCount || (extraPickers && extraPickers.length)) ? '<hr style="margin:20px 0;border:none;border-top:1px solid var(--border);">' : ""}
+            <h3>Other clusters</h3>
+            <p class="field-label">Check off any of these you have a real sensor for — this device type's other optional AirQualitySensor.xml clusters.</p>
+            <div class="component-list" role="group" aria-label="Other clusters">
+              ${clusterOptions.map((cluster) => {
+                const checked = !!p.enabledClusters[cluster.id];
+                const chip = clusterBackingChip(deviceType, p, cluster);
+                return `
+                  <label class="component-list-item ${checked ? "selected" : ""}">
+                    <input type="checkbox" data-cluster-id="${escapeHtml(cluster.id)}" ${checked ? "checked" : ""}>
+                    <span class="tick">&#10003;</span>
+                    <span class="component-list-item-text">
+                      <span class="component-name">${escapeHtml(cluster.label)}</span>
+                      <span class="component-bus">${chip ? `${escapeHtml(chip.name)} (${escapeHtml(chip.bus)})${chip.verified ? "" : " · unverified"}` : ""}</span>
+                    </span>
+                  </label>
+                `;
+              }).join("")}
+            </div>
+            <p class="field-note">
+              A gas/particulate cluster with no realistic hobbyist sensor — Radon — isn't offered here at all; see
+              firmware/air-quality-sensor/main/app_main.cpp's header comment for why.
+            </p>
+            ${(deviceType.chipChoiceGroups || []).map((group) => {
+              const groupInUse = clusterOptions.some((c) => c.group === group.key && p.enabledClusters[c.id]);
+              if (!groupInUse) return "";
+              const selected = findComponent(p.chipChoices[group.key]) || findComponent(group.chips[0]);
+              return `
+                <h3 style="margin-top:16px;">${escapeHtml(group.label)}</h3>
+                <div class="component-list" role="radiogroup" aria-label="${escapeHtml(group.label)}">
+                  ${group.chips.map(findComponent).map((s) => `
+                    <label class="component-list-item ${s.id === selected.id ? "selected" : ""}">
+                      <input type="radio" name="chip-choice-group-${escapeHtml(group.key)}" value="${escapeHtml(s.id)}" data-chip-choice-group="${escapeHtml(group.key)}" ${s.id === selected.id ? "checked" : ""}>
+                      <span class="tick">&#10003;</span>
+                      <span class="component-list-item-text">
+                        <span class="component-name">${escapeHtml(s.name)}</span>
+                        <span class="component-bus">${escapeHtml(s.bus)}${s.verified ? "" : " · unverified"}</span>
+                      </span>
+                    </label>
+                  `).join("")}
+                </div>
+                <p class="field-note">${selected.note ? escapeHtml(selected.note) : ""}</p>
+              `;
+            }).join("")}
+          ` : ""}
         </div>
       ` : ""}
 
@@ -4643,6 +4853,32 @@ function renderConfigureDevice(p) {
                 Adjust to match your board — these defaults are common for
                 ${escapeHtml(moduleName(p.target))} devkits, not a guarantee
                 for yours. Wiring/protocol details for ${escapeHtml(selected.name)}
+                are in the comment above its section in
+                ${escapeHtml(driver ? driver.filePath : "app_main.cpp")}.
+              </p>
+            </div>
+          `;
+        }).join("") : ""}
+
+        ${clusterOptions ? Object.keys(COMPONENT_LIBRARY).filter((chipId) => chipIsEnabledForClusters(deviceType, p, chipId)).map((chipId) => {
+          const chip = findComponent(chipId);
+          if (!chip || !Array.isArray(chip.pins) || !chip.pins.length) return "";
+          const backedClusters = clusterIdsBackedByChip(deviceType, p, chipId)
+            .map((id) => (clusterOptions.find((c) => c.id === id) || {}).label)
+            .filter(Boolean)
+            .join(" + ");
+          return `
+            <div class="driver-block">
+              <h3>${escapeHtml(chip.name)} (${escapeHtml(chip.bus)}) · ${escapeHtml(backedClusters)}</h3>
+              ${chip.pins.map((pin) => `
+                <label class="field-label" for="cluster-chip-pin-${escapeHtml(pin.defineName)}">${escapeHtml(pin.label)} GPIO pin</label>
+                <input type="number" id="cluster-chip-pin-${escapeHtml(pin.defineName)}" data-pin-define="${escapeHtml(pin.defineName)}" min="0" max="48" value="${p.pickerPins[pin.defineName]}" style="margin-bottom:12px;">
+                <div class="field-error">${Number.isInteger(p.pickerPins[pin.defineName]) && p.pickerPins[pin.defineName] >= 0 ? "" : "Enter a valid GPIO number (0 or higher)."}</div>
+              `).join("")}
+              <p class="field-note">
+                Adjust to match your board — these defaults are common for
+                ${escapeHtml(moduleName(p.target))} devkits, not a guarantee
+                for yours. Wiring/protocol details for ${escapeHtml(chip.name)}
                 are in the comment above its section in
                 ${escapeHtml(driver ? driver.filePath : "app_main.cpp")}.
               </p>
@@ -5132,9 +5368,30 @@ function isProductComplete(p) {
     ? deviceType.numberField : null;
   const numberFieldOk = !numberField ||
     (Number.isInteger(p[numberField.key]) && p[numberField.key] >= numberField.min && p[numberField.key] <= numberField.max);
+  // clusterOptions (currently just air-quality's own optional-cluster
+  // checkboxes) — same "compute fresh, don't trust p[...] being pre-
+  // filled" reasoning as buttonCount/numberField above. Uses the shared
+  // clusterBackingChip()/chipIsEnabledForClusters() helpers directly
+  // (both already tolerate p.enabledClusters/p.chipChoices being unset),
+  // so this validates correctly even before renderConfigureDevice() has
+  // ever run to default-fill p.pickerPins for a newly-checked chip.
+  const clusterOptions = deviceType ? deviceType.clusterOptions : null;
+  const clusterChipPinsOk = !clusterOptions || Object.keys(COMPONENT_LIBRARY)
+    .filter((chipId) => chipIsEnabledForClusters(deviceType, p, chipId))
+    .every((chipId) => {
+      const chip = findComponent(chipId);
+      if (!chip || !Array.isArray(chip.pins)) return true;
+      return chip.pins.every((pin) =>
+        p.pickerPins && Number.isInteger(p.pickerPins[pin.defineName]) && p.pickerPins[pin.defineName] >= 0);
+    });
+  const chipChoiceGroupsOk = !clusterOptions || (deviceType.chipChoiceGroups || []).every((group) => {
+    const groupInUse = clusterOptions.some((c) => c.group === group.key && p.enabledClusters && p.enabledClusters[c.id]);
+    return !groupInUse || !!(p.chipChoices && p.chipChoices[group.key]);
+  });
   return !!p.deviceType && !!p.target &&
     Number.isInteger(p.gpioPin) && p.gpioPin >= 0 &&
-    secondaryOk && identifyOk && buttonsOk && statusLedOk && positionSensorOk && dockSensorOk && plugSensorOk && rotaryEncoderOk && pickerPinsOk && numberFieldOk;
+    secondaryOk && identifyOk && buttonsOk && statusLedOk && positionSensorOk && dockSensorOk && plugSensorOk &&
+    rotaryEncoderOk && pickerPinsOk && numberFieldOk && clusterChipPinsOk && chipChoiceGroupsOk;
 }
 
 function buildConfigPreview(p) {
@@ -5220,13 +5477,43 @@ function renderCustomiseReview(p) {
             `);
           }).join("");
         })()}
-        <div class="review-row">
-          <div>
-            <div class="summary-label">${escapeHtml(findDeviceType(p.deviceType) && findDeviceType(p.deviceType).extraButtons ? ((findDeviceType(p.deviceType).driverLabel || "DRIVER").toUpperCase()) : "DRIVER")}</div>
-            <div class="summary-value">${escapeHtml(driverSummary(p.deviceType))} &middot; IO pin GPIO ${p.gpioPin != null ? p.gpioPin : "?"}</div>
+        ${(() => {
+          const dt = findDeviceType(p.deviceType);
+          if (!dt || !dt.clusterOptions) return "";
+          const checked = dt.clusterOptions.filter((c) => p.enabledClusters && p.enabledClusters[c.id]);
+          if (!checked.length) return "";
+          return `
+            <div class="review-row">
+              <div>
+                <div class="summary-label">OTHER CLUSTERS</div>
+                <div class="summary-value">${checked.map((c) => escapeHtml(c.label)).join(", ")}</div>
+              </div>
+              <button class="link" data-goto-step="2">Edit</button>
+            </div>
+            ${Object.keys(COMPONENT_LIBRARY).filter((chipId) => chipIsEnabledForClusters(dt, p, chipId)).flatMap((chipId) => {
+              const chip = findComponent(chipId);
+              if (!chip || !Array.isArray(chip.pins) || !chip.pins.length) return [];
+              return chip.pins.map((pin) => `
+                <div class="review-row">
+                  <div>
+                    <div class="summary-label">${escapeHtml(chip.name.toUpperCase())} &middot; ${escapeHtml(pin.label.toUpperCase())}</div>
+                    <div class="summary-value">IO pin GPIO ${p.pickerPins && p.pickerPins[pin.defineName] != null ? p.pickerPins[pin.defineName] : "?"}</div>
+                  </div>
+                  <button class="link" data-goto-step="2">Edit</button>
+                </div>
+              `);
+            }).join("")}
+          `;
+        })()}
+        ${findDeviceType(p.deviceType) && findDeviceType(p.deviceType).driver ? `
+          <div class="review-row">
+            <div>
+              <div class="summary-label">${escapeHtml(findDeviceType(p.deviceType).extraButtons ? ((findDeviceType(p.deviceType).driverLabel || "DRIVER").toUpperCase()) : "DRIVER")}</div>
+              <div class="summary-value">${escapeHtml(driverSummary(p.deviceType))} &middot; IO pin GPIO ${p.gpioPin != null ? p.gpioPin : "?"}</div>
+            </div>
+            <button class="link" data-goto-step="2">Edit</button>
           </div>
-          <button class="link" data-goto-step="2">Edit</button>
-        </div>
+        ` : ""}
         ${(() => {
           const dt = findDeviceType(p.deviceType);
           if (!dt || !dt.extraButtons) return "";
@@ -5606,6 +5893,7 @@ function buildSedCommands(p) {
   const positionSensor = deviceType ? deviceType.positionSensor : null;
   const dockSensor = deviceType ? deviceType.dockSensor : null;
   const plugSensor = deviceType ? deviceType.plugSensor : null;
+  const clusterOptions = deviceType ? deviceType.clusterOptions : null;
   const filePath = driver ? driver.filePath.split("/").slice(2).join("/") : "main/app_main.cpp"; // relative to firmwareDir
   const cmds = [];
   if (componentOptions && deviceType.componentDefineName) {
@@ -5711,6 +5999,50 @@ function buildSedCommands(p) {
   if (identify && identifyIsEnabled(p)) {
     cmds.push(`sed -i 's/^#define ${identify.defineName} GPIO_NUM_[0-9][0-9]*/#define ${identify.defineName} GPIO_NUM_${p.identifyGpioPin}/' ${filePath}`);
   }
+  if (clusterOptions) {
+    // Every distinct chip referenced anywhere in clusterOptions gets its
+    // own enableDefineName sed line — unconditionally, both directions
+    // (0 when nothing currently checked resolves to it, 1 when something
+    // does), unlike statusLed/positionSensor's own only-sed-when-on
+    // pattern above. Deliberate: each of these is a real two-state
+    // `#define AIR_QUALITY_HAS_<CHIP> 0/1` in the shipped source, not a
+    // GPIO_NUM_NC-vs-real-pin distinction, so a rewrite is needed either
+    // way — closer to componentDefineName's own always-rewrite pattern
+    // near the top of this function than to statusLed's.
+    const chipIds = new Set();
+    clusterOptions.forEach((cluster) => {
+      const chip = clusterBackingChip(deviceType, p, cluster);
+      if (chip) chipIds.add(chip.id);
+    });
+    chipIds.forEach((chipId) => {
+      const chip = findComponent(chipId);
+      if (!chip || !chip.enableDefineName) return;
+      const enabled = chipIsEnabledForClusters(deviceType, p, chipId) ? 1 : 0;
+      cmds.push(`sed -i 's/^#define ${chip.enableDefineName} .*/#define ${chip.enableDefineName} ${enabled}/' ${filePath}`);
+      // Enabled chips' own pins — same narrow GPIO_NUM_[0-9]* pattern
+      // extraPickers' own pins already use (these ship as real numeric
+      // defaults, never GPIO_NUM_NC).
+      if (enabled && Array.isArray(chip.pins)) {
+        chip.pins.forEach((pin) => {
+          const gpio = p.pickerPins && p.pickerPins[pin.defineName] != null
+            ? p.pickerPins[pin.defineName]
+            : (pin.defaultsByModule[p.target] != null ? pin.defaultsByModule[p.target] : 0);
+          cmds.push(`sed -i 's/^#define ${pin.defineName} GPIO_NUM_[0-9][0-9]*/#define ${pin.defineName} GPIO_NUM_${gpio}/' ${filePath}`);
+        });
+      }
+    });
+    // Each chipChoiceGroups entry currently backing at least one checked
+    // cluster gets its own componentDefineName-style sed line (which of
+    // its N interchangeable chips compiles in) — same non-GPIO
+    // #define-selects-a-branch pattern as componentDefineName/extraPickers'
+    // own defineName sed above.
+    (deviceType.chipChoiceGroups || []).forEach((group) => {
+      const groupInUse = clusterOptions.some((c) => c.group === group.key && p.enabledClusters && p.enabledClusters[c.id]);
+      if (!groupInUse) return;
+      const selected = findComponent(p.chipChoices && p.chipChoices[group.key]) || findComponent(group.chips[0]);
+      cmds.push(`sed -i 's/^#define ${group.defineName} .*/#define ${group.defineName} ${selected.defineValue}/' ${filePath}`);
+    });
+  }
   return cmds;
 }
 
@@ -5791,7 +6123,13 @@ function deviceTypeName(id) {
 
 function driverSummary(deviceTypeId) {
   const d = findDeviceType(deviceTypeId);
-  return d ? d.driver.summary : "—";
+  // A real, previously-latent bug found while testing this: `d.driver` can
+  // itself be null (electrical-meter has no `driver` field at all — every
+  // GPIO comes from its power-monitor chip picker instead), so `d.driver.summary`
+  // alone crashed the Customise & Review step for that device type. The
+  // review row that calls this is now conditional on `driver` existing at
+  // all (see renderCustomiseReview), but this stays defensive too.
+  return d && d.driver ? d.driver.summary : "—";
 }
 
 function moduleName(id) {
@@ -5954,6 +6292,12 @@ function bindEvents() {
         DEVICE_TYPES.forEach((dt) => {
           if (dt.numberField) state.currentProduct[dt.numberField.key] = null;
         });
+        // clusterOptions (currently just air-quality's own optional-cluster
+        // checkboxes): same stale-value risk as everything above — reset
+        // both the checked-cluster set and any chipChoiceGroups selection.
+        // pickerPins is already reset above (shared with extraPickers).
+        state.currentProduct.enabledClusters = null;
+        state.currentProduct.chipChoices = null;
       }
       state.currentProduct.deviceType = newType;
       saveProducts();
@@ -5999,6 +6343,47 @@ function bindEvents() {
     el.addEventListener("change", () => {
       if (!el.checked) return;
       state.currentProduct[el.getAttribute("data-picker-key")] = el.value;
+      saveProducts();
+      render();
+    });
+  });
+
+  // clusterOptions checkboxes (currently just air-quality's own optional-
+  // cluster picker) — checking one auto-checks every OTHER cluster the
+  // same backing chip covers too (see the DEVICE_TYPES comment on
+  // air-quality's own clusterOptions for why that's a correctness
+  // requirement for e.g. PMS5003's PM1/PM2.5/PM10 trio, not just UX).
+  // Unchecking only unchecks the one actually clicked — chipIsEnabledForClusters()
+  // then naturally recomputes false once every cluster a chip backs is
+  // unchecked, no separate "disable this chip" step needed.
+  document.querySelectorAll('input[data-cluster-id]').forEach((el) => {
+    el.addEventListener("change", () => {
+      const p = state.currentProduct;
+      const deviceType = findDeviceType(p.deviceType);
+      const clusterId = el.getAttribute("data-cluster-id");
+      if (typeof p.enabledClusters !== "object" || p.enabledClusters == null) p.enabledClusters = {};
+      p.enabledClusters[clusterId] = el.checked;
+      if (el.checked && deviceType) {
+        const cluster = (deviceType.clusterOptions || []).find((c) => c.id === clusterId);
+        const chip = cluster ? clusterBackingChip(deviceType, p, cluster) : null;
+        if (chip) {
+          clusterIdsBackedByChip(deviceType, p, chip.id).forEach((id) => { p.enabledClusters[id] = true; });
+        }
+      }
+      saveProducts();
+      render();
+    });
+  });
+
+  // chipChoiceGroups radios (currently just air-quality's own Temperature/
+  // Humidity chip choice) — same shape as data-picker-key above, writing
+  // into p.chipChoices instead of a top-level p[key].
+  document.querySelectorAll('input[data-chip-choice-group]').forEach((el) => {
+    el.addEventListener("change", () => {
+      if (!el.checked) return;
+      const p = state.currentProduct;
+      if (typeof p.chipChoices !== "object" || p.chipChoices == null) p.chipChoices = {};
+      p.chipChoices[el.getAttribute("data-chip-choice-group")] = el.value;
       saveProducts();
       render();
     });
