@@ -11581,6 +11581,78 @@ SECURITY.md               flash encryption / secure boot / signed OTA guidance
     already established — this is the first time since then a real
     browser, rather than the Node `vm` sandbox's structural checks alone,
     was available to do it with.
+12. **Network Infrastructure Manager — investigated on request, confirmed
+    a genuine blocker, deliberately NOT built** (unlike `firmware/
+    thread-border-router/`, which the same kind of "revisit an earlier
+    skip" request DID unblock). Real, concrete research this time, not a
+    policy restatement:
+    - Confirmed directly against the CSA's own `NetworkInfraManager.xml`
+      (device type 0x0090, revision 2, `class="simple" scope="endpoint"`
+      — genuinely standalone-buildable in principle) that its own
+      `<conditionRequirements>` block demands the ROOT NODE itself
+      satisfy IP, IPv4, IPv6, Ethernet, Wi-Fi, AND Thread as
+      `<mandatoryConform/>` conditions — all three physical network
+      interfaces (Ethernet LAN, Wi-Fi, Thread/802.15.4) simultaneously,
+      confirmed by reading `BaseDeviceType.xml`'s own condition
+      definitions directly ("Ethernet: The node supports an Ethernet LAN
+      interface" etc.) — genuine hardware-capability conformance
+      conditions, NOT a cluster-presence proxy the way
+      `firmware/electrical-utility-meter/`'s and `firmware/
+      meter-reference-point/`'s own `TimeSyncCond` requirement turned out
+      to be (that one mapped onto a real, addable TimeSynchronization
+      cluster on the root endpoint — this one doesn't map onto anything
+      addable at all, it's a literal physical-interface fact about the
+      node). This repo has never used Ethernet hardware anywhere — zero
+      RMII/LAN8720/EMAC references anywhere in this file before this
+      entry, confirmed by directly searching before concluding so.
+    - All four of the device type's own mandatory clusters (Thread
+      Network Diagnostics, Wi-Fi Network Management, Thread Border
+      Router Management, Thread Network Directory) DO have real legacy
+      esp-matter free-function support (confirmed by reading
+      `esp_matter_cluster.cpp` directly) — the cluster/endpoint
+      construction itself is NOT the blocker, and could be hand-
+      assembled the same way `firmware/doorbell/`'s, `firmware/chime/`'s,
+      and `firmware/meter-reference-point/`'s own niche endpoints already
+      are (no legacy `endpoint::network_infra_manager::create()` top-
+      level helper exists either — only in the "generated" data model
+      this repo has never enabled, the same recurring gap-class `firmware/
+      oven/`'s own two hand-built clusters already established).
+    - The real, decisive blocker: NO embedded reference implementation
+      exists anywhere in the pinned SDK to port from — the only real
+      reference app, `connectedhomeip/connectedhomeip/examples/
+      network-manager-app`, is confirmed (by listing its own build
+      targets directly) to be **Linux-only**, with no `esp32/` port at
+      all, unlike `firmware/thread-border-router/`'s own situation where
+      Espressif had already built and tested a real ESP32-S3+H2 board and
+      firmware for exactly this purpose. Building this honestly would
+      mean designing an entirely new, three-radio hardware combination
+      (an ESP32/S3 + an external Ethernet PHY chip, like an LAN8720, +
+      a separate Thread RCP chip such as an H2/C6) with zero SDK
+      precedent, zero reference firmware, and zero real multi-homed-
+      routing example to build from — a genuinely novel embedded
+      networking project, not a "port a real reference" task the way
+      every other two-chip device in this repo (camera, ble-mesh-bridge,
+      zigbee-bridge, thread-border-router) was.
+    - Declaring the device type without genuinely satisfying its own
+      physical conformance conditions (e.g. shipping Ethernet/Wi-Fi/
+      Thread cluster shells with no real Ethernet interface behind them)
+      would be the same category of dishonesty this repo's own "no
+      sensor, no fabricated data" principle already forbids elsewhere —
+      just applied to a hardware-capability claim instead of a sensor
+      reading.
+
+    Offered the user a genuine choice (leave as a documented skip; build
+    a deliberately non-conformant Wi-Fi+Thread-only best-effort device
+    with Ethernet explicitly omitted and flagged; or research a real
+    ESP32+Ethernet-PHY hardware option further before writing any code)
+    rather than deciding unilaterally — the user chose to leave it as a
+    documented skip. Unlike the softer "revisit later" framing this
+    repo's own earlier device-type sweeps sometimes used, this one is a
+    firm, structural blocker (no reference firmware exists to build from
+    at all, the same category of blocker as the media-streaming six's own
+    missing audio/video hardware/stacks) — not a "give it a fresh look
+    later" situation the way Battery Storage's or Temperature Controlled
+    Cabinet's own earlier skips turned out to be.
 
 ## Note on hardware/USB
 
