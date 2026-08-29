@@ -10200,23 +10200,76 @@ SECURITY.md               flash encryption / secure boot / signed OTA guidance
 
    With these seven, the device-type catalog sweep is genuinely complete
    a second time, this time after actually re-verifying rather than
-   re-asserting the prior conclusion. What remains a deliberate,
-   documented skip (not a gap still open to revisit) stays skipped for
-   structural reasons this repo cannot change by trying harder — an
-   external-SDK/dual-chip requirement shared with firmware/camera/
-   (Intercom/AudioDoorbell/FloodlightCamera/SnapshotCamera/VideoDoorbell/
-   CameraController), Matter's own genuinely "utility"-class composed-
-   only device types with no standalone product form (ElectricalSensor/
-   PowerSource/DeviceEnergyManagement — always composed onto something
-   else, e.g. firmware/heat-pump/'s/firmware/water-heater/'s own composed
-   ElectricalSensor), real media-streaming and network/fabric
-   infrastructure device types (never a hobbyist end-device build — see
-   the full enumeration above), ClosurePanel (confirmed, by reading its
-   own XML directly, to explicitly `<disallowConform/>` the very Closure
-   Control cluster that would let it do anything on its own — structurally
-   requires composition under a parent Closure, unlike Temperature
-   Controlled Cabinet's own genuinely standalone-legal shape), and the
-   genuinely no-honest-sensor cases confirmed during item 8/9's own
+   re-asserting the prior conclusion. ClosurePanel and the camera-
+   adjacent device types were then each individually re-checked a THIRD
+   time, at the user's own explicit request, with full per-cluster
+   conform-level detail this time (not just the bare cluster list a
+   first pass had read) — confirming every one of them really is a
+   distinct, structural blocker, not a repeat of the earlier "controller"
+   category's own too-broad exclusion mistake:
+
+   - **ClosurePanel** (0x0231): confirmed unambiguous on a third read —
+     Window Covering (server) and Closure Control (server) are BOTH
+     `<disallowConform/>` on this device type's own XML, with only
+     Closure Dimension (server) `<mandatoryConform/>`. This isn't merely
+     "usually composed" the way Temperature Controlled Cabinet's own
+     prior (incorrect) "utility-class" label suggested — it's a device
+     type that is spec-forbidden from carrying either cluster that would
+     let it actually open/close anything at all. A standalone build would
+     report geometry and do nothing else. Stays a skip.
+   - **CameraController** (Camera.xml's own controller counterpart):
+     confirmed to mandate BOTH WebRTC Transport Provider (client) AND
+     WebRTC Transport Requestor (server) — genuine, bidirectional,
+     real-time WebRTC media session negotiation, not a simple discrete
+     command/attribute interaction the way firmware/dimmer-switch/'s and
+     the six controller device types built in this same pass are. This is
+     the same real technical burden (and the same external Amazon KVS
+     WebRTC SDK + comparable hardware capability) firmware/camera/'s own
+     header comment already documents in full for the exact same cluster
+     pair. Stays a skip — a genuinely different case from the six
+     controllers that DID unblock, not an inconsistency.
+   - **Intercom** and **AudioDoorbell**: both confirmed to mandate the
+     same WebRTC Transport Provider + WebRTC Transport Requestor pair
+     (at least one side server on each), plus (Intercom specifically)
+     Camera AV Stream Management server — the identical real-time-media
+     requirement as CameraController and firmware/camera/ itself. Stay
+     skips for the same reason.
+   - **SnapshotCamera**: a genuinely DIFFERENT case from the other four,
+     worth its own precise reasoning rather than lumping in with "same as
+     camera" — confirmed by reading its own full XML that it does NOT
+     mandate either WebRTC transport cluster at all, only Camera AV
+     Stream Management (server, mandatoryConform, with real snapshot-
+     capture sub-features) plus a root-node `PowerSourceCond`+
+     `TimeSyncWithTZCond` condition pair this repo has never wired up
+     anywhere. So the specific blocker here isn't the KVS WebRTC SDK —
+     it's that Camera AV Stream Management itself needs a real camera
+     image sensor (e.g. an OV2640/OV5640-class module) and an image-
+     capture driver stack, neither of which exists anywhere in this repo
+     outside firmware/camera/'s own ported, ESP32-P4-hardware-coupled
+     example (not separable from that specific hardware). Stays a skip,
+     for this more precise, newly-confirmed reason.
+   - **FloodlightCamera** and **VideoDoorbell**: confirmed, by reading
+     both XML files in full (65 lines each, nothing but the license
+     header + a bare `id`/`name`/`revision`/`<classification>` block), to
+     be genuinely EMPTY stub device type definitions in this pinned SDK
+     version — no `<clusters>` block at all, nothing to conform to. Not a
+     WebRTC/hardware blocker at all, a different, newly-confirmed reason
+     entirely: there is nothing here to honestly implement against: this
+     SDK's own copy of the spec hasn't been filled in for either device
+     type yet. Stay skips until esp-matter ships a version with these two
+     actually specified.
+
+   What remains a deliberate, documented skip (not a gap still open to
+   revisit) stays skipped for structural reasons this repo cannot change
+   by trying harder — the five camera-adjacent device types and
+   ClosurePanel detailed just above, Matter's own genuinely "utility"-
+   class composed-only device types with no standalone product form
+   (ElectricalSensor/PowerSource/DeviceEnergyManagement — always composed
+   onto something else, e.g. firmware/heat-pump/'s/firmware/
+   water-heater/'s own composed ElectricalSensor), real media-streaming
+   and network/fabric infrastructure device types (never a hobbyist
+   end-device build — see the full enumeration above), and the genuinely
+   no-honest-sensor cases confirmed during item 8/9's own
    cluster-level pass (Radon; Electrical Energy Tariff's own no-cloud/
    no-fabricated-tariff-data conflict). This closes out the "ga verder
    met het aanvullen van de devices... totdat alle devices zijn
