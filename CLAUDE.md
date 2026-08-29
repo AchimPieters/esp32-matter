@@ -10264,16 +10264,48 @@ SECURITY.md               flash encryption / secure boot / signed OTA guidance
    by trying harder — the five camera-adjacent device types and
    ClosurePanel detailed just above, Matter's own genuinely "utility"-
    class composed-only device types with no standalone product form
-   (ElectricalSensor/PowerSource/DeviceEnergyManagement — always composed
-   onto something else, e.g. firmware/heat-pump/'s/firmware/
+   (ElectricalSensor/PowerSource/DeviceEnergyManagement/BridgedNode/
+   SecondaryNetworkInterface/JointFabricAdmin/OtaProvider/OtaRequestor —
+   all directly re-confirmed `class="utility"` on a fourth pass, always
+   composed onto something else, e.g. firmware/heat-pump/'s/firmware/
    water-heater/'s own composed ElectricalSensor), real media-streaming
    and network/fabric infrastructure device types (never a hobbyist
    end-device build — see the full enumeration above), and the genuinely
-   no-honest-sensor cases confirmed during item 8/9's own
-   cluster-level pass (Radon; Electrical Energy Tariff's own no-cloud/
-   no-fabricated-tariff-data conflict). This closes out the "ga verder
-   met het aanvullen van de devices... totdat alle devices zijn
-   toegevoegd" instruction that drove this whole pass.
+   no-honest-sensor cases confirmed during item 8/9's own cluster-level
+   pass (Radon; Electrical Energy Tariff's own no-cloud/no-fabricated-
+   tariff-data conflict).
+
+   That same fourth pass also specifically checked whether Matter's own
+   `class="simple"` tag — the classification TemperatureControlledCabinet
+   turned out to genuinely carry, unlocking it earlier in this same
+   session — was hiding any other real unblock among the remaining
+   media-streaming/infrastructure device types, the same way it once did
+   for TCC. It isn't: ContentApp/CastingVideoClient/CastingVideoPlayer/
+   BasicVideoPlayer/VideoRemoteControl/Speaker/Aggregator/
+   NetworkInfraManager/ThreadBorderRouter are ALL confirmed
+   `class="simple"` too, directly re-checked rather than assumed — but
+   `class="simple"` only means "not a required composed-only utility
+   piece," never "a hobbyist end-device product." Aggregator's own real
+   cluster content (Actions + Commissioner Control, the latter
+   mandatoryConform specifically under a "FabricSynchronization"
+   condition) confirms it by name and by content to be a Matter BRIDGE
+   role — exposing non-Matter devices as Matter endpoints — a
+   categorically different kind of product this repo has no existing
+   protocol-bridging infrastructure for (no Zigbee/BLE-mesh/proprietary-
+   sensor bridging code anywhere in this repo), not a single-purpose
+   smart-home device the way every other device type here is.
+   NetworkInfraManager/ThreadBorderRouter's own real clusters (Thread/
+   Wi-Fi Network Diagnostics, Thread Border Router Management, Thread
+   Network Directory) confirm the same: genuine network-administration/
+   gateway equipment, not an appliance/sensor/actuator. The media-
+   streaming six remain blocked by the same real, substantive gap this
+   file's own earlier text already established (real video decode/audio-
+   output hardware and protocol stacks this repo has never built), now
+   simply re-confirmed rather than re-assumed. This closes out the "ga
+   verder met het aanvullen van de devices... totdat alle devices zijn
+   toegevoegd" instruction that drove this whole pass — a fourth,
+   independent re-check found no further device types this repo's own
+   mission and technical model can honestly build.
 2. Implement Matter **OTA** — partially done. All sixty-five firmware
    types ship `CONFIG_ENABLE_OTA_REQUESTOR=y`, which adds the OTA Requestor
    cluster to the root node endpoint entirely via Kconfig — esp-matter's
