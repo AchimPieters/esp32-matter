@@ -4149,6 +4149,286 @@ const DEVICE_TYPES = [
       defaultsByModule: { esp32: 2, esp32c2: 2, esp32c3: 2, esp32c5: 2, esp32c6: 2, esp32c61: 2, esp32s3: 2, esp32h2: 2 },
     },
   },
+  {
+    id: "temperature-controlled-cabinet",
+    name: "Temperature Controlled Cabinet",
+    desc: "Matter Temperature Controlled Cabinet: a single-zone wine cooler / beverage fridge / mini-fridge, standing on its own — the same TemperatureControl+RefrigeratorAndTemperatureControlledCabinetMode+TemperatureMeasurement clusters Refrigerator's own Fridge/Freezer child endpoints already use, just as this node's own root endpoint instead of a child. No Identify cluster at all (confirmed absent from this device type's own spec). Reference device in firmware/temperature-controlled-cabinet/.",
+    shortDesc: "Standalone wine cooler / mini-fridge: relay + DS18B20.",
+    // Matches project(matter_temperature_controlled_cabinet) in
+    // firmware/temperature-controlled-cabinet/CMakeLists.txt. Same
+    // driver+secondary two-independent-GPIO shape firmware/
+    // water-heater/'s own relay+probe entry already establishes — no
+    // identify field at all, since this device type genuinely has no
+    // Identify cluster (the same reasoning firmware/door-lock-
+    // controller/'s own entry below applies for the same reason).
+    binName: "matter_temperature_controlled_cabinet.bin",
+    driver: {
+      summary: "GPIO (relay, active-LOW)",
+      fieldLabel: "Compressor relay GPIO pin",
+      blockTitle: "Compressor relay · digital output",
+      filePath: "firmware/temperature-controlled-cabinet/main/app_main.cpp",
+      defineName: "TCC_RELAY_GPIO",
+      currentGpio: 16,
+      defaultsByModule: { esp32: 16, esp32c2: 16, esp32c3: 16, esp32c5: 16, esp32c6: 16, esp32c61: 16, esp32s3: 16, esp32h2: 16 },
+    },
+    secondary: {
+      label: "Temperature Sensor",
+      summary: "GPIO (1-Wire digital sensor)",
+      fieldLabel: "DS18B20 GPIO pin",
+      blockTitle: "DS18B20 · 1-Wire digital sensor",
+      filePath: "firmware/temperature-controlled-cabinet/main/app_main.cpp",
+      defineName: "TCC_SENSOR_GPIO",
+      currentGpio: 21,
+      defaultsByModule: { esp32: 21, esp32c2: 21, esp32c3: 21, esp32c5: 21, esp32c6: 21, esp32c61: 21, esp32s3: 21, esp32h2: 21 },
+    },
+  },
+  {
+    id: "door-lock-controller",
+    name: "Door Lock Controller",
+    desc: "Matter Door Lock Controller: a wall-mounted or bedside two-button remote (Lock / Unlock) sending real DoorLock::LockDoor/UnlockDoor commands to a bound lock. Both commands are timed invokes, a genuinely new client-invoke wrinkle for this repo. No Identify cluster at all (confirmed absent from this device type's own spec). Requires a controller (e.g. Home Assistant) to set up a Binding-cluster entry to an actual door lock first. Reference device in firmware/door-lock-controller/.",
+    shortDesc: "Two-button remote: Lock / Unlock.",
+    // Matches project(matter_door_lock_controller) in
+    // firmware/door-lock-controller/CMakeLists.txt. Same driver+
+    // extraButtons fixed-2-button shape firmware/window-covering-
+    // controller/'s own entry below establishes — no identify field,
+    // since this device type genuinely carries no Identify cluster at
+    // all (confirmed directly against its own XML).
+    binName: "matter_door_lock_controller.bin",
+    driver: {
+      summary: "GPIO (digital input, active-LOW)",
+      fieldLabel: "Lock button GPIO pin",
+      blockTitle: "Lock button · digital GPIO input",
+      filePath: "firmware/door-lock-controller/main/app_main.cpp",
+      defineName: "DOOR_LOCK_CONTROLLER_LOCK_BUTTON_GPIO",
+      currentGpio: 4,
+      defaultsByModule: { esp32: 4, esp32c2: 4, esp32c3: 4, esp32c5: 4, esp32c6: 4, esp32c61: 4, esp32s3: 4, esp32h2: 4 },
+    },
+    extraButtons: [
+      {
+        label: "Unlock Button",
+        fieldLabel: "Unlock button GPIO pin",
+        blockTitle: "Unlock button · digital GPIO input",
+        filePath: "firmware/door-lock-controller/main/app_main.cpp",
+        defineName: "DOOR_LOCK_CONTROLLER_UNLOCK_BUTTON_GPIO",
+        currentGpio: 16,
+        defaultsByModule: { esp32: 16, esp32c2: 16, esp32c3: 16, esp32c5: 16, esp32c6: 16, esp32c61: 16, esp32s3: 16, esp32h2: 16 },
+      },
+    ],
+  },
+  {
+    id: "thermostat-controller",
+    name: "Thermostat Controller",
+    desc: "Matter Thermostat Controller: a rotary-knob remote sending real Thermostat::SetpointRaiseLower commands to a bound thermostat, nudging its setpoint up/down 0.1 degC per detent without knowing its current absolute value. No Identify cluster at all (confirmed absent from this device type's own spec). Requires a controller (e.g. Home Assistant) to set up a Binding-cluster entry to an actual thermostat first. Reference device in firmware/thermostat-controller/.",
+    shortDesc: "Rotary knob: raise/lower a bound thermostat's setpoint.",
+    // Matches project(matter_thermostat_controller) in
+    // firmware/thermostat-controller/CMakeLists.txt. Same driver+
+    // secondary two-independent-GPIO shape firmware/temperature-
+    // controlled-cabinet/'s own entry above establishes, repurposed here
+    // for the rotary encoder's own A/B channels instead of relay+sensor.
+    // No identify field — this device type genuinely carries no
+    // Identify cluster at all.
+    binName: "matter_thermostat_controller.bin",
+    driver: {
+      summary: "GPIO (digital input)",
+      fieldLabel: "Rotary encoder channel A GPIO pin",
+      blockTitle: "Rotary encoder · channel A (digital input)",
+      filePath: "firmware/thermostat-controller/main/app_main.cpp",
+      defineName: "ROTARY_ENCODER_A_GPIO",
+      currentGpio: 16,
+      defaultsByModule: { esp32: 16, esp32c2: 16, esp32c3: 16, esp32c5: 16, esp32c6: 16, esp32c61: 16, esp32s3: 16, esp32h2: 16 },
+    },
+    secondary: {
+      label: "Rotary Encoder Channel B",
+      summary: "GPIO (digital input)",
+      fieldLabel: "Rotary encoder channel B GPIO pin",
+      blockTitle: "Rotary encoder · channel B (digital input)",
+      filePath: "firmware/thermostat-controller/main/app_main.cpp",
+      defineName: "ROTARY_ENCODER_B_GPIO",
+      currentGpio: 17,
+      defaultsByModule: { esp32: 17, esp32c2: 17, esp32c3: 17, esp32c5: 17, esp32c6: 17, esp32c61: 17, esp32s3: 17, esp32h2: 17 },
+    },
+  },
+  {
+    id: "window-covering-controller",
+    name: "Window Covering Controller",
+    desc: "Matter Window Covering Controller: a wall-mounted three-button remote (Open / Close / Stop) sending real WindowCovering::UpOrOpen/DownOrClose/StopMotion commands to a bound covering. Requires a controller (e.g. Home Assistant) to set up a Binding-cluster entry to an actual window covering first. Reference device in firmware/window-covering-controller/.",
+    shortDesc: "Three-button remote: Open / Close / Stop.",
+    // Matches project(matter_window_covering_controller) in
+    // firmware/window-covering-controller/CMakeLists.txt. Same driver+
+    // extraButtons+identify shape firmware/color-dimmer-switch/'s own
+    // entry already establishes — a fixed 2-entry extraButtons array
+    // (Close, Stop) alongside the driver's own Open button.
+    binName: "matter_window_covering_controller.bin",
+    driver: {
+      summary: "GPIO (digital input, active-LOW)",
+      fieldLabel: "Open button GPIO pin",
+      blockTitle: "Open button · digital GPIO input",
+      filePath: "firmware/window-covering-controller/main/app_main.cpp",
+      defineName: "WCC_OPEN_BUTTON_GPIO",
+      currentGpio: 4,
+      defaultsByModule: { esp32: 4, esp32c2: 4, esp32c3: 4, esp32c5: 4, esp32c6: 4, esp32c61: 4, esp32s3: 4, esp32h2: 4 },
+    },
+    extraButtons: [
+      {
+        label: "Close Button",
+        fieldLabel: "Close button GPIO pin",
+        blockTitle: "Close button · digital GPIO input",
+        filePath: "firmware/window-covering-controller/main/app_main.cpp",
+        defineName: "WCC_CLOSE_BUTTON_GPIO",
+        currentGpio: 16,
+        defaultsByModule: { esp32: 16, esp32c2: 16, esp32c3: 16, esp32c5: 16, esp32c6: 16, esp32c61: 16, esp32s3: 16, esp32h2: 16 },
+      },
+      {
+        label: "Stop Button",
+        fieldLabel: "Stop button GPIO pin",
+        blockTitle: "Stop button · digital GPIO input",
+        filePath: "firmware/window-covering-controller/main/app_main.cpp",
+        defineName: "WCC_STOP_BUTTON_GPIO",
+        currentGpio: 17,
+        defaultsByModule: { esp32: 17, esp32c2: 17, esp32c3: 17, esp32c5: 17, esp32c6: 17, esp32c61: 17, esp32s3: 17, esp32h2: 17 },
+      },
+    ],
+    identify: {
+      summary: "GPIO (digital output)",
+      fieldLabel: "Identify LED GPIO pin",
+      blockTitle: "Identify LED · digital output",
+      filePath: "firmware/window-covering-controller/main/app_main.cpp",
+      defineName: "IDENTIFY_LED_GPIO",
+      currentGpio: 2,
+      defaultsByModule: { esp32: 2, esp32c2: 2, esp32c3: 2, esp32c5: 2, esp32c6: 2, esp32c61: 2, esp32s3: 2, esp32h2: 2 },
+    },
+  },
+  {
+    id: "closure-controller",
+    name: "Closure Controller",
+    desc: "Matter Closure Controller: a wall-mounted two-button remote (Open / Close) sending real ClosureControl::MoveTo commands to a bound closure — a garage door / roller shutter / awning remote. MoveTo is a timed invoke, the same real Matter protocol requirement firmware/door-lock-controller/'s own LockDoor/UnlockDoor already established. No Identify cluster at all (confirmed absent from this device type's own spec). Requires a controller (e.g. Home Assistant) to set up a Binding-cluster entry to an actual closure first. Reference device in firmware/closure-controller/.",
+    shortDesc: "Two-button remote: Open / Close.",
+    // Matches project(matter_closure_controller) in
+    // firmware/closure-controller/CMakeLists.txt. Same driver+
+    // extraButtons fixed-1-button shape firmware/door-lock-controller/'s
+    // own entry above establishes — no identify field, since this
+    // device type genuinely carries no Identify cluster at all.
+    binName: "matter_closure_controller.bin",
+    driver: {
+      summary: "GPIO (digital input, active-LOW)",
+      fieldLabel: "Open button GPIO pin",
+      blockTitle: "Open button · digital GPIO input",
+      filePath: "firmware/closure-controller/main/app_main.cpp",
+      defineName: "CLOSURE_CONTROLLER_OPEN_BUTTON_GPIO",
+      currentGpio: 4,
+      defaultsByModule: { esp32: 4, esp32c2: 4, esp32c3: 4, esp32c5: 4, esp32c6: 4, esp32c61: 4, esp32s3: 4, esp32h2: 4 },
+    },
+    extraButtons: [
+      {
+        label: "Close Button",
+        fieldLabel: "Close button GPIO pin",
+        blockTitle: "Close button · digital GPIO input",
+        filePath: "firmware/closure-controller/main/app_main.cpp",
+        defineName: "CLOSURE_CONTROLLER_CLOSE_BUTTON_GPIO",
+        currentGpio: 16,
+        defaultsByModule: { esp32: 16, esp32c2: 16, esp32c3: 16, esp32c5: 16, esp32c6: 16, esp32c61: 16, esp32s3: 16, esp32h2: 16 },
+      },
+    ],
+  },
+  {
+    id: "pump-controller",
+    name: "Pump Controller",
+    desc: "Matter Pump Controller: a wall-mounted on/off remote panel sending a real OnOff::Toggle command to a bound pump, plus a real (present, not locally-triggered) PumpConfigurationAndControl client shell a controller's own generic UI can use once bound. Requires a controller (e.g. Home Assistant) to set up a Binding-cluster entry to an actual pump first. Reference device in firmware/pump-controller/.",
+    shortDesc: "On/off remote for a bound pump.",
+    // Matches project(matter_pump_controller) in
+    // firmware/pump-controller/CMakeLists.txt. Same driver+identify
+    // shape firmware/generic-switch/'s own entry already establishes —
+    // Identify IS mandatory on this device type (unlike door-lock-
+    // controller/thermostat-controller/closure-controller above), so
+    // this one keeps its LED.
+    binName: "matter_pump_controller.bin",
+    driver: {
+      summary: "GPIO (digital input, active-LOW)",
+      fieldLabel: "Button GPIO pin",
+      blockTitle: "Button · digital GPIO input",
+      filePath: "firmware/pump-controller/main/app_main.cpp",
+      defineName: "PUMP_CONTROLLER_BUTTON_GPIO",
+      currentGpio: 4,
+      defaultsByModule: { esp32: 4, esp32c2: 4, esp32c3: 4, esp32c5: 4, esp32c6: 4, esp32c61: 4, esp32s3: 4, esp32h2: 4 },
+    },
+    identify: {
+      summary: "GPIO (digital output)",
+      fieldLabel: "Identify LED GPIO pin",
+      blockTitle: "Identify LED · digital output",
+      filePath: "firmware/pump-controller/main/app_main.cpp",
+      defineName: "IDENTIFY_LED_GPIO",
+      currentGpio: 2,
+      defaultsByModule: { esp32: 2, esp32c2: 2, esp32c3: 2, esp32c5: 2, esp32c6: 2, esp32c61: 2, esp32s3: 2, esp32h2: 2 },
+    },
+  },
+  {
+    id: "control-bridge",
+    name: "Control Bridge",
+    desc: "Matter Control Bridge: a universal light remote — the same On/Off::Toggle button + LevelControl::Step brightness encoder + ColorControl::StepHue hue encoder as Color Dimmer Switch, plus a mandatory Scenes Management client shell this device type requires but esp-matter's own top-level helper doesn't create (fixed here). Requires a controller (e.g. Home Assistant) to set up a Binding-cluster entry to an actual light first. Reference device in firmware/control-bridge/.",
+    shortDesc: "Button + two rotary encoders (brightness, hue).",
+    // Matches project(matter_control_bridge) in
+    // firmware/control-bridge/CMakeLists.txt. Byte-for-byte the same
+    // driver+extraButtons(x4)+identify shape firmware/color-dimmer-
+    // switch/'s own entry already establishes — zero new mechanism
+    // needed, only new filePath/defineName values.
+    binName: "matter_control_bridge.bin",
+    driver: {
+      summary: "GPIO (digital input, active-LOW)",
+      fieldLabel: "On/off button GPIO pin",
+      blockTitle: "On/off button · digital GPIO input",
+      filePath: "firmware/control-bridge/main/app_main.cpp",
+      defineName: "CONTROL_BRIDGE_BUTTON_GPIO",
+      currentGpio: 4,
+      defaultsByModule: { esp32: 4, esp32c2: 4, esp32c3: 4, esp32c5: 4, esp32c6: 4, esp32c61: 4, esp32s3: 4, esp32h2: 4 },
+    },
+    extraButtons: [
+      {
+        label: "Brightness Encoder Channel A",
+        fieldLabel: "Brightness encoder channel A GPIO pin",
+        blockTitle: "Brightness encoder · channel A (digital input)",
+        filePath: "firmware/control-bridge/main/app_main.cpp",
+        defineName: "BRIGHTNESS_ENCODER_A_GPIO",
+        currentGpio: 16,
+        defaultsByModule: { esp32: 16, esp32c2: 16, esp32c3: 16, esp32c5: 16, esp32c6: 16, esp32c61: 16, esp32s3: 16, esp32h2: 16 },
+      },
+      {
+        label: "Brightness Encoder Channel B",
+        fieldLabel: "Brightness encoder channel B GPIO pin",
+        blockTitle: "Brightness encoder · channel B (digital input)",
+        filePath: "firmware/control-bridge/main/app_main.cpp",
+        defineName: "BRIGHTNESS_ENCODER_B_GPIO",
+        currentGpio: 17,
+        defaultsByModule: { esp32: 17, esp32c2: 17, esp32c3: 17, esp32c5: 17, esp32c6: 17, esp32c61: 17, esp32s3: 17, esp32h2: 17 },
+      },
+      {
+        label: "Hue Encoder Channel A",
+        fieldLabel: "Hue encoder channel A GPIO pin",
+        blockTitle: "Hue encoder · channel A (digital input)",
+        filePath: "firmware/control-bridge/main/app_main.cpp",
+        defineName: "HUE_ENCODER_A_GPIO",
+        currentGpio: 18,
+        defaultsByModule: { esp32: 18, esp32c2: 18, esp32c3: 18, esp32c5: 18, esp32c6: 18, esp32c61: 18, esp32s3: 18, esp32h2: 18 },
+      },
+      {
+        label: "Hue Encoder Channel B",
+        fieldLabel: "Hue encoder channel B GPIO pin",
+        blockTitle: "Hue encoder · channel B (digital input)",
+        filePath: "firmware/control-bridge/main/app_main.cpp",
+        defineName: "HUE_ENCODER_B_GPIO",
+        currentGpio: 19,
+        defaultsByModule: { esp32: 19, esp32c2: 19, esp32c3: 19, esp32c5: 19, esp32c6: 19, esp32c61: 19, esp32s3: 19, esp32h2: 19 },
+      },
+    ],
+    identify: {
+      summary: "GPIO (digital output)",
+      fieldLabel: "Identify LED GPIO pin",
+      blockTitle: "Identify LED · digital output",
+      filePath: "firmware/control-bridge/main/app_main.cpp",
+      defineName: "IDENTIFY_LED_GPIO",
+      currentGpio: 2,
+      defaultsByModule: { esp32: 2, esp32c2: 2, esp32c3: 2, esp32c5: 2, esp32c6: 2, esp32c61: 2, esp32s3: 2, esp32h2: 2 },
+    },
+  },
 ];
 
 function findDeviceType(id) {
@@ -4936,6 +5216,71 @@ const DEVICE_TYPE_ICONS = {
     <rect x="12" y="9" width="24" height="20" rx="2"/>
     <path d="M14 19H34" stroke-width="2"/>
     <circle cx="24" cy="36" r="3.5"/>
+  </svg>`,
+  // A tall single-compartment appliance body with one handle tick and no
+  // horizontal divider — distinct from refrigerator's own two-compartment
+  // silhouette (which has a mid-height divider line and two handle ticks)
+  // specifically by being ONE zone, matching this device type's own
+  // standalone single-cabinet nature.
+  "temperature-controlled-cabinet": `<svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+    <rect x="12" y="4" width="24" height="40" rx="3"/>
+    <path d="M17 12v8"/>
+  </svg>`,
+  // A small wall-mounted remote plate with a padlock glyph — the physical
+  // "smart lock remote" this device type is, distinct from door-lock's
+  // own actual lock-body icon (that device IS the lock; this one only
+  // controls one remotely).
+  "door-lock-controller": `<svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+    <rect x="10" y="6" width="28" height="36" rx="5"/>
+    <rect x="19" y="20" width="10" height="9" rx="1.5"/>
+    <path d="M21 20v-3a3 3 0 0 1 6 0v3"/>
+  </svg>`,
+  // A round knob/dial with a single pointer tick — the physical rotary
+  // remote this device type is, distinct from thermostat's own
+  // house-with-gauge icon and mode-select's own 3-position dial (this one
+  // has just one continuous pointer, not discrete positions).
+  "thermostat-controller": `<svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+    <circle cx="24" cy="24" r="18"/>
+    <path d="M24 24l8-8"/>
+    <circle cx="24" cy="24" r="2.5" fill="currentColor" stroke="none"/>
+  </svg>`,
+  // A small wall-mounted remote plate with three horizontal button ticks
+  // (Open/Close/Stop) — distinct from window-covering's own blind-slat
+  // icon (that device IS the covering; this one only controls one
+  // remotely) and from generic-switch's own single round button.
+  "window-covering-controller": `<svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+    <rect x="12" y="4" width="24" height="40" rx="5"/>
+    <path d="M18 16h12"/>
+    <path d="M18 24h12"/>
+    <path d="M18 32h12"/>
+  </svg>`,
+  // A small wall-mounted remote plate with an up/down double-arrow —
+  // reuses closure's own real garage-door bidirectional-motor motif at
+  // remote scale, distinct from closure's own full panelled-door body.
+  "closure-controller": `<svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+    <rect x="12" y="4" width="24" height="40" rx="5"/>
+    <path d="M24 14l-5 6h10z"/>
+    <path d="M24 34l-5-6h10z"/>
+  </svg>`,
+  // A small wall-mounted remote plate with a single round button and a
+  // droplet — distinct from pump's own real pump-body icon (that device
+  // IS the pump; this one only controls one remotely).
+  "pump-controller": `<svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+    <rect x="12" y="4" width="24" height="40" rx="5"/>
+    <circle cx="24" cy="20" r="6"/>
+    <path d="M24 30q3 4 0 8q-3-4 0-8z"/>
+  </svg>`,
+  // A small wall-mounted remote plate with a slider (brightness) and a
+  // color-wheel dot (hue) — a universal light remote, distinct from
+  // color-dimmer-switch's own two-full-size-knobs icon (this is a single
+  // compact panel, not two standalone knobs) while still visually related
+  // since the underlying hardware shape is the same.
+  "control-bridge": `<svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+    <rect x="10" y="4" width="28" height="40" rx="5"/>
+    <circle cx="24" cy="14" r="3"/>
+    <path d="M16 26h16"/>
+    <circle cx="26" cy="26" r="2.5" fill="currentColor" stroke="none"/>
+    <circle cx="24" cy="36" r="4"/>
   </svg>`,
   // A wall-mounted doorbell plate (rounded rect) with a filled circular
   // pushbutton — the real, physical thing this device type is. Distinct

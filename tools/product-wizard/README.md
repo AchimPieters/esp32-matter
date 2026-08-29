@@ -68,9 +68,16 @@ open tools/product-wizard/index.html
   (`firmware/mounted-dimmable-load-control/`), "Electrical Utility
   Meter" (`firmware/electrical-utility-meter/`), "Meter Reference
   Point" (`firmware/meter-reference-point/`), "Battery Storage"
-  (`firmware/battery-storage/`), or "Oven" (`firmware/oven/`).
+  (`firmware/battery-storage/`), "Oven" (`firmware/oven/`), "Temperature
+  Controlled Cabinet" (`firmware/temperature-controlled-cabinet/`), "Door
+  Lock Controller" (`firmware/door-lock-controller/`), "Thermostat
+  Controller" (`firmware/thermostat-controller/`), "Window Covering
+  Controller" (`firmware/window-covering-controller/`), "Closure
+  Controller" (`firmware/closure-controller/`), "Pump Controller"
+  (`firmware/pump-controller/`), or "Control Bridge"
+  (`firmware/control-bridge/`).
   All
-  fifty-seven are real, buildable
+  sixty-four are real, buildable
   firmware, not just UI placeholders (`firmware/camera/`, this repo's
   twelfth device type, is deliberately NOT offered here — see its own
   section further down for why: its two-chip/two-firmware/external-SDK
@@ -126,10 +133,17 @@ open tools/product-wizard/index.html
   "SCL" for a sensor's pin 2, not hardcoded either way). No PWM/dimming
   or debounce config yet, unlike the ESP ZeroCode screenshots this is
   modelled on. Defaults per module echo the comments in each
-  `app_main.cpp`. Also an **Identify LED** checkbox, on by default —
-  every device type has one, since it's a real Matter cluster (blinks in
-  response to a controller's "Identify" command) implemented in every
-  firmware file, not just a wizard-only option. Untick it and the wizard
+  `app_main.cpp`. Most device types also show an **Identify LED**
+  checkbox, on by default — a real Matter cluster (blinks in response to
+  a controller's "Identify" command) implemented in the firmware file,
+  not just a wizard-only option. A handful of device types genuinely have
+  no Identify cluster at all (confirmed directly against each one's own
+  CSA device type XML) and correspondingly show no such checkbox here —
+  Temperature Controlled Cabinet, Door Lock Controller, Thermostat
+  Controller, and Closure Controller among them; see `DEVICE_TYPES`'
+  optional `identify` field in `index.html`, which several client-invoke
+  "controller" device types simply omit. Untick it (where present) and
+  the wizard
   leaves that `#define` alone, so the firmware's shipped default GPIO
   stays in effect — the LED still exists in the compiled firmware either
   way, this only controls whether the wizard customises its pin. A

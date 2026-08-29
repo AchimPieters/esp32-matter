@@ -7215,6 +7215,426 @@ firmware/oven/            Oven — fifty-eighth device type, and this repo's
                            in a standalone comment rather than inline.
   partitions.csv           same OTA + fctry layout as firmware/light/
   sdkconfig.defaults        same as firmware/light/
+firmware/temperature-controlled-cabinet/  Temperature Controlled Cabinet —
+                           fifty-ninth device type, and this repo's first
+                           STANDALONE use of a device type every other
+                           device that touches it (firmware/refrigerator/'s
+                           own Fridge/Freezer, firmware/oven/'s own single
+                           cavity) has only ever built as a *child*
+                           endpoint. A real, honest product on its own: a
+                           single-zone wine cooler/beverage fridge/mini-
+                           fridge — the class of appliance that genuinely
+                           IS just one temperature-controlled compartment.
+  main/app_main.cpp        Confirmed directly against the CSA's own
+                           TemperatureControlledCabinet.xml (0x0071,
+                           revision 6): `<classification class="simple"
+                           scope="endpoint"/>` — NOT `class="utility"`, the
+                           classification genuinely composed-only device
+                           types (ElectricalSensor/PowerSource/
+                           DeviceEnergyManagement) carry instead. A prior
+                           pass in this repo's own history called this
+                           device type "utility"-class too, by
+                           extrapolating from Refrigerator's/Oven's own
+                           use of it as a child rather than reading its own
+                           classification tag directly — a real, now-
+                           corrected documentation mistake, the same kind
+                           of "re-check the primary source directly rather
+                           than trust an earlier pass's own conclusion"
+                           finding that already unblocked firmware/
+                           battery-storage/ and firmware/oven/ earlier in
+                           this same catalog sweep. `endpoint::
+                           temperature_controlled_cabinet::create()` is
+                           called directly on the node's own root/primary
+                           endpoint, the exact same top-level helper
+                           firmware/refrigerator/'s own Fridge/Freezer
+                           children already use, just with no
+                           `set_parent_endpoint()` call afterward. "Cooler"
+                           condition only (Oven Cavity Operational State/
+                           Oven Mode, gated behind "Heater", are correctly
+                           never created — a Heater-only product using
+                           this device type would be functionally a
+                           single-cavity oven, already covered by
+                           firmware/oven/). No Identify cluster at all —
+                           confirmed the XML lists none (their own Identify
+                           LED lives on the ROOT Refrigerator/Oven endpoint
+                           instead when composed as a child, something this
+                           standalone device has no parent to borrow one
+                           from) — so, per this repo's own device-type-
+                           conformance discipline, this is the first device
+                           type in this repo with no Identify LED at all.
+                           RefrigeratorAndTemperatureControlledCabinetMode
+                           + TemperatureMeasurement (both optionalConform
+                           under "Cooler") are added manually onto the same
+                           endpoint, reusing firmware/refrigerator/'s own
+                           mode-delegate class and DS18B20 driver verbatim
+                           (single instance, no longer parameterized for a
+                           second compartment that doesn't exist here).
+                           Relay + DS18B20 hardware, 0.5 degC hysteresis,
+                           and fail-safe-off-on-read-failure all reused
+                           verbatim from firmware/refrigerator/'s own
+                           control loop. Default range widened to
+                           0.00-20.00 degC (default target 8.00 degC) from
+                           firmware/refrigerator/'s own narrower fridge
+                           range, to also cover real wine-cooler use.
+                           Standard quick-power-cycle factory reset.
+                           Build-verified in Docker (clean first attempt);
+                           not hardware-tested (no relay/DS18B20 hardware
+                           for this device type physically available when
+                           written).
+  partitions.csv           same OTA + fctry layout as firmware/light/
+  sdkconfig.defaults        same as firmware/light/
+firmware/door-lock-controller/  Door Lock Controller — sixtieth device
+                           type, and the first of this session's own batch
+                           of "controller" (remote-panel) device types,
+                           found by re-reading every CSA device type XML's
+                           own `<classification>` tag directly rather than
+                           trusting this repo's earlier wholesale "no
+                           controller device types" exclusion — several
+                           genuinely ARE just physical remote-control
+                           panels for a specific cluster, the same shape
+                           firmware/dimmer-switch/'s and firmware/
+                           on-off-sensor/'s own client-invoke devices
+                           already establish, just applied to a different
+                           target cluster each time.
+  main/app_main.cpp        Confirmed directly against the CSA's own
+                           DoorLockController.xml (device type 0x000B,
+                           revision 3): Door Lock (client) is the ONLY
+                           mandatoryConform cluster — Groups/Scenes
+                           Management (client) both optionalConform, not
+                           implemented. No Identify cluster at all,
+                           confirmed by reading the XML's own full cluster
+                           list directly — the two buttons are the entire
+                           physical interface. Confirmed via Docker `grep`
+                           that `door_lock_controller` only exists under
+                           esp-matter's "generated" data model (this repo
+                           has never enabled) — hand-assembled from lower-
+                           level free functions instead, reusing firmware/
+                           on-off-sensor/'s own hard-learned discipline
+                           (explicit `cluster::descriptor::create()`,
+                           literal device-type-ID/revision passed to
+                           `add_device_type()`, explicit `cluster::
+                           binding::create()` since `cluster::door_lock::
+                           create()` doesn't auto-create one). A genuinely
+                           new client-invoke wrinkle: LockDoor/UnlockDoor
+                           both carry `access ... timed="true"` in the
+                           cluster's own real spec XML — the first timed
+                           commands this repo's client-invoke pattern has
+                           needed, confirmed by reading esp-matter's own
+                           `send_request()` signature directly for its
+                           dedicated `timed_invoke_timeout_ms` parameter
+                           (`DOOR_LOCK_CONTROLLER_TIMED_INVOKE_TIMEOUT_MS`,
+                           1000ms — a plain reasonable window, no canonical
+                           spec-mandated value found). Both commands' own
+                           optional PINCode field (present only under a
+                           COTA+PIN feature `andTerm` this repo's own
+                           firmware/door-lock/ doesn't enable) is correctly
+                           omitted, empty `"{}"` payload. A real,
+                           Docker-build-caught linker gap shared with
+                           firmware/door-lock/'s own SERVER-side header
+                           comment, hit here from the CLIENT side instead:
+                           `emberAfDoorLockClusterInitCallback` has a
+                           plain, non-weak prototype referenced
+                           unconditionally by esp-matter's own
+                           `door_lock::function_list`, regardless of
+                           SERVER/CLIENT flags — fixed with an intentionally
+                           empty definition (this endpoint has no SERVER-
+                           side DoorLock cluster to actually initialize
+                           anything for). Two buttons (Lock, Unlock) —
+                           DoorLock has no Toggle command of its own,
+                           unlike OnOff, so a controller genuinely has to
+                           pick a direction. Standard quick-power-cycle
+                           factory reset. Build-verified in Docker (one
+                           real linker error caught and fixed, clean on
+                           the second attempt); not hardware-tested (no
+                           pushbutton hardware for this device type
+                           physically available when written, and — like
+                           every client-invoke device in this repo —
+                           verifying this one for real also needs a
+                           second, already-commissioned bindable Door Lock
+                           device on the same fabric).
+  partitions.csv           same OTA + fctry layout as firmware/light/
+  sdkconfig.defaults        same as firmware/light/
+firmware/thermostat-controller/  Thermostat Controller — sixty-first
+                           device type: a rotary-knob remote sending real
+                           Thermostat::SetpointRaiseLower commands to a
+                           bound thermostat.
+  main/app_main.cpp        Confirmed directly against the CSA's own
+                           ThermostatController.xml (device type 0x030A,
+                           revision 1): Thermostat (client) is the ONLY
+                           mandatoryConform cluster — Identify/Groups/
+                           Scenes Management (all client) are
+                           optionalConform, not implemented. No SERVER
+                           Identify cluster at all — confirmed by reading
+                           `esp_matter_endpoint.cpp`'s own `thermostat_
+                           controller::add()` directly: even though its
+                           `config_t` is the same shared `app_client_
+                           config` struct (`{descriptor, identify,
+                           binding}`) firmware/control-bridge/'s own
+                           config_t aliases too, `add()` never calls
+                           `identify::create()` — the `identify` field is
+                           simply unused for this device type, matching
+                           its own real cluster list rather than the
+                           shared struct's shape. `endpoint::thermostat_
+                           controller::create()` confirmed complete/
+                           ready-to-use — Descriptor + Binding (added in
+                           `create()` itself) + Thermostat[client] — zero
+                           manual cluster-creation code needed.
+                           SetpointRaiseLower's own two fields (Mode,
+                           Amount) are both mandatoryConform, confirmed by
+                           reading the Thermostat cluster's own real spec
+                           XML directly — unlike DoorLock's own LockDoor/
+                           UnlockDoor, this command carries no `timed`
+                           attribute, so `chip::NullOptional` is correct
+                           here. `Mode` always sent as `kBoth` (2) —
+                           confirmed safe against a Heat-only or Cool-only
+                           bound thermostat by reading the enum's own
+                           conform terms (`kBoth` only requires HEAT-or-
+                           COOL, an `orTerm`, satisfied by any real
+                           thermostat regardless of its current single
+                           mode). `Amount` is +1/-1 (0.1 degC of setpoint
+                           travel per detent), reusing firmware/dimmer-
+                           switch/'s and firmware/thermostat/'s own
+                           quadrature-decoding technique verbatim.
+                           Standard quick-power-cycle factory reset.
+                           Build-verified in Docker (clean first attempt);
+                           not hardware-tested (no rotary encoder hardware
+                           for this device type physically available when
+                           written, and — like every client-invoke device
+                           in this repo — verifying this one for real also
+                           needs a second, already-commissioned bindable
+                           Thermostat device on the same fabric).
+  partitions.csv           same OTA + fctry layout as firmware/light/
+  sdkconfig.defaults        same as firmware/light/
+firmware/window-covering-controller/  Window Covering Controller — sixty-
+                           second device type: a physical three-button
+                           remote (Open/Close/Stop) sending real
+                           WindowCovering::UpOrOpen/DownOrClose/StopMotion
+                           commands to a bound covering.
+  main/app_main.cpp        Confirmed directly against the CSA's own
+                           WindowCoveringController.xml (device type
+                           0x0203, revision 4): Window Covering (client) is
+                           the ONLY mandatoryConform cluster — Identify
+                           (both server and client) is optionalConform, and
+                           Groups (client) is only conditionally mandatory
+                           under an "Active" condition this file doesn't
+                           declare support for. Unlike firmware/
+                           door-lock-controller/'s and firmware/
+                           thermostat-controller/'s own device types (both
+                           genuinely carry NO Identify at all), this one
+                           DOES optionally allow a server-side Identify —
+                           added here, giving this device a real physical
+                           LED, the first of this session's own controller-
+                           device batch to have one. Confirmed via Docker
+                           `grep` that `window_covering_controller` only
+                           exists under esp-matter's "generated" data
+                           model — hand-assembled from lower-level free
+                           functions, same discipline firmware/
+                           door-lock-controller/'s own header comment
+                           already establishes. All three commands
+                           (UpOrOpen/DownOrClose/StopMotion) confirmed, by
+                           reading the WindowCovering cluster's own real
+                           spec XML directly, to carry no fields and no
+                           `timed` attribute — empty `"{}"` payload,
+                           `chip::NullOptional`, the same shape firmware/
+                           switch/'s own buttons already establish. Three
+                           buttons matches how real wall-mounted blinds/
+                           shutter remotes are actually built (an explicit
+                           Stop button, not just Open/Close), reusing
+                           firmware/switch/'s own multi-button, one-
+                           shared-task debounce shape. Standard quick-
+                           power-cycle factory reset. Build-verified in
+                           Docker (clean first attempt); not hardware-
+                           tested (no pushbutton hardware for this device
+                           type physically available when written, and —
+                           like every client-invoke device in this repo —
+                           verifying this one for real also needs a
+                           second, already-commissioned bindable Window
+                           Covering device on the same fabric).
+  partitions.csv           same OTA + fctry layout as firmware/light/
+  sdkconfig.defaults        same as firmware/light/
+firmware/closure-controller/  Closure Controller — sixty-third device
+                           type: a physical two-button remote (Open/Close)
+                           sending real ClosureControl::MoveTo commands to
+                           a bound closure — a garage-door/roller-shutter/
+                           awning remote.
+  main/app_main.cpp        Confirmed directly against the CSA's own
+                           ClosureController.xml (device type 0x023E,
+                           revision 1): Closure Control (client) is the
+                           ONLY mandatoryConform cluster — Identify
+                           (client) and Closure Dimension (client) are
+                           both optionalConform, not implemented. No
+                           server-side Identify at all — confirmed by
+                           reading `closure_controller::add()` directly:
+                           its `config_t` is the same shared `app_client_
+                           config` struct, but `add()` never calls
+                           `identify::create()`, matching the XML's own
+                           real cluster list. `endpoint::
+                           closure_controller::create()` confirmed
+                           complete/ready-to-use — Descriptor + Binding
+                           (added in `create()` itself) + ClosureControl
+                           [client] — zero manual cluster-creation code
+                           needed. `MoveTo` confirmed, by reading the
+                           ClosureControl cluster's own real spec XML
+                           directly, to carry `access ... timed="true"` —
+                           the same real Matter timed-invoke requirement
+                           firmware/door-lock-controller/'s own LockDoor/
+                           UnlockDoor already established for this repo
+                           (reusing the same 1000ms
+                           `CLOSURE_CONTROLLER_TIMED_INVOKE_TIMEOUT_MS`
+                           reasoning). Its three fields (Position/Latch/
+                           Speed) are each individually optionalConform
+                           forming an "at least one" choice group,
+                           confirmed against the same class of `choice="a"
+                           more="true" min="1"` conform pattern this repo
+                           has already catalogued for several other
+                           clusters (e.g. firmware/occupancy-sensor/'s own
+                           sensing-modality features) — only `Position`
+                           (MoveToFullyClosed=0/MoveToFullyOpen=1) is ever
+                           sent, satisfying that requirement on its own
+                           and leaving Latch/Speed genuinely absent, the
+                           same "omit a field the choice-group doesn't
+                           require this call to include" reasoning
+                           firmware/door-lock-controller/'s own optional
+                           PINCode field already establishes. Two buttons
+                           (Open, Close) — ClosureControl has no single
+                           "toggle" command, same reasoning as door-lock-
+                           controller's own two-button design. Standard
+                           quick-power-cycle factory reset. Build-verified
+                           in Docker (clean first attempt); not hardware-
+                           tested (no pushbutton hardware for this device
+                           type physically available when written, and —
+                           like every client-invoke device in this repo —
+                           verifying this one for real also needs a
+                           second, already-commissioned bindable Closure
+                           device on the same fabric).
+  partitions.csv           same OTA + fctry layout as firmware/light/
+  sdkconfig.defaults        same as firmware/light/
+firmware/pump-controller/  Pump Controller — sixty-fourth device type: a
+                           physical on/off remote panel sending a real
+                           OnOff::Toggle command to a bound pump, plus a
+                           real, present — but locally unused —
+                           PumpConfigurationAndControl client shell.
+  main/app_main.cpp        Confirmed directly against the CSA's own
+                           PumpController.xml (device type 0x0304,
+                           revision 4): Identify (server), On/Off (client),
+                           and PumpConfigurationAndControl (client) are ALL
+                           mandatoryConform — Identify (client)/Groups
+                           (client)/Level Control (client)/Scenes
+                           Management (client)/Temperature/Pressure/Flow
+                           Measurement (all client) are optionalConform,
+                           not implemented. Unlike firmware/door-lock-
+                           controller/'s, firmware/thermostat-controller/'s,
+                           and firmware/closure-controller/'s own device
+                           types (all genuinely carry NO server Identify),
+                           this one mandates one — confirmed by reading
+                           `pump_controller::add()` directly: it calls
+                           `identify::create(endpoint, &(config->identify),
+                           CLUSTER_FLAG_SERVER)`. `pump_controller::
+                           config_t`'s own constructor is also confirmed
+                           to set `identify.identify_type =
+                           kVisibleIndicator` itself (not `kActuator`, the
+                           type firmware/pump/'s own Identify config sets
+                           explicitly) — a real, meaningful distinction:
+                           this device is a remote CONTROL panel, not a
+                           physical actuator. `endpoint::pump_controller::
+                           create()` confirmed complete/ready-to-use —
+                           Descriptor + Identify[server] + OnOff[client] +
+                           PumpConfigurationAndControl[client] + Binding
+                           (added in `add()` itself this time, not
+                           `create()` — a real, worth-noting ordering
+                           difference from every other client-invoke
+                           device type in this repo, confirmed by reading
+                           `add()`'s own body directly). PumpConfiguration
+                           AndControl confirmed, by reading the cluster's
+                           own real spec XML, to be mostly attribute-based
+                           (OperationMode is a plain writable attribute,
+                           not a command) rather than command-based the
+                           way OnOff/LevelControl are — a real controller
+                           would drive it through its own generic
+                           attribute-write UI once bound, not through this
+                           repo's existing command-invoke plumbing, so this
+                           file's single button only ever sends
+                           OnOff::Toggle, same "declare the shell, don't
+                           invent busy-work" precedent firmware/switch/'s
+                           own unused Groups/Scenes client shells already
+                           establish. Standard quick-power-cycle factory
+                           reset. Build-verified in Docker (clean first
+                           attempt); not hardware-tested (no pushbutton
+                           hardware for this device type physically
+                           available when written, and — like every
+                           client-invoke device in this repo — verifying
+                           this one for real also needs a second, already-
+                           commissioned bindable Pump device on the same
+                           fabric).
+  partitions.csv           same OTA + fctry layout as firmware/light/
+  sdkconfig.defaults        same as firmware/light/
+firmware/control-bridge/  Control Bridge — sixty-fifth device type, and
+                           the last of this session's own "controller"
+                           device-type batch: a universal light remote,
+                           reusing firmware/color-dimmer-switch/'s own On/
+                           Off + LevelControl + ColorControl button/rotary-
+                           encoder interaction verbatim, plus a real,
+                           previously-undocumented esp-matter gap fixed
+                           onto the same endpoint.
+  main/app_main.cpp        Confirmed directly against the CSA's own
+                           ControlBridge.xml (device type 0x0840, revision
+                           3): Identify (server AND client), Groups
+                           (client), On/Off (client), Level Control
+                           (client), Scenes Management (client), and Color
+                           Control (client) are ALL mandatoryConform — a
+                           real, stricter requirement than firmware/
+                           dimmer-switch/'s and firmware/color-dimmer-
+                           switch/'s own device types (both leave Groups/
+                           Scenes Management merely optionalConform and
+                           skip them for that reason). Illuminance
+                           Measurement and Occupancy Sensing (both client,
+                           optionalConform) are not implemented — a real
+                           controller could bind either as informational
+                           context, but this file has no local logic that
+                           would react to either. `endpoint::
+                           control_bridge::create()` confirmed by reading
+                           `esp_matter_endpoint.cpp`'s own `create()`/
+                           `add()` pair directly: Descriptor + Binding
+                           (added in `create()` itself) + Identify
+                           [server+client] + Groups[client] + OnOff
+                           [client] + LevelControl[client] + ColorControl
+                           [client] — but `add()`'s own body, read line by
+                           line against the XML's own cluster list, is
+                           missing `scenes_management::create(endpoint,
+                           NULL, CLUSTER_FLAG_CLIENT)` entirely, despite
+                           Scenes Management being genuinely
+                           mandatoryConform here — a real, previously-
+                           undocumented gap in this specific top-level
+                           helper (distinct from firmware/refrigerator/'s/
+                           firmware/water-heater/'s own kind of gap, where
+                           the missing cluster was merely optionalConform
+                           and skipping it was a deliberate scope cut, not
+                           a spec violation needing correction). Fixed the
+                           same "add extra clusters onto an already-
+                           correct endpoint" way this repo has fixed every
+                           comparable gap before — a shell only, same
+                           "declare the shell, don't invent busy-work"
+                           precedent firmware/switch/'s own unused Groups/
+                           Scenes client shells already establish. The
+                           on/off button (short=Toggle, long=Identify),
+                           brightness rotary encoder (LevelControl::Step),
+                           and hue rotary encoder (ColorControl::StepHue,
+                           including its own genuinely different
+                           StepModeEnum values and non-nullable
+                           TransitionTime field) are all reused byte-for-
+                           byte from firmware/color-dimmer-switch/'s own
+                           file — see that file's own header comment for
+                           the complete field-ID sourcing. Standard quick-
+                           power-cycle factory reset. Build-verified in
+                           Docker (clean first attempt); not hardware-
+                           tested (no rotary-encoder/pushbutton hardware
+                           for this device type physically available when
+                           written, and — like every client-invoke device
+                           in this repo — verifying this one for real also
+                           needs a second, already-commissioned bindable
+                           color light on the same fabric).
+  partitions.csv           same OTA + fctry layout as firmware/light/
+  sdkconfig.defaults        same as firmware/light/
 tools/
   dev.sh                  opens the Docker dev environment
   gen_factory.sh          local QR + factory partition generator
@@ -9677,28 +10097,131 @@ SECURITY.md               flash encryption / secure boot / signed OTA guidance
    third attempt); not hardware-tested (no relay/reed-switch hardware for
    this device type physically available when written).
 
-   With Oven built, this session's full 92-XML CSA device-type catalog
-   sweep is genuinely complete: every device type with a real,
-   affordable, hobbyist-buildable path now has firmware in this repo.
-   What remains a deliberate, documented skip (not a gap still open to
-   revisit) stays skipped for structural reasons this repo cannot change
-   by trying harder — an external-SDK/dual-chip requirement shared with
-   firmware/camera/ (Intercom/Audio-Video Doorbell/Floodlight Camera/
-   Snapshot Camera/Video Doorbell), Matter's own "utility"-class
-   composed-only device types with no standalone product form
-   (ElectricalSensor/PowerSource/DeviceEnergyManagement/Temperature
-   Controlled Cabinet — always composed onto something else, e.g.
-   firmware/refrigerator/'s and firmware/oven/'s own child endpoints, or
-   firmware/heat-pump/'s/firmware/water-heater/'s own composed
-   ElectricalSensor), controller/media/infrastructure device types
-   (Matter's own bridge/controller/gateway/media-endpoint categories,
-   never a hobbyist end-device build), and the genuinely no-honest-sensor
-   cases confirmed during item 8/9's own cluster-level pass (Radon;
-   Electrical Energy Tariff's own no-cloud/no-fabricated-tariff-data
-   conflict). This closes out the "ga verder met het aanvullen van de
-   devices... totdat alle devices zijn toegevoegd" instruction that drove
-   this whole pass.
-2. Implement Matter **OTA** — partially done. All fifty-eight firmware
+   With Oven built, this session first declared the full 92-XML CSA
+   device-type catalog sweep complete — a conclusion the user's own
+   repeated "ga verder met het aanvullen van de devices... totdat alle
+   devices zijn toegevoegd" instruction then explicitly pushed back on a
+   third time, prompting a genuinely fresh re-check of every one of the
+   34 still-uncovered XMLs' own real `<classification>` tag directly
+   (via Docker `grep`/`cat` inside the pinned SDK image, not from memory)
+   rather than trusting the prior pass's own wholesale exclusions. That
+   re-check found two real mistakes in the "complete" declaration above:
+
+   1. **TemperatureControlledCabinet.xml is `class="simple"
+      scope="endpoint"`, NOT `class="utility"`** — the prior paragraph's
+      own claim was wrong, an assumption extrapolated from Refrigerator's/
+      Oven's own use of it as a composed child rather than checked
+      against the device type's own classification tag. Nothing in the
+      XML requires composition under a parent either (no
+      `<conditionRequirements>` block, unlike Refrigerator's own
+      mandatory-child rule) — genuinely standalone-buildable.
+   2. **The blanket "controller/media/infrastructure device types" skip
+      was too broad.** Reading each remaining "Controller"-suffixed XML's
+      own real cluster list (not just assuming from the category name)
+      found six that are genuinely simple, physical remote-control panels
+      for one specific cluster — the exact same shape firmware/
+      dimmer-switch/'s and firmware/on-off-sensor/'s own client-invoke
+      devices already establish in this repo, just never generalized past
+      those two. Camera-adjacent (Intercom/AudioDoorbell/FloodlightCamera/
+      SnapshotCamera/VideoDoorbell/CameraController), genuine media-
+      streaming (ContentApp/CastingVideoClient/CastingVideoPlayer/
+      BasicVideoPlayer/VideoRemoteControl/Speaker — the latter is a bare
+      On/Off+LevelControl "volume" surface with none of the real media-
+      playback clusters, would just be a relabeled dimmable light with no
+      honest audio behind it), and genuine network/fabric infrastructure
+      (NetworkInfraManager/ThreadBorderRouter/SecondaryNetworkInterface/
+      BridgedNode/JointFabricAdmin/Aggregator/RootNodeDeviceType/
+      OtaProvider/OtaRequestor) all remain correctly out of scope — this
+      wasn't a blanket category error, just an incomplete first pass
+      through it.
+
+   Seven more device types followed as a direct result:
+   `firmware/temperature-controlled-cabinet/` (fifty-ninth — a standalone
+   wine cooler/mini-fridge, reusing firmware/refrigerator/'s own child-
+   endpoint code almost verbatim as a single root device),
+   `firmware/door-lock-controller/` (sixtieth — hand-assembled since only
+   the "generated" data model has a helper, and the first device type in
+   this repo needing a real timed-invoke, `timed_invoke_timeout_ms`,
+   parameter for its client commands, plus a real Docker-build-caught
+   linker gap shared with firmware/door-lock/'s own SERVER-side
+   `emberAfDoorLockClusterInitCallback` requirement, hit here from the
+   CLIENT side instead and fixed with an intentionally empty definition),
+   `firmware/thermostat-controller/` (sixty-first — a rotary-knob remote
+   sending real `SetpointRaiseLower` commands), `firmware/
+   window-covering-controller/` (sixty-second — hand-assembled, three
+   buttons, the first of this batch with a real Identify LED),
+   `firmware/closure-controller/` (sixty-third — another genuinely timed
+   command, `ClosureControl::MoveTo`, plus this repo's first real "at
+   least one of these optional fields" choice group encoded into a
+   client-invoke JSON payload), `firmware/pump-controller/` (sixty-fourth
+   — On/Off::Toggle plus a real, declared-but-locally-unused
+   PumpConfigurationAndControl client shell, since that cluster is mostly
+   attribute-based rather than command-based), and `firmware/
+   control-bridge/` (sixty-fifth — reusing firmware/color-dimmer-switch/'s
+   own button/rotary-encoder logic verbatim, plus a second real,
+   previously-undocumented esp-matter top-level-helper gap: Scenes
+   Management is genuinely mandatoryConform on this device type but never
+   created by `control_bridge::add()` itself, fixed the same "add extra
+   clusters onto an already-correct endpoint" way every comparable gap in
+   this repo already is). Five of the six device-type helpers used here
+   (`temperature_controlled_cabinet`/`thermostat_controller`/
+   `closure_controller`/`pump_controller`/`control_bridge`) turned out to
+   already exist as real, usable legacy top-level helpers — only
+   `door_lock_controller` and `window_covering_controller` needed hand-
+   assembly, both confirmed (not assumed) via the same "generated-data-
+   model-only" Docker `grep` check this repo's other niche device types
+   (firmware/doorbell/, firmware/chime/, firmware/on-off-sensor/) already
+   established. Wizard integration for all seven needed zero new
+   mechanism — `driver`/`secondary`/`extraButtons`/`identify` in various
+   already-established combinations, seven new hand-drawn icons (a
+   single-compartment cabinet, a padlock-on-a-remote, a dial-with-pointer,
+   a three-button plate, an up/down-arrow plate, a button-with-droplet
+   plate, and a slider-plus-color-dot plate) — verified with the
+   established Node.js sandboxed regression check (all 64 wizard device
+   types swept through all 4 render/complete/sed/review functions with
+   zero exceptions) and real sed dry-runs against Docker copies of all
+   seven files (all byte-identical no-ops against their own shipped
+   defaults). All seven build-verified in Docker (six clean on the first
+   attempt; door-lock-controller's own linker gap caught and fixed, clean
+   on the second) — running three of the seven builds fully in parallel
+   inside this session's own Docker resources genuinely OOM-killed all
+   three (`Killed signal terminated program cc1plus`, not a code error —
+   confirmed by rebuilding each sequentially afterward, all clean), a
+   real, worth-remembering resource-contention lesson for any future
+   multi-device Docker build batch in this repo: two truly parallel heavy
+   ESP-IDF C++ builds seems to be this environment's own practical
+   ceiling, not the number of device types being verified in one sitting.
+   None of the seven is hardware-tested — no pushbutton/rotary-encoder/
+   relay/DS18B20 hardware for any of them was physically available when
+   written, and every client-invoke device among them also needs a
+   second, already-commissioned bindable target device on the same
+   fabric to verify for real, the same standing caveat every prior
+   client-invoke device type in this repo already carries.
+
+   With these seven, the device-type catalog sweep is genuinely complete
+   a second time, this time after actually re-verifying rather than
+   re-asserting the prior conclusion. What remains a deliberate,
+   documented skip (not a gap still open to revisit) stays skipped for
+   structural reasons this repo cannot change by trying harder — an
+   external-SDK/dual-chip requirement shared with firmware/camera/
+   (Intercom/AudioDoorbell/FloodlightCamera/SnapshotCamera/VideoDoorbell/
+   CameraController), Matter's own genuinely "utility"-class composed-
+   only device types with no standalone product form (ElectricalSensor/
+   PowerSource/DeviceEnergyManagement — always composed onto something
+   else, e.g. firmware/heat-pump/'s/firmware/water-heater/'s own composed
+   ElectricalSensor), real media-streaming and network/fabric
+   infrastructure device types (never a hobbyist end-device build — see
+   the full enumeration above), ClosurePanel (confirmed, by reading its
+   own XML directly, to explicitly `<disallowConform/>` the very Closure
+   Control cluster that would let it do anything on its own — structurally
+   requires composition under a parent Closure, unlike Temperature
+   Controlled Cabinet's own genuinely standalone-legal shape), and the
+   genuinely no-honest-sensor cases confirmed during item 8/9's own
+   cluster-level pass (Radon; Electrical Energy Tariff's own no-cloud/
+   no-fabricated-tariff-data conflict). This closes out the "ga verder
+   met het aanvullen van de devices... totdat alle devices zijn
+   toegevoegd" instruction that drove this whole pass.
+2. Implement Matter **OTA** — partially done. All sixty-five firmware
    types ship `CONFIG_ENABLE_OTA_REQUESTOR=y`, which adds the OTA Requestor
    cluster to the root node endpoint entirely via Kconfig — esp-matter's
    own core startup (`esp_matter_core.cpp`) calls
