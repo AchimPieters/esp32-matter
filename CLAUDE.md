@@ -11502,6 +11502,85 @@ SECURITY.md               flash encryption / secure boot / signed OTA guidance
     bridges (it makes a separate Thread mesh's own already-Matter
     end-devices reachable at all, rather than exposing non-Matter
     devices as new Matter endpoints itself).
+11. **Device-type name audit + "Choose your device" categorization.** The
+    user asked to verify every wizard card's own displayed name against
+    the real Matter spec, and to group the "Choose your device" step
+    (previously one flat 65-card grid) into categories.
+
+    Every one of the 65 wizard device types' own `name` was checked
+    directly against the CSA's own Matter 1.6 device-type XML files
+    (fetched from inside the pinned SDK image, the same primary-source
+    discipline this repo already applies to every other spec question)
+    rather than assumed correct from memory. Four had genuinely drifted
+    from the official CSA name, with no documented reason for the
+    difference — fixed to match exactly: `switch` "On/Off Switch" →
+    **"On/Off Light Switch"**, `evse` "EVSE" → **"Energy EVSE"**,
+    `robot-vacuum` "Robot Vacuum" → **"Robotic Vacuum Cleaner"**,
+    `smoke-co-alarm` "Smoke/CO Alarm" → **"Smoke CO Alarm"** (no slash,
+    matching the XML's own literal string). Three more cards were
+    checked and confirmed to be DELIBERATE, already-documented friendly
+    names rather than errors — `outlet` ("Outlet" for On/Off Plug-in
+    Unit — CLAUDE.md's own repository-layout entry already explains this
+    matches how Apple/Google Home themselves label the device), and
+    `color-light`/`addressable-light` (both "Color Light"/"Addressable
+    LED Strip" for the same real Extended Color Light device type,
+    distinguished by hardware not by Matter device type) — left as
+    shipped, but each card's own `desc` text was strengthened to state
+    the real CSA device type name explicitly, so the mapping stays
+    traceable even where the card title doesn't literally match it.
+
+    `tools/product-wizard/index.html` gained a new `DEVICE_CATEGORIES`
+    array (id + label, in display order) and a `category` field on every
+    one of the 65 `DEVICE_TYPES` entries — purely a display grouping (a
+    concept Matter's own device-type library has no equivalent of at
+    all; the CSA's own list is flat and alphabetized) chosen for how a
+    hobbyist actually thinks about "what am I building," on request:
+    Lighting (7), Switches & Remotes (12), Outlets & Power (8), Sensors
+    (13), Climate & Ventilation (6), Doors/Windows & Closures (4),
+    Appliances (12), Doorbell & Chime (2), Bridges (1) — 65 total,
+    verified to cover every id exactly once via a Python script before
+    ever touching `renderGetStarted()`. A deliberate split, not an
+    afterthought: light-emitting devices ("Lighting") and devices that
+    only ever CONTROL something else, including dimmer/color-dimmer
+    switches for lights specifically, ("Switches & Remotes") are two
+    separate categories rather than one combined "lighting" bucket — the
+    user's own example ("switches en lampen, etc") named exactly this
+    split. The five *-controller device types (door-lock-controller/
+    thermostat-controller/window-covering-controller/closure-controller/
+    pump-controller) went into Switches & Remotes rather than alongside
+    their respective target device (door-lock, thermostat, etc.) — they
+    behave exactly like a dimmer-switch conceptually (client-only, sends
+    commands, no local Matter-visible state of their own), so grouping by
+    *behavior* rather than by *target device* was judged the more useful
+    split for someone browsing "I want to build a remote."
+    `renderGetStarted()` was rewritten to render one `.category-section`
+    per non-empty `DEVICE_CATEGORIES` entry (each its own heading + count
+    + `.option-grid`, in that array's own order) instead of one flat
+    grid, plus an `uncategorized` fallback section (rendered only if a
+    future entry is ever added without a `category` — never triggers
+    today, exists so a missing field fails visibly instead of silently
+    vanishing a card from the picker). Two new CSS classes
+    (`.category-section`, `.category-heading`) added for the section
+    dividers/counts.
+
+    Verified two ways: a Node.js sandboxed regression check (53/53
+    checks — every device type has exactly one real category, every
+    category heading renders, every device card renders exactly once
+    with no duplicates across sections, plus the 4 name fixes) and, for
+    the first time this session, a REAL headless-Chromium render of the
+    actual page — `playwright-core` installed fresh into this
+    environment specifically for this (no browser was available before),
+    driving the real `index.html` through Create Product → Get Started
+    and screenshotting the full, real rendered "Choose your device" page
+    — confirming visually, not just structurally, that all nine category
+    headings, their counts, and all 65 cards (with the corrected names)
+    render cleanly with no overlap or duplication. The same "actually
+    render wizard changes with a headless browser, not just read the
+    generated HTML" discipline this repo's own earlier icon-legibility
+    catch (the outlet icon reading as a smiley face at real card size)
+    already established — this is the first time since then a real
+    browser, rather than the Node `vm` sandbox's structural checks alone,
+    was available to do it with.
 
 ## Note on hardware/USB
 

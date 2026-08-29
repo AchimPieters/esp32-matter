@@ -356,6 +356,29 @@
     gap: 14px;
   }
 
+  .category-section + .category-section {
+    margin-top: 32px;
+  }
+
+  .category-heading {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    margin: 0 0 14px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .category-heading h3 {
+    margin: 0;
+    font-size: 15px;
+  }
+
+  .category-heading .category-count {
+    color: var(--text-muted);
+    font-size: 12px;
+  }
+
   .option-card {
     display: block;
     width: 100%;
@@ -1402,15 +1425,44 @@ function makeRotaryEncoder(aGpio, bGpio, buttonGpio) {
   };
 }
 
+/* Groups for the "Choose your device" step below — purely a display
+ * grouping (order + section label), not a Matter concept of its own. Each
+ * DEVICE_TYPES entry below carries a `category` field naming one of these
+ * ids; renderGetStarted() groups cards by it in this array's own order.
+ * Deliberately separates devices that EMIT light ("lighting") from devices
+ * that CONTROL something else ("switches-remotes", including light
+ * dimmers/switches) — on request, matching how a hobbyist actually thinks
+ * about "what am I building" (a bulb vs. a button), not how the Matter
+ * spec organizes its own device-type library (which has no category
+ * concept at all — device types are just a flat, alphabetized list). Every
+ * one of the 65 device type ids below is assigned to exactly one category
+ * (verified with a Node.js sandboxed check before shipping — see
+ * tools/product-wizard/README.md's own testing section). */
+const DEVICE_CATEGORIES = [
+  { id: "lighting", label: "Lighting" },
+  { id: "switches-remotes", label: "Switches & Remotes" },
+  { id: "outlets-power", label: "Outlets & Power" },
+  { id: "sensors", label: "Sensors" },
+  { id: "climate-hvac", label: "Climate & Ventilation" },
+  { id: "doors-windows", label: "Doors, Windows & Closures" },
+  { id: "appliances", label: "Appliances" },
+  { id: "doorbell-chime", label: "Doorbell & Chime" },
+  { id: "bridges", label: "Bridges" },
+];
+
 /* Device types this repo actually has firmware for (see firmware/). Each
  * entry's `driver` block describes the one GPIO setting that device's
  * app_main.cpp actually exposes, plus the exact #define + file path so the
  * Customise & Review / Generate Firmware steps can generate a real diff
  * instead of a generic placeholder. Copy an existing firmware/ folder to
- * add a new type, per CLAUDE.md, and add a matching entry here. */
+ * add a new type, per CLAUDE.md, and add a matching entry here — and give
+ * it a `category` (see DEVICE_CATEGORIES above) so it shows up under
+ * "Choose your device" rather than being silently dropped from every
+ * category section. */
 const DEVICE_TYPES = [
   {
     id: "light",
+    category: "lighting",
     name: "On/Off Light",
     desc: "Matter on/off light, driven by a single digital GPIO. Reference device in firmware/light/.",
     // Shown on the card itself; `desc` above becomes the card's hover
@@ -1449,7 +1501,8 @@ const DEVICE_TYPES = [
   },
   {
     id: "switch",
-    name: "On/Off Switch",
+    category: "switches-remotes",
+    name: "On/Off Light Switch",
     desc: "Matter on/off switch: 1-4 independent buttons, each its own endpoint sending an OnOff Toggle command to whatever it's bound to. Reference device in firmware/switch/.",
     shortDesc: "1-4 buttons, bound to other devices.",
     // Matches project(matter_switch) in firmware/switch/CMakeLists.txt.
@@ -1537,6 +1590,7 @@ const DEVICE_TYPES = [
   },
   {
     id: "contact",
+    category: "sensors",
     name: "Contact Sensor",
     desc: "Matter contact sensor: a digital input (e.g. a door/window reed switch) reports open/closed via the Boolean State cluster. Reference device in firmware/contact-sensor/.",
     shortDesc: "Reports open/closed (reed switch).",
@@ -1585,6 +1639,7 @@ const DEVICE_TYPES = [
   },
   {
     id: "outlet",
+    category: "outlets-power",
     name: "Outlet",
     desc: "Matter On/Off Plug-in Unit: a physical button toggles the device's own on/off state, visible and controllable from Apple/Google Home (unlike the switch's client-only Binding approach). Optional power monitoring. Reference device in firmware/outlet/.",
     shortDesc: "Button + controllable on/off tile.",
@@ -1681,6 +1736,7 @@ const DEVICE_TYPES = [
   },
   {
     id: "temperature",
+    category: "sensors",
     name: "Temperature Sensor",
     desc: "Matter temperature + humidity sensor — pick which sensor chip you actually have wired up below. Reports via two endpoints (temperature_sensor + humidity_sensor device types — Matter has no single device type combining them; DS18B20 is temperature-only, so it only gets the one endpoint). Reference device in firmware/temperature-sensor/.",
     shortDesc: "Temperature + humidity, pick your sensor.",
@@ -1737,6 +1793,7 @@ const DEVICE_TYPES = [
   },
   {
     id: "light-sensor",
+    category: "sensors",
     name: "Light Sensor",
     desc: "Matter ambient light sensor — pick which sensor you actually have wired up below. Reports illuminance via the Illuminance Measurement cluster. Reference device in firmware/light-sensor/.",
     shortDesc: "Ambient light, pick LDR or BH1750.",
@@ -1794,6 +1851,7 @@ const DEVICE_TYPES = [
   },
   {
     id: "dimmable-light",
+    category: "lighting",
     name: "Dimmable Light",
     desc: "Matter dimmable light: On/Off + LevelControl (brightness), driven as real PWM via the LEDC peripheral — this repo's first device type with an actuator beyond simple on/off. Reference device in firmware/dimmable-light/.",
     shortDesc: "On/off + brightness (PWM).",
@@ -1828,6 +1886,7 @@ const DEVICE_TYPES = [
   },
   {
     id: "window-covering",
+    category: "doors-windows",
     name: "Window Covering",
     desc: "Matter roller shade / curtain: two relay outputs (up/down) driving a reversing motor, with time-based position tracking (no position sensor assumed) — this repo's first device type with continuous, multi-second physical movement instead of an instant on/off/dim response. Reference device in firmware/window-covering/.",
     shortDesc: "Two relays drive a curtain/blind motor.",
@@ -1873,8 +1932,9 @@ const DEVICE_TYPES = [
   },
   {
     id: "color-light",
+    category: "lighting",
     name: "Color Light",
-    desc: "Matter color light: On/Off + LevelControl (brightness) + ColorControl (Hue/Saturation only — not XY or color temperature, a deliberately smaller scope than esp-matter's own extended_color_light helper defaults to). Three PWM channels drive an RGB LED. Reference device in firmware/color-light/.",
+    desc: "Matter Extended Color Light: On/Off + LevelControl (brightness) + ColorControl (Hue/Saturation only — not XY or color temperature, a deliberately smaller scope than esp-matter's own extended_color_light helper defaults to). \"Color Light\" here is a friendlier product name for the same real device type, matching how Apple/Google Home themselves label it. Three PWM channels drive an RGB LED. Reference device in firmware/color-light/.",
     shortDesc: "RGB light, hue + saturation + brightness.",
     // Matches project(matter_color_light) in
     // firmware/color-light/CMakeLists.txt. Three PWM channels (Red =
@@ -1966,8 +2026,9 @@ const DEVICE_TYPES = [
   },
   {
     id: "addressable-light",
+    category: "lighting",
     name: "Addressable LED Strip",
-    desc: "Matter color light (same Hue/Saturation/brightness capability as Color Light, plus color-temperature control for the two RGBCCT chips) driving an addressable strip or driver chip over one data pin (or data+clock, for APA102/SM2335EGH) instead of plain PWM channels. Every pixel/fixture is always set to the same color — Matter has no per-pixel/effects concept (its DynamicLighting cluster exists but is still provisional, not usable against a real controller), so this is not \"RGBIC\" per-zone control, just a different physical layer for the same single-color Matter light. Reference device in firmware/addressable-light/.",
+    desc: "Also a Matter Extended Color Light (same device type as Color Light, same Hue/Saturation/brightness capability, plus color-temperature control for the two RGBCCT chips) — \"Addressable LED Strip\" names the hardware, not a different Matter device type — driving an addressable strip or driver chip over one data pin (or data+clock, for APA102/SM2335EGH) instead of plain PWM channels. Every pixel/fixture is always set to the same color — Matter has no per-pixel/effects concept (its DynamicLighting cluster exists but is still provisional, not usable against a real controller), so this is not \"RGBIC\" per-zone control, just a different physical layer for the same single-color Matter light. Reference device in firmware/addressable-light/.",
     shortDesc: "Addressable strip or smart-bulb driver, one color for all pixels.",
     // Matches project(matter_addressable_light) in
     // firmware/addressable-light/CMakeLists.txt. Chip choice is a
@@ -2037,6 +2098,7 @@ const DEVICE_TYPES = [
   },
   {
     id: "thermostat",
+    category: "climate-hvac",
     name: "Thermostat",
     desc: "Matter Thermostat (Heat + Cool): a local-temperature sensor drives a bang-bang (hysteresis) control loop, with a choice of three ways to actually reach the boiler/AC — direct relay wiring, a bound remote relay module, or native OpenTherm. Optional rotary encoder for local setpoint control and a local display. Reference device in firmware/thermostat/.",
     shortDesc: "Heat+Cool, relay/Binding/OpenTherm output.",
@@ -2111,6 +2173,7 @@ const DEVICE_TYPES = [
   },
   {
     id: "door-lock",
+    category: "doors-windows",
     name: "Door Lock",
     desc: "Matter Door Lock: LockDoor/UnlockDoor commands actuate a hobby servo (retrofitting an existing thumb-turn deadbolt) or an electric strike/solenoid relay, then update LockState — from an optional position sensor's real reading, or optimistically if none is wired up (explicitly allowed by the spec for this class of hardware). No PIN/credential/schedule features — this device doesn't enable RequirePINforRemoteOperation, so any real controller's Lock/Unlock tile works with no code. Reference device in firmware/door-lock/.",
     shortDesc: "Servo or relay, optional position sensor.",
@@ -2174,7 +2237,8 @@ const DEVICE_TYPES = [
   },
   {
     id: "smoke-co-alarm",
-    name: "Smoke/CO Alarm",
+    category: "sensors",
+    name: "Smoke CO Alarm",
     desc: "Matter Smoke/CO Alarm: an MQ-2 (smoke) and/or MQ-7 (CO) gas sensor drives the SmokeCoAlarm cluster's SmokeState/COState attributes via a plain adjustable-millivolt-threshold classifier, not a calibrated ppm reading (Matter's own cluster has no numeric concentration attribute either — only the Normal/Warning/Critical tri-state). A real controller's SelfTestRequest command is fully supported (simulated locally, since there's no real self-test routine to run against a plain analog sensor). Optionally add a real Temperature/Humidity chip too (check the clusters below) for a genuine combination smoke/CO/temperature alarm. Reference device in firmware/smoke-co-alarm/.",
     shortDesc: "MQ-2 smoke and/or MQ-7 CO, threshold-based; optional temp/humidity.",
     // Matches project(matter_smoke_co_alarm) in
@@ -2237,6 +2301,7 @@ const DEVICE_TYPES = [
   },
   {
     id: "occupancy",
+    category: "sensors",
     name: "Occupancy Sensor",
     desc: "Matter occupancy sensor: a motion module (PIR, or a microwave/mmWave radar) reports occupied/unoccupied via the Occupancy Sensing cluster. Every supported sensor drives the exact same single active-high digital GPIO pin — the module's own onboard timing (PIR's hold-time potentiometer, or RCWL-0516's fixed ~2s pulse) decides how long it reports \"occupied\"; this firmware just reports whatever the pin is currently doing. Reference device in firmware/occupancy-sensor/.",
     shortDesc: "PIR or radar motion, reports occupied/unoccupied.",
@@ -2279,6 +2344,7 @@ const DEVICE_TYPES = [
   },
   {
     id: "fan",
+    category: "climate-hvac",
     name: "Fan",
     desc: "Matter fan: real PWM speed control (0-100%, PercentSetting/PercentCurrent) via the LEDC peripheral, driving a MOSFET or fan-speed-controller board's PWM input — this repo's second Delegate-based cluster after Window Covering's WindowCovering. Reference device in firmware/fan/.",
     shortDesc: "Variable-speed fan (PWM).",
@@ -2311,6 +2377,7 @@ const DEVICE_TYPES = [
   },
   {
     id: "air-quality",
+    category: "sensors",
     name: "Air Quality Sensor",
     desc: "Matter air quality sensor: a CCS811 I2C gas sensor reports real calibrated eCO2 (ppm) and eTVOC (ppb) via CarbonDioxideConcentrationMeasurement/TotalVolatileOrganicCompoundsConcentrationMeasurement, plus a plain Good/Poor headline via the AirQuality cluster (a documented esp-matter gap means the finer Fair/Moderate/VeryPoor/ExtremelyPoor states aren't reachable yet — see app_main.cpp's header comment). Every other AirQualitySensor.xml optional cluster this device type can honestly back — Temperature, Relative Humidity, CO, Ozone, PM1/PM2.5/PM10, Formaldehyde, NO2 — is now available too, each behind its own real, currently-sold sensor chip; check the ones you want below. Radon stays unavailable — no realistic hobbyist-accessible sensor exists for it. Reference device in firmware/air-quality-sensor/.",
     shortDesc: "eCO2 + eTVOC (CCS811); check off any other clusters you have real sensors for.",
@@ -2386,6 +2453,7 @@ const DEVICE_TYPES = [
   },
   {
     id: "water-leak",
+    category: "sensors",
     name: "Water Leak Detector",
     desc: "Matter water leak detector: a probe-style water sensor module (e.g. an FC-37/YL-83-style LM393 board) reports leak/dry via the Boolean State cluster — StateValue=true means a leak IS detected, the opposite direction from Contact Sensor's true=closed. Reference device in firmware/water-leak-detector/.",
     shortDesc: "Water sensor probe, leak/dry.",
@@ -2421,6 +2489,7 @@ const DEVICE_TYPES = [
   },
   {
     id: "air-purifier",
+    category: "climate-hvac",
     name: "Air Purifier",
     desc: "Matter air purifier: same PWM fan speed control as firmware/fan/, plus HEPA and Activated Carbon Filter Monitoring clusters — a time-based percent-remaining estimate (not a real sensor reading) computed from accumulated running time, persisted across reboots. Reference device in firmware/air-purifier/.",
     shortDesc: "Variable-speed fan (PWM) + HEPA/carbon filter life.",
@@ -2452,6 +2521,7 @@ const DEVICE_TYPES = [
   },
   {
     id: "valve",
+    category: "doors-windows",
     name: "Water Valve",
     desc: "Matter water valve: a relay-driven solenoid valve responds to Open/Close commands via the Valve Configuration and Control cluster — including an optional timed auto-close (e.g. for an irrigation zone), handled entirely by the cluster's own built-in countdown timer, not this firmware. On/off only (no partial-open Level feature). Reference device in firmware/valve/.",
     shortDesc: "Relay-driven solenoid valve, open/close + auto-close timer.",
@@ -2480,6 +2550,7 @@ const DEVICE_TYPES = [
   },
   {
     id: "pressure",
+    category: "sensors",
     name: "Pressure Sensor",
     desc: "Matter pressure sensor: a BMP280 I2C barometric pressure sensor reports MeasuredValue (kPa, resolution 0.1 kPa) via the Pressure Measurement cluster — the simplest device type XML in this repo (just Identify + one mandatory cluster, no options). Reference device in firmware/pressure-sensor/.",
     shortDesc: "Barometric pressure (BMP280).",
@@ -2522,7 +2593,8 @@ const DEVICE_TYPES = [
   },
   {
     id: "robot-vacuum",
-    name: "Robot Vacuum",
+    category: "appliances",
+    name: "Robotic Vacuum Cleaner",
     desc: "Matter Robotic Vacuum Cleaner: RvcRunMode (Idle/Cleaning/Mapping) drives two independent drive motors for differential steering, RvcCleanMode (Vacuum/Mop/Vacuum & Mop) switches a vacuum motor and a mop pump, and RvcOperationalState handles Pause/Resume/GoHome. No real navigation is implemented — Cleaning/Mapping both just drive forward at a fixed speed, an explicit, documented limitation (there's no camera/LIDAR/bump/cliff sensor assumed to steer with). An optional dock-contact sensor lets GoHome report a real Charging state instead of an optimistic guess. Reference device in firmware/robot-vacuum/.",
     shortDesc: "2 drive motors + vacuum + mop, no real navigation.",
     // Matches project(matter_robot_vacuum) in
@@ -2628,6 +2700,7 @@ const DEVICE_TYPES = [
   },
   {
     id: "extractor-hood",
+    category: "climate-hvac",
     name: "Extractor Hood",
     desc: "Matter extractor hood: the same PWM fan speed control as firmware/fan/ and firmware/air-purifier/, plus HEPA and Activated Carbon Filter Monitoring clusters — the HEPA cluster is knowingly repurposed here to represent the hood's actual grease filter, since Matter has no dedicated grease-filter cluster. A time-based percent-remaining estimate (not a real sensor reading), same technique as the air purifier's own filter life. Reference device in firmware/extractor-hood/.",
     shortDesc: "Variable-speed fan (PWM) + grease/carbon filter life.",
@@ -2661,6 +2734,7 @@ const DEVICE_TYPES = [
   },
   {
     id: "water-heater",
+    category: "appliances",
     name: "Water Heater",
     desc: "Matter water heater: Thermostat (Heat-only) + WaterHeaterManagement (real Boost/CancelBoost commands, with BoostStarted/BoostEnded events) + WaterHeaterMode (Off/Manual/Timed). A single relay drives an immersion heating element's own contactor — the classic DIY smart-electric-water-heater retrofit — while a waterproof DS18B20 probe reads the tank temperature. Optionally add a real power-monitor chip (same 6-chip choice as Outlet/Electrical Meter/Heat Pump) for a genuine second Electrical Sensor endpoint. Reference device in firmware/water-heater/.",
     shortDesc: "Relay + DS18B20 probe, real Boost command; optional power monitor.",
@@ -2728,7 +2802,8 @@ const DEVICE_TYPES = [
   },
   {
     id: "evse",
-    name: "EVSE",
+    category: "outlets-power",
+    name: "Energy EVSE",
     desc: "Matter EVSE controller: a single relay gates an ALREADY-APPROVED EVSE unit's own low-voltage enable/authorize input via the EnergyEvse cluster's EnableCharging/Disable commands — NOT vehicle charging current directly, see the safety note in app_main.cpp — plus EnergyEvseMode (Manual/Time of Use/Solar Charging) and a real, working ChargingPreferences schedule store (round-trips real data, but nothing acts on it automatically). Reference device in firmware/evse/.",
     shortDesc: "Relay gates an existing EVSE's enable input.",
     // Matches project(matter_evse) in firmware/evse/CMakeLists.txt. `driver`
@@ -2780,6 +2855,7 @@ const DEVICE_TYPES = [
   },
   {
     id: "generic-switch",
+    category: "switches-remotes",
     name: "Generic Switch",
     desc: "Matter generic switch: a momentary pushbutton fires real InitialPress/LongPress/ShortRelease/LongRelease/MultiPressOngoing/MultiPressComplete events for automations — a full single/double/triple/quadruple-click-plus-long-press \"smart button,\" unlike firmware/switch/'s own On/Off Switch which sends a command straight to a bound target. Reference device in firmware/generic-switch/.",
     shortDesc: "Momentary button, click/multi-click/long-press events.",
@@ -2811,6 +2887,7 @@ const DEVICE_TYPES = [
   },
   {
     id: "refrigerator",
+    category: "appliances",
     name: "Refrigerator",
     desc: "Matter Refrigerator: a genuinely composed device — a Refrigerator root endpoint with two Temperature Controlled Cabinet child endpoints (Fridge + Freezer) linked via esp-matter's real parent-child endpoint API, each with its own TemperatureControl setpoint, RefrigeratorAndTemperatureControlledCabinetMode (Normal/Rapid Cool or Normal/Rapid Freeze), and DS18B20-based TemperatureMeasurement driving an independent hysteresis-controlled relay. A whole-appliance door sensor drives RefrigeratorAlarm's DoorOpen state. Reference device in firmware/refrigerator/.",
     shortDesc: "Fridge + freezer compartments, each with its own sensor/relay/mode.",
@@ -2885,6 +2962,7 @@ const DEVICE_TYPES = [
   },
   {
     id: "dishwasher",
+    category: "appliances",
     name: "Dishwasher",
     desc: "Matter Dishwasher: the generic OperationalState cluster (Start/Stop/Pause/Resume) drives a real, simplified wash cycle — a heater relay (hysteresis-controlled against a DS18B20 reading and TemperatureControl's own live wash-temperature setpoint) plus a wash pump run together during Washing, then a drain pump alone during Draining, before reporting OperationCompletion. DishwasherMode (Normal/Heavy/Light) is locked out while running. A real door sensor pauses the cycle (not an error) and raises DishwasherAlarm's DoorError bit. Reference device in firmware/dishwasher/.",
     shortDesc: "Timed wash + drain cycle, heater/pump relays, door interlock.",
@@ -2953,6 +3031,7 @@ const DEVICE_TYPES = [
   },
   {
     id: "laundry-washer",
+    category: "appliances",
     name: "Laundry Washer",
     desc: "Matter Laundry Washer: the generic OperationalState cluster (Start/Stop/Pause/Resume) drives a real wash cycle — Washing (heater relay, hysteresis-controlled against a DS18B20 reading and TemperatureControl's own live wash-temperature setpoint, plus the motor running), then however many rinses LaundryWasherControls' own NumberOfRinses setting calls for (each a real Rinse + Drain phase pair), then Spinning. LaundryWasherMode (Normal/Delicate/Heavy/Whites) is locked out while running. A real door sensor pauses the cycle mid-wash. Reference device in firmware/laundry-washer/.",
     shortDesc: "Timed wash + N rinses + spin, heater/motor/drain relays.",
@@ -3022,6 +3101,7 @@ const DEVICE_TYPES = [
   },
   {
     id: "pump",
+    category: "appliances",
     name: "Pump",
     desc: "Matter pump: PumpConfigurationAndControl (ConstantSpeed) + On/Off + LevelControl. A relay gates the pump motor's own power while a separate PWM output drives a real speed-controller/VFD's speed input — the same plain enable-line-plus-speed-signal split a real variable-speed pump/circulator exposes. OperationMode (Normal/Minimum/Maximum) selects between LevelControl's own CurrentLevel and the feature-configured Min/MaxConstSpeed bounds. Reference device in firmware/pump/.",
     shortDesc: "Relay enable + PWM speed output.",
@@ -3064,6 +3144,7 @@ const DEVICE_TYPES = [
   },
   {
     id: "laundry-dryer",
+    category: "appliances",
     name: "Laundry Dryer",
     desc: "Matter Laundry Dryer: the generic OperationalState cluster (Start/Stop/Pause/Resume) drives a real 2-phase cycle — Drying (heater relay, hysteresis-controlled against a DS18B20 reading and TemperatureControl's own live drying-air setpoint, plus the drum motor tumbling) for a duration set by LaundryDryerControls' own SelectedDrynessLevel (Low/Normal/Extra/Max), then a fixed unheated Cooldown tumble. Reuses LaundryWasher's own Mode cluster (Normal/Delicate/Heavy/Quick) — Matter has no separate dryer-specific mode cluster. No water handling at all: no fill, no rinse, no drain. Reference device in firmware/laundry-dryer/.",
     shortDesc: "Timed drying + cooldown, heater/motor relays.",
@@ -3125,6 +3206,7 @@ const DEVICE_TYPES = [
   },
   {
     id: "room-air-conditioner",
+    category: "climate-hvac",
     name: "Room Air Conditioner",
     desc: "Matter Room Air Conditioner: Thermostat (Cooling only) drives a real compressor relay through a hysteresis loop against a DS18B20 room-air reading, while FanControl drives a separate PWM fan-speed output — independently, so a controller can run the fan alone. The mandatory On/Off cluster (DeadFrontOnOff feature — a cosmetic \"is the unit's display lit\" flag, not a real power switch) has no GPIO of its own. Reference device in firmware/room-air-conditioner/.",
     shortDesc: "Compressor relay + fan PWM, Cool-only thermostat.",
@@ -3176,6 +3258,7 @@ const DEVICE_TYPES = [
   },
   {
     id: "heat-pump",
+    category: "climate-hvac",
     name: "Heat Pump",
     desc: "Matter Heat Pump: a Heat Pump root endpoint (PowerSource + Electrical Sensor + Device Energy Management) plus a child Thermostat endpoint (Heat+Cool) drives a compressor relay through a hysteresis loop against a DS18B20 reading, plus a separate reversing-valve relay that tracks the commanded mode directly (energized in Cool, common \"O\" terminal convention — always check your own unit's wiring). No defrost-cycle or auxiliary-heat-strip logic. Optionally add a real power-monitor chip (same 6-chip choice as Outlet/Electrical Meter) for genuine ElectricalPowerMeasurement/ElectricalEnergyMeasurement readings instead of static zero defaults. Reference device in firmware/heat-pump/.",
     shortDesc: "Compressor + reversing-valve relays, Heat+Cool thermostat; optional power monitor.",
@@ -3248,6 +3331,7 @@ const DEVICE_TYPES = [
   },
   {
     id: "flow-sensor",
+    category: "sensors",
     name: "Flow Sensor",
     desc: "Matter Flow Sensor: a Hall-effect pulse-output flow sensor (YF-S201-class) is read via a GPIO interrupt, counting pulses to compute L/min (F(Hz) = 7.5 × Q(L/min)) and reporting FlowMeasurement's own m3/h-times-10 MeasuredValue. Reference device in firmware/flow-sensor/.",
     shortDesc: "Pulse-counting Hall-effect flow sensor.",
@@ -3277,6 +3361,7 @@ const DEVICE_TYPES = [
   },
   {
     id: "humidity-sensor",
+    category: "sensors",
     name: "Humidity Sensor",
     desc: "Matter Humidity Sensor — pick which sensor chip you actually have wired up below. Standalone RelativeHumidityMeasurement only (unlike firmware/temperature-sensor/'s combined temperature+humidity device, this device type has no TemperatureMeasurement slot at all) — reuses that same driver library, minus DS18B20 (temperature-only, nothing for a humidity-only device to read). Reference device in firmware/humidity-sensor/.",
     shortDesc: "Humidity only, pick your sensor.",
@@ -3324,6 +3409,7 @@ const DEVICE_TYPES = [
   },
   {
     id: "water-freeze-detector",
+    category: "sensors",
     name: "Water Freeze Detector",
     desc: "Matter Water Freeze Detector: a DS18B20 temperature reading drives a plain adjustable threshold + hysteresis classifier via the Boolean State cluster — StateValue=true means a freeze condition IS detected, the same alarm direction as Water Leak Detector. Reference device in firmware/water-freeze-detector/.",
     shortDesc: "DS18B20 + threshold, freeze/normal.",
@@ -3354,6 +3440,7 @@ const DEVICE_TYPES = [
   },
   {
     id: "soil-sensor",
+    category: "sensors",
     name: "Soil Sensor",
     desc: "Matter Soil Sensor: a cheap capacitive soil-moisture probe (analog output, ADC1) reports 0-100% via the Soil Measurement cluster. Needs a real two-point field calibration (dry air = 0%, submerged in water = 100%) — the shipped defaults are only representative placeholders, not a measured calibration. Reference device in firmware/soil-sensor/.",
     shortDesc: "Capacitive probe (ADC), needs field calibration.",
@@ -3387,6 +3474,7 @@ const DEVICE_TYPES = [
   },
   {
     id: "dimmable-plug",
+    category: "outlets-power",
     name: "Dimmable Plug-In Unit",
     desc: "Matter Dimmable Plug-In Unit: On/Off + LevelControl (brightness), driven as real PWM via the LEDC peripheral — the same output pattern firmware/dimmable-light/ already uses, framed here for a plug-in appliance instead of a light fixture. A relay can't dim, so this drives a MOSFET-switched DC load or a real AC dimmer module's own PWM/analog dimming-control input, not mains current directly. Reference device in firmware/dimmable-plug/.",
     shortDesc: "On/off + brightness (PWM), plug-in framing.",
@@ -3419,6 +3507,7 @@ const DEVICE_TYPES = [
   },
   {
     id: "rain-sensor",
+    category: "sensors",
     name: "Rain Sensor",
     desc: "Matter Rain Sensor: a probe-style rain sensor module (e.g. an FC-37/YL-83-style LM393 board) reports rain/dry via the Boolean State cluster — StateValue=true means rain IS detected. Confirmed to be literally the same physical module firmware/water-leak-detector/ uses, just mounted for a different purpose. Reference device in firmware/rain-sensor/.",
     shortDesc: "Rain sensor probe, rain/dry.",
@@ -3451,6 +3540,7 @@ const DEVICE_TYPES = [
   },
   {
     id: "color-temperature-light",
+    category: "lighting",
     name: "Color Temperature Light",
     desc: "Matter tunable-white light: On/Off + LevelControl (brightness) + ColorControl (ColorTemperature only — no Hue/Saturation or XY at all, the correct, spec-conformant device type for hardware that only blends cool/warm white, unlike firmware/color-light/'s/firmware/addressable-light/'s own ExtendedColorLight). Two PWM channels (cool white + warm white) drive the output. Reference device in firmware/color-temperature-light/.",
     shortDesc: "Tunable white, cool + warm PWM channels.",
@@ -3496,6 +3586,7 @@ const DEVICE_TYPES = [
   },
   {
     id: "closure",
+    category: "doors-windows",
     name: "Closure",
     desc: "Matter Closure (garage door / roller shutter / awning): two relay outputs (open/close) driving a reversing motor, with time-based position tracking (no position sensor assumed) — this repo's first device type over the Closure Control cluster (Matter 1.6). Positioning-only scope: reports FullyClosed/FullyOpened/PartiallyOpened, the same \"smallest reasonable next step\" scope firmware/window-covering/'s own Lift-only choice already established. Reference device in firmware/closure/.",
     shortDesc: "Two relays drive a garage door / roller shutter motor.",
@@ -3540,6 +3631,7 @@ const DEVICE_TYPES = [
   },
   {
     id: "microwave-oven",
+    category: "appliances",
     name: "Microwave Oven",
     desc: "Matter Microwave Oven: MicrowaveOvenMode (Normal/Defrost) + MicrowaveOvenControl (cook time + power level, PowerAsNumber) + OperationalState with a real live countdown, all layered on top of a single relay output driven as a duty cycle over a repeating window (the same on/off-cycling technique real consumer microwaves use for \"power level\"). The relay is meant to gate an already-certified OEM/commercial cooking module's own external enable input — never a consumer microwave's own high-voltage/interlock internals directly; see firmware/microwave-oven/main/app_main.cpp's own prominent safety note. Reference device in firmware/microwave-oven/.",
     shortDesc: "Relay-gated cook module, timed + power-level cook cycle.",
@@ -3571,6 +3663,7 @@ const DEVICE_TYPES = [
   },
   {
     id: "doorbell",
+    category: "doorbell-chime",
     name: "Doorbell",
     desc: "Matter Doorbell: Identify + Switch (momentary press only) + a client-side Chime cluster. A button press both fires a real Switch InitialPress event for local automations AND sends a Chime::PlayChimeSound command to whatever this endpoint's Binding cluster is bound to — pair with \"Chime\" (firmware/chime/) for a real, physical ring. Reference device in firmware/doorbell/.",
     shortDesc: "Button press rings a bound Chime device.",
@@ -3603,6 +3696,7 @@ const DEVICE_TYPES = [
   },
   {
     id: "chime",
+    category: "doorbell-chime",
     name: "Chime",
     desc: "Matter Chime: Identify + a server-side Chime cluster driving a passive piezo buzzer as real audio-frequency PWM (not a fixed-tone active buzzer). Ships two real, selectable sounds (\"Ding-Dong\", \"Chirp\"). Pair with \"Doorbell\" (firmware/doorbell/), which sends PlayChimeSound to whatever this device's own endpoint a controller binds it to. Reference device in firmware/chime/.",
     shortDesc: "Buzzer plays one of two chime sounds on command.",
@@ -3632,6 +3726,7 @@ const DEVICE_TYPES = [
   },
   {
     id: "irrigation-system",
+    category: "appliances",
     name: "Irrigation System",
     desc: "Matter Irrigation System: a single-zone sprinkler/garden-watering valve controller — OperationalState (Start/Stop/Pause/Resume, same generic cluster as dishwasher/laundry washer/laundry dryer, with a real live countdown) + Flow Measurement, reusing firmware/flow-sensor/'s own YF-S201-class pulse-counting driver verbatim. Reference device in firmware/irrigation-system/.",
     shortDesc: "Relay-driven valve + flow sensor, timed watering cycle.",
@@ -3673,6 +3768,7 @@ const DEVICE_TYPES = [
   },
   {
     id: "electrical-meter",
+    category: "outlets-power",
     name: "Electrical Meter",
     desc: "Matter Electrical Meter: a standalone whole-circuit/whole-home energy meter — Electrical Power Measurement + Electrical Energy Measurement, reusing firmware/outlet/'s own 6-chip power-monitoring subsystem (BL0942/BL0937/HLW8012/CSE7759/CSE7766/ADE7953) verbatim as this device's primary function. Reference device in firmware/electrical-meter/.",
     shortDesc: "Whole-circuit power/energy meter, 6 chip choices.",
@@ -3703,6 +3799,7 @@ const DEVICE_TYPES = [
   },
   {
     id: "dimmer-switch",
+    category: "switches-remotes",
     name: "Dimmer Switch",
     desc: "Matter Dimmer Switch: a client-side remote dimmer — a short button press sends On/Off::Toggle, a long press sends Identify to the bound target, and a rotary encoder sends LevelControl::Step (brightness) per detent. Requires a controller (e.g. Home Assistant) to set up a Binding-cluster entry to an actual light first. Reference device in firmware/dimmer-switch/.",
     shortDesc: "Button + rotary encoder remote dimmer.",
@@ -3755,6 +3852,7 @@ const DEVICE_TYPES = [
   },
   {
     id: "color-dimmer-switch",
+    category: "switches-remotes",
     name: "Color Dimmer Switch",
     desc: "Matter Color Dimmer Switch: a direct extension of Dimmer Switch — the same On/Off::Toggle button + LevelControl::Step brightness encoder, plus a second rotary encoder sending real ColorControl::StepHue commands to the bound light. Requires a controller (e.g. Home Assistant) to set up a Binding-cluster entry to an actual color light first. Reference device in firmware/color-dimmer-switch/.",
     shortDesc: "Button + two rotary encoders (brightness, hue).",
@@ -3825,6 +3923,7 @@ const DEVICE_TYPES = [
   },
   {
     id: "cooktop",
+    category: "appliances",
     name: "Cooktop",
     desc: "Matter Cooktop + Cook Surface: a single-zone induction/electric hob. On/Off has the OffOnly feature — a controller can only ever turn it OFF (a real spec-enforced safety restriction); a physical power button is the only way to turn it on. TemperatureControl's TemperatureLevel feature (Low/Medium/High) drives a time-proportioned relay/SSR duty cycle — a real, spec-correct \"selected power level,\" not a fabricated temperature reading, so no sensor is needed at all. Reference device in firmware/cooktop/.",
     shortDesc: "Power button + relay/SSR; safety-gated remote off-only.",
@@ -3869,6 +3968,7 @@ const DEVICE_TYPES = [
   },
   {
     id: "on-off-sensor",
+    category: "switches-remotes",
     name: "On/Off Sensor",
     desc: "Matter On/Off Sensor: a wireless motion trigger with no light of its own and no server-side sensing cluster at all — a PIR or radar module bound to an existing smart bulb/plug, sending real On/Off commands directly (turns the bound device on when it sees motion, off again once it doesn't). Same 3-sensor choice as Occupancy Sensor (PIR/RCWL-0516/HLK-LD2410), but purely a local trigger here — nothing about the motion state is ever reported to a controller. Requires a controller (e.g. Home Assistant) to set up a Binding-cluster entry to an actual target device first. Reference device in firmware/on-off-sensor/.",
     shortDesc: "PIR or radar motion, sends real On/Off to a bound device.",
@@ -3901,6 +4001,7 @@ const DEVICE_TYPES = [
   },
   {
     id: "solar-power",
+    category: "outlets-power",
     name: "Solar Power",
     desc: "Matter Solar Power: a solar inverter/panel-array power meter — Electrical Power Measurement + Electrical Energy Measurement (Exported, not Imported — this device generates power rather than consuming it), reusing firmware/electrical-meter/'s own 6-chip power-monitoring subsystem essentially verbatim. Same-endpoint composition (Solar Power + Electrical Sensor + a wired Power Source, all via one complete top-level helper). Reference device in firmware/solar-power/.",
     shortDesc: "Solar generation power/energy meter, 6 chip choices.",
@@ -3929,6 +4030,7 @@ const DEVICE_TYPES = [
   },
   {
     id: "mode-select",
+    category: "switches-remotes",
     name: "Mode Select",
     desc: "Matter Mode Select: a physical scene/activity selector — three buttons (Home/Away/Night, the classic security-panel-style mode set) reporting which mode is active via the Mode Select cluster, equally reachable from a controller's own ChangeToMode command. Reference device in firmware/mode-select/.",
     shortDesc: "3 buttons select Home/Away/Night mode.",
@@ -3980,6 +4082,7 @@ const DEVICE_TYPES = [
   },
   {
     id: "mounted-onoff-control",
+    category: "lighting",
     name: "Mounted On/Off Control",
     desc: "Matter Mounted On/Off Control: an in-wall relay module (the class of hardware sold as e.g. \"Shelly 1\"/\"Sonoff Basic\") wired into an existing fixture's own switch-leg, replacing its dumb wall switch. A superset of On/Off Plug-in Unit — Groups + Scenes Management are mandatory here, not merely absent. Reference device in firmware/mounted-onoff-control/.",
     shortDesc: "In-wall relay module, Groups+Scenes mandatory.",
@@ -4009,6 +4112,7 @@ const DEVICE_TYPES = [
   },
   {
     id: "mounted-dimmable-load-control",
+    category: "lighting",
     name: "Mounted Dimmable Load Control",
     desc: "Matter Mounted Dimmable Load Control: an in-wall dimmer module wired into an existing fixture's own switch-leg, replacing its dumb dimmer. A superset of Dimmable Plug-In Unit — Groups + Scenes Management are mandatory here, not merely absent. PWM gates a real dimmer module's own control input, same as firmware/dimmable-plug/. Reference device in firmware/mounted-dimmable-load-control/.",
     shortDesc: "In-wall dimmer module, Groups+Scenes mandatory.",
@@ -4038,6 +4142,7 @@ const DEVICE_TYPES = [
   },
   {
     id: "electrical-utility-meter",
+    category: "outlets-power",
     name: "Electrical Utility Meter",
     desc: "Matter Electrical Utility Meter: combines Electrical Meter's own real power/energy readings (Electrical Power Measurement + Electrical Energy Measurement, 6 chip choices) with a Meter Identification cluster and this repo's first root-endpoint addition — TimeSynchronization, satisfying this device type's own mandatory root-node time-sync requirement. Reference device in firmware/electrical-utility-meter/.",
     shortDesc: "Utility meter: power/energy + meter ID, 6 chip choices.",
@@ -4066,6 +4171,7 @@ const DEVICE_TYPES = [
   },
   {
     id: "meter-reference-point",
+    category: "outlets-power",
     name: "Meter Reference Point",
     desc: "Matter Meter Reference Point: the simplest device type in this whole wizard — exactly one cluster (Identify), plus a real root-node time-sync requirement. Tags a specific, named point within a larger electrical installation's own metering topology (e.g. \"where solar ties into the grid\") as a purely logical reference — no measurement of its own. Reference device in firmware/meter-reference-point/.",
     shortDesc: "A bare, named marker point in a metering topology.",
@@ -4086,6 +4192,7 @@ const DEVICE_TYPES = [
   },
   {
     id: "battery-storage",
+    category: "outlets-power",
     name: "Battery Storage",
     desc: "Matter Battery Storage: an AC-coupled home battery storage system — real PowerSource battery state (voltage via an ADC divider, a derived percent-remaining) plus real AC-side power/energy metering (Electrical Power/Energy Measurement, 6 chip choices) and DeviceEnergyManagement. Uses esp-matter's own authoritative endpoint::battery_storage::create() helper to resolve a genuinely malformed CSA spec document. Reference device in firmware/battery-storage/.",
     shortDesc: "Home battery: voltage + AC power/energy, 6 chip choices.",
@@ -4125,6 +4232,7 @@ const DEVICE_TYPES = [
   },
   {
     id: "oven",
+    category: "appliances",
     name: "Oven",
     desc: "Matter Oven + Temperature Controlled Cabinet: a composed device (root + one child endpoint, same shape as Refrigerator's own Fridge/Freezer pair) — Oven Cavity Operational State (real Start/Stop, a door-open safety interlock) + Oven Mode (9 real modes: Bake/Convection/Grill/Roast/Clean/...) + TemperatureControl (a real setpoint, accepted and stored, but not closed-loop — no oven-safe 200+ degC sensor is available in this repo). Reference device in firmware/oven/.",
     shortDesc: "Relay-driven oven cavity: Start/Stop + 9 modes.",
@@ -4171,6 +4279,7 @@ const DEVICE_TYPES = [
   },
   {
     id: "temperature-controlled-cabinet",
+    category: "appliances",
     name: "Temperature Controlled Cabinet",
     desc: "Matter Temperature Controlled Cabinet: a single-zone wine cooler / beverage fridge / mini-fridge, standing on its own — the same TemperatureControl+RefrigeratorAndTemperatureControlledCabinetMode+TemperatureMeasurement clusters Refrigerator's own Fridge/Freezer child endpoints already use, just as this node's own root endpoint instead of a child. No Identify cluster at all (confirmed absent from this device type's own spec). Reference device in firmware/temperature-controlled-cabinet/.",
     shortDesc: "Standalone wine cooler / mini-fridge: relay + DS18B20.",
@@ -4204,6 +4313,7 @@ const DEVICE_TYPES = [
   },
   {
     id: "door-lock-controller",
+    category: "switches-remotes",
     name: "Door Lock Controller",
     desc: "Matter Door Lock Controller: a wall-mounted or bedside two-button remote (Lock / Unlock) sending real DoorLock::LockDoor/UnlockDoor commands to a bound lock. Both commands are timed invokes, a genuinely new client-invoke wrinkle for this repo. No Identify cluster at all (confirmed absent from this device type's own spec). Requires a controller (e.g. Home Assistant) to set up a Binding-cluster entry to an actual door lock first. Reference device in firmware/door-lock-controller/.",
     shortDesc: "Two-button remote: Lock / Unlock.",
@@ -4237,6 +4347,7 @@ const DEVICE_TYPES = [
   },
   {
     id: "thermostat-controller",
+    category: "switches-remotes",
     name: "Thermostat Controller",
     desc: "Matter Thermostat Controller: a rotary-knob remote sending real Thermostat::SetpointRaiseLower commands to a bound thermostat, nudging its setpoint up/down 0.1 degC per detent without knowing its current absolute value. No Identify cluster at all (confirmed absent from this device type's own spec). Requires a controller (e.g. Home Assistant) to set up a Binding-cluster entry to an actual thermostat first. Reference device in firmware/thermostat-controller/.",
     shortDesc: "Rotary knob: raise/lower a bound thermostat's setpoint.",
@@ -4270,6 +4381,7 @@ const DEVICE_TYPES = [
   },
   {
     id: "window-covering-controller",
+    category: "switches-remotes",
     name: "Window Covering Controller",
     desc: "Matter Window Covering Controller: a wall-mounted three-button remote (Open / Close / Stop) sending real WindowCovering::UpOrOpen/DownOrClose/StopMotion commands to a bound covering. Requires a controller (e.g. Home Assistant) to set up a Binding-cluster entry to an actual window covering first. Reference device in firmware/window-covering-controller/.",
     shortDesc: "Three-button remote: Open / Close / Stop.",
@@ -4320,6 +4432,7 @@ const DEVICE_TYPES = [
   },
   {
     id: "closure-controller",
+    category: "switches-remotes",
     name: "Closure Controller",
     desc: "Matter Closure Controller: a wall-mounted two-button remote (Open / Close) sending real ClosureControl::MoveTo commands to a bound closure — a garage door / roller shutter / awning remote. MoveTo is a timed invoke, the same real Matter protocol requirement firmware/door-lock-controller/'s own LockDoor/UnlockDoor already established. No Identify cluster at all (confirmed absent from this device type's own spec). Requires a controller (e.g. Home Assistant) to set up a Binding-cluster entry to an actual closure first. Reference device in firmware/closure-controller/.",
     shortDesc: "Two-button remote: Open / Close.",
@@ -4352,6 +4465,7 @@ const DEVICE_TYPES = [
   },
   {
     id: "pump-controller",
+    category: "switches-remotes",
     name: "Pump Controller",
     desc: "Matter Pump Controller: a wall-mounted on/off remote panel sending a real OnOff::Toggle command to a bound pump, plus a real (present, not locally-triggered) PumpConfigurationAndControl client shell a controller's own generic UI can use once bound. Requires a controller (e.g. Home Assistant) to set up a Binding-cluster entry to an actual pump first. Reference device in firmware/pump-controller/.",
     shortDesc: "On/off remote for a bound pump.",
@@ -4383,6 +4497,7 @@ const DEVICE_TYPES = [
   },
   {
     id: "control-bridge",
+    category: "switches-remotes",
     name: "Control Bridge",
     desc: "Matter Control Bridge: a universal light remote — the same On/Off::Toggle button + LevelControl::Step brightness encoder + ColorControl::StepHue hue encoder as Color Dimmer Switch, plus a mandatory Scenes Management client shell this device type requires but esp-matter's own top-level helper doesn't create (fixed here). Requires a controller (e.g. Home Assistant) to set up a Binding-cluster entry to an actual light first. Reference device in firmware/control-bridge/.",
     shortDesc: "Button + two rotary encoders (brightness, hue).",
@@ -4451,6 +4566,7 @@ const DEVICE_TYPES = [
   },
   {
     id: "rf-ir-bridge",
+    category: "bridges",
     name: "RF433/IR Bridge",
     desc: "Matter RF433/IR Bridge: ONE Aggregator that can bridge cheap 433MHz fixed-code remotes/sensors (the EV1527/PT2262 chip family) AND NEC-protocol infrared remote buttons at once, replacing what this repo originally shipped as two separate device types (RF433 Bridge, Infrared Bridge) — merged into a single firmware after real feedback that a user should be able to check which protocol support a bridge has, rather than build two single-purpose devices. Both protocols default enabled; at least one must stay checked (a bridge with neither wired up would do nothing). One shared learn button serves both: press it, then trigger the remote/sensor you want to bridge — whichever protocol fires first becomes a new bridged endpoint, persisted across reboots. No Identify cluster at all (confirmed absent from the Aggregator device type's own spec). Reference device in firmware/rf-ir-bridge/.",
     shortDesc: "One bridge, checkable 433MHz + IR support, shared learn button.",
@@ -5516,27 +5632,63 @@ function renderWizard() {
   return `<div class="stepper">${stepsHtml}</div>${content}`;
 }
 
-function renderGetStarted(p) {
-  // Auto-select the only device type there is today — future types will
-  // require an explicit click once DEVICE_TYPES has more than one entry.
-  if (!p.deviceType && DEVICE_TYPES.length === 1) p.deviceType = DEVICE_TYPES[0].id;
-
-  const cards = DEVICE_TYPES.map((d) => {
-    const selected = p.deviceType === d.id;
-    const icon = DEVICE_TYPE_ICONS[d.id] || "";
-    return `
+function renderDeviceTypeCard(d, p) {
+  const selected = p.deviceType === d.id;
+  const icon = DEVICE_TYPE_ICONS[d.id] || "";
+  return `
       <button class="option-card ${selected ? "selected" : ""}" data-select-device-type="${d.id}" title="${escapeHtml(d.desc)}">
         <div class="device-icon" aria-hidden="true">${icon}</div>
         <h3>${escapeHtml(d.name)}</h3>
         <p class="desc">${escapeHtml(d.shortDesc || d.desc)}</p>
       </button>`;
+}
+
+function renderGetStarted(p) {
+  // Auto-select the only device type there is today — future types will
+  // require an explicit click once DEVICE_TYPES has more than one entry.
+  if (!p.deviceType && DEVICE_TYPES.length === 1) p.deviceType = DEVICE_TYPES[0].id;
+
+  // Grouped by DEVICE_CATEGORIES (see its own comment above DEVICE_TYPES
+  // for why) — each device type's own `category` field decides which
+  // section it renders in, in DEVICE_CATEGORIES' own display order. A
+  // category with no device types in it (shouldn't happen — every id is
+  // verified assigned, see the Node.js sandboxed check in README.md) is
+  // simply skipped rather than rendered empty.
+  const sections = DEVICE_CATEGORIES.map((cat) => {
+    const devicesInCategory = DEVICE_TYPES.filter((d) => d.category === cat.id);
+    if (!devicesInCategory.length) return "";
+    const cards = devicesInCategory.map((d) => renderDeviceTypeCard(d, p)).join("");
+    return `
+      <div class="category-section">
+        <div class="category-heading">
+          <h3>${escapeHtml(cat.label)}</h3>
+          <span class="category-count">${devicesInCategory.length}</span>
+        </div>
+        <div class="option-grid">${cards}</div>
+      </div>
+    `;
   }).join("");
+
+  // Devices with no matching category (shouldn't happen in this repo's
+  // own shipped DEVICE_TYPES, but a third-party fork adding an entry
+  // without a `category` shouldn't silently lose it from the picker
+  // entirely) render in one final "Other" section instead of vanishing.
+  const uncategorized = DEVICE_TYPES.filter((d) => !DEVICE_CATEGORIES.some((cat) => cat.id === d.category));
+  const uncategorizedSection = uncategorized.length ? `
+      <div class="category-section">
+        <div class="category-heading">
+          <h3>Other</h3>
+          <span class="category-count">${uncategorized.length}</span>
+        </div>
+        <div class="option-grid">${uncategorized.map((d) => renderDeviceTypeCard(d, p)).join("")}</div>
+      </div>
+    ` : "";
 
   return `
     <div class="step-panel">
       <h2>Choose your device</h2>
       <p class="step-hint">What kind of Matter device is "${escapeHtml(p.name)}"?</p>
-      <div class="option-grid">${cards}</div>
+      ${sections}${uncategorizedSection}
       <p class="note-box">
         Every option above maps to a real, buildable folder under
         <code>firmware/</code> — none of these are UI placeholders. Adding

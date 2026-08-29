@@ -23,7 +23,7 @@ open tools/product-wizard/index.html
 - **Create a new product → Setup your product** — name your product and
   hit **Start**.
 - **Get Started (step 1)** — pick a device type: "On/Off Light"
-  (`firmware/light/`), "On/Off Switch" (`firmware/switch/`), "Contact
+  (`firmware/light/`), "On/Off Light Switch" (`firmware/switch/`), "Contact
   Sensor" (`firmware/contact-sensor/`), "Outlet" (`firmware/outlet/`),
   "Temperature Sensor" (`firmware/temperature-sensor/`), "Light
   Sensor" (`firmware/light-sensor/`), "Dimmable Light"
@@ -32,15 +32,15 @@ open tools/product-wizard/index.html
   (`firmware/color-light/`), "Addressable LED Strip"
   (`firmware/addressable-light/`), "Thermostat"
   (`firmware/thermostat/`), "Door Lock" (`firmware/door-lock/`),
-  "Smoke/CO Alarm" (`firmware/smoke-co-alarm/`), "Occupancy Sensor"
+  "Smoke CO Alarm" (`firmware/smoke-co-alarm/`), "Occupancy Sensor"
   (`firmware/occupancy-sensor/`), "Fan" (`firmware/fan/`), "Air Quality
   Sensor" (`firmware/air-quality-sensor/`), "Water Leak Detector"
   (`firmware/water-leak-detector/`), "Air Purifier"
   (`firmware/air-purifier/`), "Water Valve" (`firmware/valve/`),
-  "Pressure Sensor" (`firmware/pressure-sensor/`), "Robot Vacuum"
-  (`firmware/robot-vacuum/`), "Extractor Hood"
+  "Pressure Sensor" (`firmware/pressure-sensor/`), "Robotic Vacuum
+  Cleaner" (`firmware/robot-vacuum/`), "Extractor Hood"
   (`firmware/extractor-hood/`), "Water Heater"
-  (`firmware/water-heater/`), "EVSE" (`firmware/evse/`), "Generic
+  (`firmware/water-heater/`), "Energy EVSE" (`firmware/evse/`), "Generic
   Switch" (`firmware/generic-switch/`), "Refrigerator"
   (`firmware/refrigerator/`), "Dishwasher"
   (`firmware/dishwasher/`), "Laundry Washer"
@@ -82,13 +82,44 @@ open tools/product-wizard/index.html
   device types).
   All
   sixty-five are real, buildable
-  firmware, not just UI placeholders. Three device types are deliberately
+  firmware, not just UI placeholders. Four device types are deliberately
   NOT offered here: `firmware/camera/` (this repo's twelfth device type),
-  `firmware/ble-mesh-bridge/`, and `firmware/zigbee-bridge/` — see the
-  "Known limitations" section below for why (each is a two-chip/two-
-  firmware device, or keeps Espressif's own unmodified reference build
-  files with no GPIO fields of its own to customize; none fits this
-  wizard's one-device-type/one-chip/one-simplified-firmware data model).
+  `firmware/ble-mesh-bridge/`, `firmware/zigbee-bridge/`, and
+  `firmware/thread-border-router/` — see the "Known limitations" section
+  below for why (each is a two-chip/two-firmware device, or keeps
+  Espressif's own unmodified reference build files with no GPIO fields of
+  its own to customize; none fits this wizard's one-device-type/one-chip/
+  one-simplified-firmware data model).
+
+  On request, all sixty-five cards on the Get Started step are grouped
+  into nine categories (`DEVICE_CATEGORIES` in `index.html`) — Lighting,
+  Switches & Remotes, Outlets & Power, Sensors, Climate & Ventilation,
+  Doors/Windows & Closures, Appliances, Doorbell & Chime, Bridges —
+  rather than one flat 65-card grid. This is purely a display grouping
+  (each `DEVICE_TYPES` entry carries a `category` field; Matter's own
+  device-type library has no such grouping concept at all, it's a flat,
+  alphabetized list) chosen for how a hobbyist actually thinks about
+  "what am I building" — a light vs. a switch that controls it are
+  deliberately different categories, even though both are common
+  first-time picks. Verified with a Node.js sandboxed check (every one
+  of the 65 ids is assigned to exactly one real category, every category
+  heading renders, every card renders exactly once with no duplicates
+  across sections) and confirmed visually with a headless-Chromium
+  screenshot of the real rendered page.
+
+  While auditing this, every device type's own display `name` was also
+  checked directly against the CSA's own Matter 1.6 device-type XML
+  files (fetched from inside the pinned SDK image) rather than assumed
+  correct — four had drifted from the official name and were corrected:
+  "On/Off Switch" → **On/Off Light Switch**, "EVSE" → **Energy EVSE**,
+  "Robot Vacuum" → **Robotic Vacuum Cleaner**, "Smoke/CO Alarm" →
+  **Smoke CO Alarm**. Three more cards deliberately keep a friendlier
+  product name over the literal CSA device-type name — "Outlet" (real
+  device type: On/Off Plug-in Unit), "Color Light" and "Addressable LED
+  Strip" (both really Extended Color Light) — matching how Apple/Google
+  Home themselves label these same device types; each card's own `desc`
+  text states the real CSA device type name explicitly, so the mapping
+  stays traceable even where the card title doesn't literally match.
   Each card has its own hand-drawn
   line-art icon (`DEVICE_TYPE_ICONS` in `index.html`), in the spirit of
   Apple's own SF Symbols/HomeKit accessory icons — not the actual Apple
