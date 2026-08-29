@@ -16,8 +16,8 @@ set(ESP_MATTER_PATH $ENV{ESP_MATTER_PATH})
 set(MATTER_SDK_PATH ${ESP_MATTER_PATH}/connectedhomeip/connectedhomeip)
 
 # Pull in the esp-matter components, PLUS one single extra component this
-# device type genuinely needs and every other device type in this repo
-# doesn't: `examples/common/app_bridge`, the generic dynamic-Matter-endpoint
+# device type genuinely needs and most other device types in this repo
+# don't: `examples/common/app_bridge`, the generic dynamic-Matter-endpoint
 # machinery every real esp-matter bridge example (including firmware/
 # ble-mesh-bridge/'s own verbatim-ported one) builds on. Deliberately
 # pointed at that ONE component's own directory, not the whole
@@ -46,4 +46,4 @@ idf_build_set_property(CXX_COMPILE_OPTIONS "-std=gnu++17;-Os;-DCHIP_HAVE_CONFIG_
 idf_build_set_property(C_COMPILE_OPTIONS "-Os" APPEND)
 idf_build_set_property(COMPILE_OPTIONS "-Wno-format-nonliteral;-Wno-format-security" APPEND)
 
-project(matter_rf433_bridge)
+project(matter_rf_ir_bridge)

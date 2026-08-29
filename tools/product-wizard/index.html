@@ -4430,69 +4430,59 @@ const DEVICE_TYPES = [
     },
   },
   {
-    id: "rf433-bridge",
-    name: "RF433 Bridge",
-    desc: "Matter RF433 Bridge: an Aggregator that dynamically bridges cheap 433MHz fixed-code remotes/sensors (the EV1527/PT2262 chip family) onto the Matter fabric as real, dynamically-created Generic Switch endpoints. Press the learn button, then trigger the remote/sensor you want to bridge — its next validated code becomes a new bridged endpoint, persisted across reboots. No Identify cluster at all (confirmed absent from the Aggregator device type's own spec). Reference device in firmware/rf433-bridge/.",
-    shortDesc: "433MHz receiver + learn button: bridges RF remotes/sensors.",
-    // Matches project(matter_rf433_bridge) in firmware/rf433-bridge/
-    // CMakeLists.txt. Same driver+secondary two-independent-GPIO shape
-    // firmware/temperature-controlled-cabinet/'s own entry already
-    // establishes (RX module input + learn button), repurposed here for
-    // a bridge instead of a relay+sensor pair. No identify field — this
-    // device type genuinely carries no Identify cluster at all (same
-    // reasoning firmware/door-lock-controller/'s own entry already
-    // establishes for the same absence).
-    binName: "matter_rf433_bridge.bin",
+    id: "rf-ir-bridge",
+    name: "RF433/IR Bridge",
+    desc: "Matter RF433/IR Bridge: ONE Aggregator that can bridge cheap 433MHz fixed-code remotes/sensors (the EV1527/PT2262 chip family) AND NEC-protocol infrared remote buttons at once, replacing what this repo originally shipped as two separate device types (RF433 Bridge, Infrared Bridge) — merged into a single firmware after real feedback that a user should be able to check which protocol support a bridge has, rather than build two single-purpose devices. Both protocols default enabled; at least one must stay checked (a bridge with neither wired up would do nothing). One shared learn button serves both: press it, then trigger the remote/sensor you want to bridge — whichever protocol fires first becomes a new bridged endpoint, persisted across reboots. No Identify cluster at all (confirmed absent from the Aggregator device type's own spec). Reference device in firmware/rf-ir-bridge/.",
+    shortDesc: "One bridge, checkable 433MHz + IR support, shared learn button.",
+    // Matches project(matter_rf_ir_bridge) in firmware/rf-ir-bridge/
+    // CMakeLists.txt. `driver` is the one always-required field (the
+    // shared learn button — both protocols use it). RF433/IR support are
+    // NOT the driver/secondary pair the two predecessor entries used —
+    // each needs to be independently disable-able, so this uses the new
+    // `protocolToggles` mechanism instead (see its own handling in
+    // renderConfigureDevice/isProductComplete/buildSedCommands/
+    // renderCustomiseReview for the generic, device-type-agnostic
+    // implementation: an array of independently-checkable GPIO fields,
+    // all defaulting checked, with "at least one must stay checked"
+    // cross-validation — genuinely new, since every prior optional-GPIO
+    // mechanism here — statusLed/positionSensor/dockSensor/plugSensor/
+    // doorSensor — defaults OFF and has no sibling-count constraint).
+    // Disabling a toggle sets its own GPIO define to GPIO_NUM_NC, which
+    // this firmware checks at runtime (never #if — see app_main.cpp's
+    // own header comment for why) to skip that protocol's setup
+    // entirely. No identify field — this device type genuinely carries
+    // no Identify cluster at all (same reasoning the two predecessor
+    // entries already established for the same absence).
+    binName: "matter_rf_ir_bridge.bin",
     driver: {
-      summary: "GPIO (digital input)",
-      fieldLabel: "433MHz receiver GPIO pin",
-      blockTitle: "433MHz receiver · digital input",
-      filePath: "firmware/rf433-bridge/main/app_main.cpp",
-      defineName: "RF433_RX_GPIO",
-      currentGpio: 4,
-      defaultsByModule: { esp32: 4, esp32c2: 4, esp32c3: 4, esp32c5: 4, esp32c6: 4, esp32c61: 4, esp32s3: 4, esp32h2: 4 },
-    },
-    secondary: {
-      label: "Learn Button",
       summary: "GPIO (digital input, active-LOW)",
       fieldLabel: "Learn button GPIO pin",
       blockTitle: "Learn button · digital GPIO input",
-      filePath: "firmware/rf433-bridge/main/app_main.cpp",
-      defineName: "RF433_LEARN_BUTTON_GPIO",
+      filePath: "firmware/rf-ir-bridge/main/app_main.cpp",
+      defineName: "RFIR_LEARN_BUTTON_GPIO",
       currentGpio: 16,
       defaultsByModule: { esp32: 16, esp32c2: 16, esp32c3: 16, esp32c5: 16, esp32c6: 16, esp32c61: 16, esp32s3: 16, esp32h2: 16 },
     },
-  },
-  {
-    id: "ir-bridge",
-    name: "Infrared Bridge",
-    desc: "Matter Infrared Bridge: an Aggregator that dynamically bridges NEC-protocol infrared remote-control buttons onto the Matter fabric as real, dynamically-created Generic Switch endpoints — the direct sibling of RF433 Bridge, same learn-mode UX. Press the learn button, then press the remote button you want to bridge. No Identify cluster at all (confirmed absent from the Aggregator device type's own spec). Reference device in firmware/ir-bridge/.",
-    shortDesc: "IR receiver + learn button: bridges NEC remote buttons.",
-    // Matches project(matter_ir_bridge) in firmware/ir-bridge/
-    // CMakeLists.txt. Same driver+secondary shape as firmware/
-    // rf433-bridge/'s own entry above — the two are direct siblings,
-    // same bridge architecture, different decode front-end. No identify
-    // field, same reasoning.
-    binName: "matter_ir_bridge.bin",
-    driver: {
-      summary: "GPIO (digital input)",
-      fieldLabel: "IR receiver GPIO pin",
-      blockTitle: "IR receiver · digital input",
-      filePath: "firmware/ir-bridge/main/app_main.cpp",
-      defineName: "IR_RX_GPIO",
-      currentGpio: 4,
-      defaultsByModule: { esp32: 4, esp32c2: 4, esp32c3: 4, esp32c5: 4, esp32c6: 4, esp32c61: 4, esp32s3: 4, esp32h2: 4 },
-    },
-    secondary: {
-      label: "Learn Button",
-      summary: "GPIO (digital input, active-LOW)",
-      fieldLabel: "Learn button GPIO pin",
-      blockTitle: "Learn button · digital GPIO input",
-      filePath: "firmware/ir-bridge/main/app_main.cpp",
-      defineName: "IR_LEARN_BUTTON_GPIO",
-      currentGpio: 16,
-      defaultsByModule: { esp32: 16, esp32c2: 16, esp32c3: 16, esp32c5: 16, esp32c6: 16, esp32c61: 16, esp32s3: 16, esp32h2: 16 },
-    },
+    protocolToggles: [
+      {
+        key: "rf433",
+        label: "433MHz RF Support",
+        fieldLabel: "433MHz receiver GPIO pin",
+        blockTitle: "433MHz receiver · digital input",
+        filePath: "firmware/rf-ir-bridge/main/app_main.cpp",
+        defineName: "RF433_RX_GPIO",
+        defaultsByModule: { esp32: 4, esp32c2: 4, esp32c3: 4, esp32c5: 4, esp32c6: 4, esp32c61: 4, esp32s3: 4, esp32h2: 4 },
+      },
+      {
+        key: "ir",
+        label: "Infrared Support",
+        fieldLabel: "IR receiver GPIO pin",
+        blockTitle: "IR receiver · digital input",
+        filePath: "firmware/rf-ir-bridge/main/app_main.cpp",
+        defineName: "IR_RX_GPIO",
+        defaultsByModule: { esp32: 5, esp32c2: 5, esp32c3: 5, esp32c5: 5, esp32c6: 5, esp32c61: 5, esp32s3: 5, esp32h2: 5 },
+      },
+    ],
   },
 ];
 
@@ -5347,27 +5337,19 @@ const DEVICE_TYPE_ICONS = {
     <circle cx="26" cy="26" r="2.5" fill="currentColor" stroke="none"/>
     <circle cx="24" cy="36" r="4"/>
   </svg>`,
-  // A small antenna/mast with two concentric broadcast arcs — the real
-  // "receiving a wireless signal" pictogram, distinct from every other
-  // radio-adjacent icon in this wizard (occupancy-sensor's own detection
-  // rings are centered on a sensor body, not a mast; this one is purely
-  // about RECEIVING a broadcast, matching a bridge's own role).
-  "rf433-bridge": `<svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-    <path d="M24 44V20"/>
-    <circle cx="24" cy="16" r="3"/>
-    <path d="M15 24a13 13 0 0 1 18 0"/>
-    <path d="M10 19a20 20 0 0 1 28 0"/>
-  </svg>`,
-  // A remote-control body (rounded rect) with three short dashed rays —
-  // the standard "infrared beam" pictogram — distinct from rf433-
-  // bridge's own mast-and-arcs motif (a directional beam vs. an
-  // omnidirectional broadcast, matching how each protocol actually
-  // propagates) and from generic-switch's own bare button-bezel icon.
-  "ir-bridge": `<svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-    <rect x="16" y="8" width="14" height="32" rx="4"/>
-    <circle cx="23" cy="16" r="2" fill="currentColor" stroke="none"/>
-    <path d="M23 24h.01"/>
-    <path d="M23 30h.01"/>
+  // Merged icon for the consolidated rf-ir-bridge device type — a small
+  // antenna/mast with a broadcast arc (this repo's original rf433-bridge
+  // motif, kept since 433MHz is still the "omnidirectional broadcast"
+  // half of this device) PLUS three short dashed rays off to the side
+  // (this repo's original ir-bridge motif, the "directional beam" half),
+  // combined onto one glyph rather than picking just one — the two
+  // predecessor icons are preserved in git history for reference, not
+  // reused verbatim since a single merged device needs a single merged
+  // icon distinct from either standalone motif.
+  "rf-ir-bridge": `<svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M18 44V24"/>
+    <circle cx="18" cy="20" r="3"/>
+    <path d="M11 27a10 10 0 0 1 14 0"/>
     <path d="M33 14l6-3"/>
     <path d="M35 20h7"/>
     <path d="M33 26l6 3"/>
@@ -5622,6 +5604,23 @@ function rotaryEncoderIsEnabled(p) {
   return p.rotaryEncoderEnabled === true;
 }
 
+// protocolToggles (firmware/rf-ir-bridge/ only, so far): a NEW mechanism,
+// genuinely different from every prior optional-GPIO field above — an
+// ARRAY of independently-checkable GPIO fields (not a single field),
+// each defaulting CHECKED (opposite of statusLed/positionSensor/
+// dockSensor/plugSensor/doorSensor's off-by-default shape — this
+// device's whole purpose is bridging at least one protocol, so
+// both-on is the honest default, not both-off), with a device-type-
+// level "at least one must stay checked" cross-validation neither of
+// those single-field mechanisms needs. p.protocolToggles is a plain
+// {key: bool} object; a key absent entirely (old saved products, or a
+// key never touched) means enabled, same "undefined counts as on"
+// convention identifyIsEnabled() above already establishes — only an
+// explicit false means off.
+function protocolToggleIsEnabled(p, key) {
+  return !p.protocolToggles || p.protocolToggles[key] !== false;
+}
+
 function renderConfigureDevice(p) {
   const deviceType = findDeviceType(p.deviceType);
   const driver = deviceType ? deviceType.driver : null;
@@ -5804,13 +5803,31 @@ function renderConfigureDevice(p) {
   const plugSensorGpioValid = !plugSensorOn || (Number.isInteger(p.plugSensorGpioPin) && p.plugSensorGpioPin >= 0);
   if (doorSensor && p.doorSensorGpioPin == null) p.doorSensorGpioPin = defaultDoorSensorGpio;
   const doorSensorGpioValid = !doorSensorOn || (Number.isInteger(p.doorSensorGpioPin) && p.doorSensorGpioPin >= 0);
+  // protocolToggles (currently just rf-ir-bridge's own two): an ARRAY of
+  // independently-checkable GPIO fields, all defaulting checked — see
+  // protocolToggleIsEnabled()'s own comment above for why this needed a
+  // new mechanism rather than reusing statusLed/positionSensor/etc.
+  const protocolToggles = deviceType ? deviceType.protocolToggles : null;
+  if (!p.protocolTogglePins) p.protocolTogglePins = {};
+  if (protocolToggles) {
+    protocolToggles.forEach((toggle) => {
+      if (p.protocolTogglePins[toggle.key] == null) {
+        p.protocolTogglePins[toggle.key] = toggle.defaultsByModule[p.target] != null ? toggle.defaultsByModule[p.target] : 4;
+      }
+    });
+  }
+  const protocolTogglesGpioValid = !protocolToggles || protocolToggles.every((toggle) =>
+    !protocolToggleIsEnabled(p, toggle.key) || (Number.isInteger(p.protocolTogglePins[toggle.key]) && p.protocolTogglePins[toggle.key] >= 0));
+  // At least one protocol toggle has to stay checked — a bridge built
+  // with neither would be a real device that does nothing at all.
+  const protocolTogglesAtLeastOneValid = !protocolToggles || protocolToggles.some((toggle) => protocolToggleIsEnabled(p, toggle.key));
   // numberField (currently just the addressable light's pixel count): a
   // plain integer #define, not a GPIO — validated against its own
   // min/max rather than the GPIO fields' "0 or higher" rule.
   if (numberField && p[numberField.key] == null) p[numberField.key] = numberField.defaultValue;
   const numberFieldValid = !numberField ||
     (Number.isInteger(p[numberField.key]) && p[numberField.key] >= numberField.min && p[numberField.key] <= numberField.max);
-  const allValid = gpioValid && secondaryGpioValid && identifyGpioValid && extraButtonsValid && statusLedGpioValid && positionSensorGpioValid && dockSensorGpioValid && plugSensorGpioValid && doorSensorGpioValid && pickerPinsValid && numberFieldValid && rotaryEncoderValid;
+  const allValid = gpioValid && secondaryGpioValid && identifyGpioValid && extraButtonsValid && statusLedGpioValid && positionSensorGpioValid && dockSensorGpioValid && plugSensorGpioValid && doorSensorGpioValid && pickerPinsValid && numberFieldValid && rotaryEncoderValid && protocolTogglesGpioValid && protocolTogglesAtLeastOneValid;
 
   // Component-aware field labels: falls back to the device type's own
   // static text when there's no componentOptions list (every device type
@@ -6201,6 +6218,38 @@ function renderConfigureDevice(p) {
           </div>
         ` : ""}
 
+        ${protocolToggles ? protocolToggles.map((toggle) => {
+          const toggleOn = protocolToggleIsEnabled(p, toggle.key);
+          const defaultToggleGpio = toggle.defaultsByModule[p.target] != null ? toggle.defaultsByModule[p.target] : 4;
+          const toggleGpioValid = !toggleOn || (Number.isInteger(p.protocolTogglePins[toggle.key]) && p.protocolTogglePins[toggle.key] >= 0);
+          return `
+          <div class="driver-block">
+            <label class="checkbox-label" for="protocol-toggle-${escapeHtml(toggle.key)}-enabled">
+              <input type="checkbox" id="protocol-toggle-${escapeHtml(toggle.key)}-enabled" data-protocol-toggle="${escapeHtml(toggle.key)}" ${toggleOn ? "checked" : ""}>
+              <h3 style="display:inline; margin:0;">${escapeHtml(toggle.label)}</h3>
+            </label>
+            <p class="field-note" style="margin-top:4px;">
+              Checked by default — uncheck if you haven't wired up this
+              receiver. At least one protocol has to stay checked; the
+              firmware sets this pin to <code>GPIO_NUM_NC</code> (disabled)
+              when unchecked.
+            </p>
+
+            ${toggleOn ? `
+              <label class="field-label" for="protocol-toggle-${escapeHtml(toggle.key)}-gpio-pin" style="margin-top:12px;">${escapeHtml(toggle.fieldLabel)}</label>
+              <input type="number" id="protocol-toggle-${escapeHtml(toggle.key)}-gpio-pin" data-protocol-toggle-pin="${escapeHtml(toggle.key)}" min="0" max="48" value="${p.protocolTogglePins[toggle.key]}">
+              <div class="field-error">${toggleGpioValid ? "" : "Enter a valid GPIO number (0 or higher)."}</div>
+              <p class="field-note">
+                Adjust to match your board — GPIO ${defaultToggleGpio}
+                is a common default for ${escapeHtml(moduleName(p.target))} devkits, not a guarantee for yours.
+              </p>
+            ` : ""}
+          </div>
+        `; }).join("") : ""}
+        ${protocolToggles && !protocolTogglesAtLeastOneValid ? `
+          <div class="field-error" style="margin-bottom:12px;">At least one protocol must stay checked — a bridge with neither would do nothing.</div>
+        ` : ""}
+
         ${rotaryEncoder ? `
           <div class="driver-block">
             <label class="checkbox-label" for="rotary-encoder-enabled">
@@ -6275,7 +6324,8 @@ function renderConfigureDevice(p) {
           <code>${escapeHtml(positionSensor.defineName)}</code>` : ""}${dockSensorOn ? `,
           <code>${escapeHtml(dockSensor.defineName)}</code>` : ""}${plugSensorOn ? `,
           <code>${escapeHtml(plugSensor.defineName)}</code>` : ""}${doorSensorOn ? `,
-          <code>${escapeHtml(doorSensor.defineName)}</code>` : ""}${rotaryEncoderOn ? rotaryEncoder.pins.map((pin) => `,
+          <code>${escapeHtml(doorSensor.defineName)}</code>` : ""}${protocolToggles ? protocolToggles.map((toggle) => `,
+          <code>${escapeHtml(toggle.defineName)}</code>`).join("") : ""}${rotaryEncoderOn ? rotaryEncoder.pins.map((pin) => `,
           <code>${escapeHtml(pin.defineName)}</code>`).join("") : ""}${identifyOn ? `,
           <code>${escapeHtml(identify ? identify.defineName : "IDENTIFY_LED_GPIO")}</code>` : ""}${activePickerPins.map(({ pin }) => `,
           <code>${escapeHtml(pin.defineName)}</code>`).join("")}) happens
@@ -6356,6 +6406,12 @@ function renderConfigureDevice(p) {
             <div class="summary-detail">${doorSensorOn ? `IO pin: GPIO ${doorSensorGpioValid ? p.doorSensorGpioPin : "?"}` : "Not added"}</div>
           </div>
         ` : ""}
+        ${protocolToggles ? protocolToggles.map((toggle) => `
+          <div class="summary-row">
+            <div class="summary-label">${escapeHtml(toggle.label.toUpperCase())}</div>
+            <div class="summary-detail">${protocolToggleIsEnabled(p, toggle.key) ? `IO pin: GPIO ${p.protocolTogglePins[toggle.key]}` : "Disabled (GPIO_NUM_NC)"}</div>
+          </div>
+        `).join("") : ""}
         ${rotaryEncoder ? `
           <div class="summary-row">
             <div class="summary-label">ROTARY ENCODER</div>
@@ -6585,10 +6641,20 @@ function isProductComplete(p) {
     const groupInUse = clusterOptions.some((c) => c.group === group.key && p.enabledClusters && p.enabledClusters[c.id]);
     return !groupInUse || !!(p.chipChoices && p.chipChoices[group.key]);
   });
+  // protocolToggles (currently just rf-ir-bridge's own two) — computed
+  // fresh here too, same "don't trust p[...] being pre-filled" reasoning
+  // as numberField/clusterOptions above. At least one toggle has to stay
+  // checked, same as protocolTogglesAtLeastOneValid in renderConfigureDevice.
+  const protocolToggles = deviceType ? deviceType.protocolToggles : null;
+  const protocolTogglesOk = !protocolToggles || (
+    protocolToggles.some((toggle) => protocolToggleIsEnabled(p, toggle.key)) &&
+    protocolToggles.every((toggle) => !protocolToggleIsEnabled(p, toggle.key) ||
+      (p.protocolTogglePins && Number.isInteger(p.protocolTogglePins[toggle.key]) && p.protocolTogglePins[toggle.key] >= 0))
+  );
   return !!p.deviceType && !!p.target &&
     Number.isInteger(p.gpioPin) && p.gpioPin >= 0 &&
     secondaryOk && identifyOk && buttonsOk && statusLedOk && positionSensorOk && dockSensorOk && plugSensorOk && doorSensorOk &&
-    rotaryEncoderOk && pickerPinsOk && numberFieldOk && clusterChipPinsOk && chipChoiceGroupsOk;
+    rotaryEncoderOk && pickerPinsOk && numberFieldOk && clusterChipPinsOk && chipChoiceGroupsOk && protocolTogglesOk;
 }
 
 function buildConfigPreview(p) {
@@ -6809,6 +6875,19 @@ function renderCustomiseReview(p) {
         ` : ""}
         ${(() => {
           const dt = findDeviceType(p.deviceType);
+          if (!dt || !dt.protocolToggles) return "";
+          return dt.protocolToggles.map((toggle) => `
+            <div class="review-row">
+              <div>
+                <div class="summary-label">${escapeHtml(toggle.label.toUpperCase())}</div>
+                <div class="summary-value">${protocolToggleIsEnabled(p, toggle.key) ? `GPIO ${p.protocolTogglePins && p.protocolTogglePins[toggle.key] != null ? p.protocolTogglePins[toggle.key] : "?"}` : "Disabled (GPIO_NUM_NC)"}</div>
+              </div>
+              <button class="link" data-goto-step="2">Edit</button>
+            </div>
+          `).join("");
+        })()}
+        ${(() => {
+          const dt = findDeviceType(p.deviceType);
           if (!dt || !dt.rotaryEncoder) return "";
           const on = rotaryEncoderIsEnabled(p);
           return `
@@ -6914,7 +6993,7 @@ function renderGenerateFirmware(p) {
       <p class="step-hint">
         For "${escapeHtml(p.name)}" —
         <strong>${escapeHtml(deviceTypeName(p.deviceType))}</strong>${selectedSensor ? ` (<strong>${escapeHtml(selectedSensor.name)}</strong>)` : ""} on
-        <strong>${escapeHtml(moduleName(p.target))}</strong>, GPIO ${p.gpioPin}${extraButtonGpios.length ? ` (+ ${extraButtonNoun}${extraButtonGpios.length === 1 ? "" : "s"} on GPIO ${extraButtonGpios.join(", ")})` : ""}${deviceType && deviceType.secondary ? ` (${escapeHtml((deviceType.secondary.label || "secondary").toLowerCase())} on GPIO ${p.secondaryGpioPin})` : ""}${deviceType && deviceType.statusLed && statusLedIsEnabled(p) ? ` (status LED on GPIO ${p.statusLedGpioPin})` : ""}${deviceType && deviceType.positionSensor && positionSensorIsEnabled(p) ? ` (position sensor on GPIO ${p.positionSensorGpioPin})` : ""}${deviceType && deviceType.dockSensor && dockSensorIsEnabled(p) ? ` (dock sensor on GPIO ${p.dockSensorGpioPin})` : ""}${deviceType && deviceType.plugSensor && plugSensorIsEnabled(p) ? ` (plug sensor on GPIO ${p.plugSensorGpioPin})` : ""}${deviceType && deviceType.doorSensor && doorSensorIsEnabled(p) ? ` (door sensor on GPIO ${p.doorSensorGpioPin})` : ""}${identifyIsEnabled(p) ? ` (identify LED on GPIO ${p.identifyGpioPin})` : ""}.
+        <strong>${escapeHtml(moduleName(p.target))}</strong>, GPIO ${p.gpioPin}${extraButtonGpios.length ? ` (+ ${extraButtonNoun}${extraButtonGpios.length === 1 ? "" : "s"} on GPIO ${extraButtonGpios.join(", ")})` : ""}${deviceType && deviceType.secondary ? ` (${escapeHtml((deviceType.secondary.label || "secondary").toLowerCase())} on GPIO ${p.secondaryGpioPin})` : ""}${deviceType && deviceType.statusLed && statusLedIsEnabled(p) ? ` (status LED on GPIO ${p.statusLedGpioPin})` : ""}${deviceType && deviceType.positionSensor && positionSensorIsEnabled(p) ? ` (position sensor on GPIO ${p.positionSensorGpioPin})` : ""}${deviceType && deviceType.dockSensor && dockSensorIsEnabled(p) ? ` (dock sensor on GPIO ${p.dockSensorGpioPin})` : ""}${deviceType && deviceType.plugSensor && plugSensorIsEnabled(p) ? ` (plug sensor on GPIO ${p.plugSensorGpioPin})` : ""}${deviceType && deviceType.doorSensor && doorSensorIsEnabled(p) ? ` (door sensor on GPIO ${p.doorSensorGpioPin})` : ""}${deviceType && deviceType.protocolToggles ? deviceType.protocolToggles.filter((t) => protocolToggleIsEnabled(p, t.key)).map((t) => ` (${escapeHtml(t.label.toLowerCase())} on GPIO ${p.protocolTogglePins ? p.protocolTogglePins[t.key] : "?"})`).join("") : ""}${identifyIsEnabled(p) ? ` (identify LED on GPIO ${p.identifyGpioPin})` : ""}.
         This is the exact two-step flow validated end to end on real
         hardware for this device type: build, then flash. Nothing runs
         automatically — you paste and run each command yourself.
@@ -7198,6 +7277,20 @@ function buildSedCommands(p) {
     // plugSensor above — this one also ships as GPIO_NUM_NC by default,
     // not a numeric value.
     cmds.push(`sed -i 's/^#define ${doorSensor.defineName} .*/#define ${doorSensor.defineName} GPIO_NUM_${p.doorSensorGpioPin}/' ${filePath}`);
+  }
+  if (deviceType && deviceType.protocolToggles) {
+    // Unlike statusLed/positionSensor/dockSensor/plugSensor/doorSensor
+    // above (only sed'd when the checkbox is ON, since the firmware ships
+    // them at GPIO_NUM_NC by default), each protocolToggles entry always
+    // gets a sed line, whether checked or not — the firmware ships BOTH
+    // as real, enabled GPIO numbers by default, so disabling one has to
+    // actively rewrite its own #define to GPIO_NUM_NC, not just skip it.
+    deviceType.protocolToggles.forEach((toggle) => {
+      const value = protocolToggleIsEnabled(p, toggle.key)
+        ? `GPIO_NUM_${p.protocolTogglePins && p.protocolTogglePins[toggle.key] != null ? p.protocolTogglePins[toggle.key] : (toggle.defaultsByModule[p.target] != null ? toggle.defaultsByModule[p.target] : 4)}`
+        : "GPIO_NUM_NC";
+      cmds.push(`sed -i 's/^#define ${toggle.defineName} .*/#define ${toggle.defineName} ${value}/' ${filePath}`);
+    });
   }
   if (deviceType && deviceType.rotaryEncoder && rotaryEncoderIsEnabled(p)) {
     // Same broad `.*` match as statusLed/positionSensor/dockSensor/
@@ -7515,6 +7608,12 @@ function bindEvents() {
         // pickerPins is already reset above (shared with extraPickers).
         state.currentProduct.enabledClusters = null;
         state.currentProduct.chipChoices = null;
+        // protocolToggles (rf-ir-bridge only, so far): same stale-value
+        // risk as everything above — reset both the per-toggle enabled
+        // state and its GPIO pins so a new device type starts from its
+        // own defaults rather than inheriting a previous type's choices.
+        state.currentProduct.protocolToggles = null;
+        state.currentProduct.protocolTogglePins = null;
       }
       state.currentProduct.deviceType = newType;
       saveProducts();
@@ -7782,6 +7881,37 @@ function bindEvents() {
       }
       const raw = el.value;
       state.currentProduct.pickerPins[defineName] = raw === "" ? null : parseInt(raw, 10);
+      saveProducts();
+      render();
+      document.getElementById(el.id).focus();
+    });
+  });
+
+  // protocolToggles (rf-ir-bridge only, so far) — same delegated
+  // data-attribute handler shape as data-rotary-encoder-pin/data-pin-define
+  // above, one for each toggle's own checkbox and one for its GPIO field,
+  // both keyed by the toggle's own `key` (e.g. "rf433", "ir") into
+  // protocolToggles/protocolTogglePins respectively.
+  document.querySelectorAll('input[data-protocol-toggle]').forEach((el) => {
+    el.addEventListener("change", () => {
+      const key = el.getAttribute("data-protocol-toggle");
+      if (typeof state.currentProduct.protocolToggles !== "object" || state.currentProduct.protocolToggles == null) {
+        state.currentProduct.protocolToggles = {};
+      }
+      state.currentProduct.protocolToggles[key] = el.checked;
+      saveProducts();
+      render();
+    });
+  });
+
+  document.querySelectorAll('input[data-protocol-toggle-pin]').forEach((el) => {
+    el.addEventListener("input", () => {
+      const key = el.getAttribute("data-protocol-toggle-pin");
+      if (typeof state.currentProduct.protocolTogglePins !== "object" || state.currentProduct.protocolTogglePins == null) {
+        state.currentProduct.protocolTogglePins = {};
+      }
+      const raw = el.value;
+      state.currentProduct.protocolTogglePins[key] = raw === "" ? null : parseInt(raw, 10);
       saveProducts();
       render();
       document.getElementById(el.id).focus();

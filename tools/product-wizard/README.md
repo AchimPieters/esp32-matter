@@ -75,10 +75,13 @@ open tools/product-wizard/index.html
   Controller" (`firmware/window-covering-controller/`), "Closure
   Controller" (`firmware/closure-controller/`), "Pump Controller"
   (`firmware/pump-controller/`), "Control Bridge"
-  (`firmware/control-bridge/`), "RF433 Bridge" (`firmware/rf433-bridge/`),
-  or "Infrared Bridge" (`firmware/ir-bridge/`).
+  (`firmware/control-bridge/`), or "RF433/IR Bridge"
+  (`firmware/rf-ir-bridge/` — a single merged bridge with independently
+  checkable 433MHz and infrared support, replacing what this repo
+  originally shipped as two separate "RF433 Bridge"/"Infrared Bridge"
+  device types).
   All
-  sixty-six are real, buildable
+  sixty-five are real, buildable
   firmware, not just UI placeholders. Three device types are deliberately
   NOT offered here: `firmware/camera/` (this repo's twelfth device type),
   `firmware/ble-mesh-bridge/`, and `firmware/zigbee-bridge/` — see the
@@ -1165,11 +1168,20 @@ and diffed against the original, a byte-for-byte match. All checks passed.
   customize at all — every bridged device's own hardware lives on a
   completely separate board/module, not on the bridge itself. Build and
   flash either by hand following their own `README.md`'s instructions.
-  `firmware/rf433-bridge/` and `firmware/ir-bridge/` (the other two
-  bridges built in the same pass, for 433MHz and infrared respectively)
-  ARE offered here — they use this repo's own simplified build pattern
-  and have real GPIO fields (a receiver input, a learn button), unlike
-  their two bridge siblings above. A handful of
+  `firmware/rf-ir-bridge/` (the other bridge built in the same pass, for
+  433MHz and infrared) IS offered here — it uses this repo's own
+  simplified build pattern and has real GPIO fields (a learn button plus
+  two independently-checkable receiver inputs), unlike its bridge
+  siblings above. It started out as two separate device types (RF433
+  Bridge, Infrared Bridge) and was merged into this one after real
+  feedback that a single bridge with checkable protocol support is a
+  better fit than two single-purpose firmwares — see CLAUDE.md's own
+  "Open next steps" for the consolidation's full detail, including the
+  new `protocolToggles` mechanism this merge introduced (an array of
+  independently-checkable GPIO fields defaulting checked, with "at least
+  one must stay checked" cross-validation — genuinely new, since every
+  prior optional-GPIO mechanism here defaults unchecked and has no
+  sibling-count constraint). A handful of
   other real Matter device types (camera-adjacent controllers/doorbells,
   real media-playback devices, network/fabric-infrastructure devices,
   and a couple of spec-forbidden or genuinely still-empty device type
@@ -1177,7 +1189,7 @@ and diffed against the original, a byte-for-byte match. All checks passed.
   repo for the same or related structural reasons, not just from the
   wizard — see CLAUDE.md's own "Open next steps" for the full, per-
   device-type reasoning behind each.
-- Sixty-four device types are offered here (see the full list at the top
+- Sixty-five device types are offered here (see the full list at the top
   of this file) — this section deliberately doesn't try to itemize the
   hardware-verification status of every one individually; that level of
   detail (which chips/sensors/outputs are datasheet-verified vs. build-

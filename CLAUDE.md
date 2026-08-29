@@ -7729,16 +7729,44 @@ firmware/ble-mesh-bridge/  BLE Mesh Bridge — sixty-sixth device type, and
   main/CMakeLists.txt,      unmodified.
   partitions.csv,
   sdkconfig.defaults*
-firmware/rf433-bridge/    RF433 Bridge — sixty-seventh device type, and this
-                           repo's first bridge built genuinely from
+firmware/rf-ir-bridge/    RF433/IR Bridge — sixty-seventh device type, and
+                           this repo's first bridge built genuinely from
                            scratch (no esp-matter reference exists for
-                           this protocol at all) — dynamically bridges
-                           cheap 433MHz fixed-code remotes/sensors (the
-                           EV1527/PT2262 encoder-chip family behind
+                           either protocol at all) — dynamically bridges
+                           BOTH cheap 433MHz fixed-code remotes/sensors
+                           (the EV1527/PT2262 encoder-chip family behind
                            countless wireless doorbells, remote-control
                            sockets, PIR sensors, and door/window sensors
-                           sold worldwide) onto the fabric as real,
-                           dynamically-created Generic Switch endpoints.
+                           sold worldwide) AND NEC-protocol infrared
+                           remote-control button presses (by far the most
+                           common IR protocol across cheap consumer
+                           electronics remotes worldwide) onto the fabric
+                           as real, dynamically-created Generic Switch
+                           endpoints — with each protocol independently
+                           checkable in `tools/product-wizard/`.
+
+                           Originally shipped as TWO separate device
+                           types (`firmware/rf433-bridge/`, `firmware/
+                           ir-bridge/`), merged into this one file after
+                           real, explicit feedback: a user should be able
+                           to check which protocol support one bridge has,
+                           rather than build two single-purpose devices.
+                           The two predecessor files' own decoders are
+                           reused byte-for-byte (their history is
+                           preserved in git, and their own former header
+                           comments are the direct source for the per-
+                           protocol detail below) — only the surrounding
+                           architecture changed: one shared
+                           `bridge_device_addr_t` tagged union (RF433's
+                           24-bit code OR IR's 16-bit address/command
+                           pair, distinguished by a `bridge_source_t`
+                           enum) replaces the two predecessor files' own
+                           separate address-context classes, and ONE
+                           shared physical LEARN button now serves both
+                           protocols at once — pressing it opens a single
+                           15-second pairing window during which the next
+                           validated code from EITHER decoder, whichever
+                           fires first, becomes a newly bridged endpoint.
   main/app_main.cpp        Reuses the SAME `endpoint::aggregator::
                            create()` + `app_bridge_initialize()`/
                            `app_bridge_create_new_device()`/
@@ -7756,79 +7784,44 @@ firmware/rf433-bridge/    RF433 Bridge — sixty-seventh device type, and this
                            for this device type, unlike firmware/
                            ble-mesh-bridge/'s own need for Espressif's
                            full unmodified build treatment. Each learned
-                           RF code becomes a Generic Switch endpoint
-                           (device type 0x000F, MomentarySwitch feature
-                           only, reusing `endpoint::generic_switch::
-                           add()` directly) that fires InitialPress/
-                           ShortRelease whenever that SAME code is
-                           received again — deliberately not attempting
-                           to infer whether a given code represents a
-                           "door sensor," "PIR," or "remote button": a
-                           bare 24-bit fixed code carries no semantic
-                           meaning about what physical thing sent it, the
-                           same honest scope this repo already applies
-                           elsewhere. The self-calibrating decode
-                           algorithm (deriving a per-frame base timing
-                           unit from the measured sync gap, rather than
-                           trusting one hardcoded microsecond value) is
-                           ported from the real, MIT-licensed, extremely
-                           widely-deployed `rc-switch` Arduino library
+                           code (RF433 or IR) becomes a Generic Switch
+                           endpoint (device type 0x000F, MomentarySwitch
+                           feature only, reusing `endpoint::
+                           generic_switch::add()` directly) that fires
+                           InitialPress/ShortRelease whenever that SAME
+                           code is received again — deliberately not
+                           attempting to infer whether a given code
+                           represents a "door sensor," "PIR," or "remote
+                           button": a bare learned code carries no
+                           semantic meaning about what physical thing
+                           sent it, the same honest scope this repo
+                           already applies elsewhere.
+
+                           RF433's self-calibrating decode algorithm
+                           (deriving a per-frame base timing unit from
+                           the measured sync gap, rather than trusting
+                           one hardcoded microsecond value) is ported
+                           from the real, MIT-licensed, extremely widely-
+                           deployed `rc-switch` Arduino library
                            (`RCSwitch::receiveProtocol()`/
-                           `handleInterrupt()`, fetched and read directly)
-                           — confirmed necessary, not just convenient,
-                           after two independent primary-source lookups
-                           for the EV1527 chip's own literal timing gave
-                           meaningfully different microsecond values (a
-                           real, confirmed ambiguity: different real-
-                           world EV1527-*compatible* remotes/sensors,
-                           often clone dies rather than the genuine
-                           Silvan Chip part, don't all share identical
-                           exact timing). Also ported directly: requiring
-                           the SAME 24-bit code twice in a row before
-                           accepting it, and a minimum-edge-count floor
-                           before even attempting sync detection — both
-                           real `rc-switch`-own noise-rejection steps kept
-                           rather than dropped. A real, physical LEARN
-                           button opens a 15-second pairing window during
-                           which the next validated code becomes a newly
-                           bridged endpoint — outside that window, a
-                           validated-but-unbridged code is logged and
-                           ignored, never silently auto-registered, the
-                           same real "pairing mode" UX actual commercial
-                           433MHz/RF bridge products already use.
-                           `app_rf433_bridged_device_t` persists each
-                           bridged endpoint's own learned code to NVS so
-                           it survives a reboot. Standard quick-power-
-                           cycle factory reset, also erasing every learned
-                           code via `esp_matter_bridge::factory_reset()`.
-                           Build-verified in Docker (one real compile
-                           error caught and fixed — a missing
-                           `data_model_provider/esp_matter_data_model_
-                           provider.h` include for the registry-lookup-
-                           and-cast `SwitchCluster` access pattern
-                           firmware/generic-switch/'s own file already
-                           establishes — clean on the second attempt); not
-                           hardware-tested — no 433MHz receiver module or
-                           EV1527/PT2262-class remote/sensor was
-                           physically available when written, and this
-                           decoder's own real-world correctness rests
-                           entirely on the ported `rc-switch` algorithm
-                           being faithfully reproduced, not on anything
-                           this session could independently confirm
-                           against a real signal.
-  partitions.csv           same OTA + fctry layout as firmware/light/
-  sdkconfig.defaults        same as firmware/light/
-firmware/ir-bridge/       Infrared Bridge — sixty-eighth device type, and
-                           the direct sibling of firmware/rf433-bridge/ —
-                           same bridge architecture, same learn-mode UX,
-                           same bridged-device shape, a different decode
-                           front-end: dynamically bridges NEC-protocol
-                           infrared remote-control button presses (by far
-                           the most common IR protocol across cheap
-                           consumer electronics remotes worldwide) onto
-                           the fabric as real, dynamically-created Generic
-                           Switch endpoints.
-  main/app_main.cpp        NEC's own timing (9ms AGC mark + 4.5ms space;
+                           `handleInterrupt()`, fetched and read
+                           directly) — confirmed necessary, not just
+                           convenient, after two independent primary-
+                           source lookups for the EV1527 chip's own
+                           literal timing gave meaningfully different
+                           microsecond values (a real, confirmed
+                           ambiguity: different real-world EV1527-
+                           *compatible* remotes/sensors, often clone dies
+                           rather than the genuine Silvan Chip part,
+                           don't all share identical exact timing). Also
+                           ported directly: requiring the SAME 24-bit
+                           code twice in a row before accepting it, and a
+                           minimum-edge-count floor before even
+                           attempting sync detection — both real
+                           `rc-switch`-own noise-rejection steps kept
+                           rather than dropped.
+
+                           NEC's own timing (9ms AGC mark + 4.5ms space;
                            bit-0 = 560us mark + 560us space; bit-1 = 560us
                            mark + 1690us space; 32 bits LSB-first — 8-bit
                            address + its own bitwise-inverted check byte +
@@ -7838,58 +7831,77 @@ firmware/ir-bridge/       Infrared Bridge — sixty-eighth device type, and
                            cited technical reference, and a second summary
                            drawn from Vishay's own IR-receiver-datasheet-
                            adjacent documentation) that agreed exactly,
-                           unlike firmware/rf433-bridge/'s own EV1527
-                           lookups — so a fixed-value classifier
-                           (`NEC_TOLERANCE_PERCENT`, 25%) is the honest,
-                           correct approach here, not the self-calibrating
-                           decoder that file's own real timing ambiguity
-                           required. A real, deliberate implementation
-                           choice, not an oversight: decodes via the same
-                           plain GPIO-interrupt-edge-timing technique
-                           firmware/rf433-bridge/'s own decoder uses,
-                           NOT ESP-IDF's dedicated `driver/rmt_rx.h`
-                           peripheral (Espressif's own typically-
-                           recommended approach for IR receive, and one
-                           this repo has never used in RX mode at all —
-                           firmware/addressable-light/'s own RMT usage is
-                           TX-only) — NEC's own timing margins are
-                           comfortably within what a plain ISR +
-                           `esp_timer_get_time()` can reliably resolve,
-                           so reusing an already-proven pattern was judged
-                           better than introducing a new peripheral API
-                           for a protocol that doesn't strictly need it.
-                           The IR receiver module's own output polarity is
+                           unlike RF433's own EV1527 lookups — so a
+                           fixed-value classifier (`NEC_TOLERANCE_PERCENT`,
+                           25%) is the honest, correct approach for IR,
+                           not the self-calibrating decoder RF433's own
+                           real timing ambiguity required. Both decoders
+                           use the same plain GPIO-interrupt-edge-timing
+                           technique — NOT ESP-IDF's dedicated
+                           `driver/rmt_rx.h` peripheral (Espressif's own
+                           typically-recommended approach for IR receive,
+                           and one this repo has never used in RX mode at
+                           all — firmware/addressable-light/'s own RMT
+                           usage is TX-only) — since both protocols' own
+                           timing margins are comfortably within what a
+                           plain ISR + `esp_timer_get_time()` can reliably
+                           resolve, so reusing one already-proven pattern
+                           for both was judged better than introducing a
+                           new peripheral API neither strictly needs. The
+                           IR receiver module's own output polarity is
                            INVERTED relative to the physical carrier (idle
                            HIGH, LOW during each real 38kHz-modulated
                            mark) — standard behavior for every common
                            TSOP38238-class demodulator module, accounted
                            for directly in the decode logic rather than
-                           assumed non-inverted. Bridged-device
-                           architecture (address-context class, NVS
-                           persistence, `create_bridge_devices()`
-                           callback, `SwitchCluster` registry-lookup-and-
-                           cast dispatch, learn-mode UX/timeout) reused
-                           byte-for-byte from firmware/rf433-bridge/'s own
-                           file, keyed on a 16-bit (address, command) pair
-                           instead of a 24-bit RF code. A held remote
-                           button's own real NEC repeat-code frames are
+                           assumed non-inverted. A held remote button's
+                           own real NEC repeat-code frames are
                            deliberately not re-dispatched as repeated
                            Matter events — one physical press still means
                            one InitialPress/ShortRelease pair, the same
-                           choice firmware/rf433-bridge/'s own repeat-
-                           count de-duplication makes for a held RF
-                           remote. Standard quick-power-cycle factory
-                           reset, also erasing every learned code.
-                           Build-verified in Docker (clean first attempt —
-                           the direct payoff of firmware/rf433-bridge/'s
-                           own missing-include fix, applied proactively
-                           here rather than rediscovered); not hardware-
-                           tested — no IR receiver module or real NEC-
-                           protocol remote was physically available when
-                           written.
+                           choice RF433's own repeat-count de-duplication
+                           makes for a held RF remote.
+
+                           Each protocol's own GPIO/ISR/decode-task setup
+                           is gated behind a RUNTIME `if (RF433_RX_GPIO !=
+                           GPIO_NUM_NC)`/`if (IR_RX_GPIO != GPIO_NUM_NC)`
+                           check in `app_main()`, never `#if` — the same
+                           "GPIO_NUM_* are C++ enum constants, not
+                           preprocessor macros" lesson firmware/
+                           addressable-light/'s own `identify_via_strip`,
+                           firmware/oven/'s own door sensor, and firmware/
+                           robot-vacuum/'s own dock sensor already
+                           establish. Both default to real, enabled GPIOs
+                           (unlike those three optional sensors' own
+                           default-disabled convention) — this device's
+                           whole purpose is bridging at least one
+                           protocol, so both-on is the honest shipped
+                           default. `app_rfir_bridged_device_t` persists
+                           each bridged endpoint's own learned (source,
+                           code) pair to NVS under one unified key scheme
+                           (`"rfir_%x"`) so it survives a reboot — a
+                           single shared class covering both protocols,
+                           replacing the two predecessor files' own
+                           separate `app_rf433_bridged_device_t`/
+                           `app_ir_bridged_device_t` classes. Standard
+                           quick-power-cycle factory reset, also erasing
+                           every learned code of either protocol via
+                           `esp_matter_bridge::factory_reset()`.
+                           Build-verified in Docker for all three
+                           meaningful configurations (RF433-only, IR-only,
+                           both enabled); not hardware-tested — no 433MHz
+                           receiver module, IR receiver module, or real
+                           EV1527/PT2262/NEC-protocol remote/sensor was
+                           physically available when written, the same
+                           standing caveat both predecessor files already
+                           carried, and RF433's own real-world correctness
+                           still rests entirely on the ported `rc-switch`
+                           algorithm being faithfully reproduced, not on
+                           anything this session could independently
+                           confirm against a real signal.
   partitions.csv           same OTA + fctry layout as firmware/light/
   sdkconfig.defaults        same as firmware/light/
-firmware/zigbee-bridge/   Zigbee Bridge — sixty-ninth device type, and
+firmware/zigbee-bridge/   Zigbee Bridge — sixty-eighth device type, and
                            this repo's second two-chip, two-firmware
                            device after firmware/camera/ itself — for a
                            genuinely different reason: Zigbee needs its
@@ -10649,56 +10661,63 @@ SECURITY.md               flash encryption / secure boot / signed OTA guidance
    `firmware/ble-mesh-bridge/` and `firmware/zigbee-bridge/` are
    verbatim ports of those two references (the same "port a real,
    working reference rather than guess the integration shape" principle
-   already used repeatedly in this repo); `firmware/rf433-bridge/` and
-   `firmware/ir-bridge/` are genuinely new, from-scratch decoders (no
-   esp-matter reference exists for either protocol) built on that same
-   shared bridge infrastructure, reusing Generic Switch as the honest,
-   semantics-free bridged-device shape for a learned code/button rather
-   than guessing what kind of physical device sent it. See each of the
-   four device types' own repository-layout entries above for the full
-   technical detail, including: the real, confirmed reason `Matter`/
-   `Thread` don't map to a "bridge target" the way the other six
-   protocols do (Matter devices already interoperate directly; "Thread"
-   would mean a genuine Border Router role, the same network-
-   infrastructure category already ruled out above) and why `Z-Wave` was
-   not attempted (no esp-matter reference, no Z-Wave radio in any ESP32
-   chip, needing genuinely external, likely licensed hardware/SDK this
-   repo has no path to) — a real, evidence-based scoping decision shared
-   with the user before committing to the four that WERE built, not a
-   silent unilateral one. `firmware/rf433-bridge/`'s and `firmware/
-   ir-bridge/`'s own EV1527/NEC decode algorithms were each verified
-   against real primary/community-standard sources via live web research
-   before writing any code (a genuine first for this session — every
-   prior protocol verification in this repo's history used a locally
-   fetched datasheet PDF or an already-known open-source reference
-   instead), including a real, confirmed timing ambiguity for EV1527
-   specifically (two independent sources disagreeing on the literal
-   microsecond values) that a self-calibrating decode algorithm — ported
-   from the real, widely-deployed `rc-switch` library rather than
-   invented — was chosen specifically to sidestep. All four build-
-   verified in Docker (one real, quickly-fixed compile error total,
-   on `firmware/rf433-bridge/`; the other three clean on the first
+   already used repeatedly in this repo); `firmware/rf-ir-bridge/` is a
+   genuinely new, from-scratch decoder pair (no esp-matter reference
+   exists for either protocol) built on that same shared bridge
+   infrastructure, reusing Generic Switch as the honest, semantics-free
+   bridged-device shape for a learned code/button rather than guessing
+   what kind of physical device sent it — originally shipped as two
+   separate device types (RF433 Bridge, Infrared Bridge), later merged
+   into this one file after real feedback that a single bridge with
+   independently checkable protocol support is a better fit than two
+   single-purpose firmwares (see `firmware/rf-ir-bridge/`'s own
+   repository-layout entry above for the full consolidation detail,
+   including the wizard's new `protocolToggles` mechanism this merge
+   introduced). See each of the three device types' own repository-
+   layout entries above for the full technical detail, including: the
+   real, confirmed reason `Matter`/`Thread` don't map to a "bridge
+   target" the way the other six protocols do (Matter devices already
+   interoperate directly; "Thread" would mean a genuine Border Router
+   role, the same network-infrastructure category already ruled out
+   above) and why `Z-Wave` was not attempted (no esp-matter reference, no
+   Z-Wave radio in any ESP32 chip, needing genuinely external, likely
+   licensed hardware/SDK this repo has no path to) — a real, evidence-
+   based scoping decision shared with the user before committing to the
+   protocols that WERE built, not a silent unilateral one.
+   `firmware/rf-ir-bridge/`'s own EV1527/NEC decode algorithms were each
+   verified against real primary/community-standard sources via live web
+   research before writing any code (a genuine first for this session —
+   every prior protocol verification in this repo's history used a
+   locally fetched datasheet PDF or an already-known open-source
+   reference instead), including a real, confirmed timing ambiguity for
+   EV1527 specifically (two independent sources disagreeing on the
+   literal microsecond values) that a self-calibrating decode algorithm —
+   ported from the real, widely-deployed `rc-switch` library rather than
+   invented — was chosen specifically to sidestep. All three bridge
+   firmwares build-verified in Docker (one real, quickly-fixed compile
+   error total, on the original RF433 decoder before its merge into
+   `firmware/rf-ir-bridge/`; every other build clean on the first
    attempt) — `firmware/ble-mesh-bridge/`'s own build for classic `esp32`
    is itself a small, real finding, since Espressif's own README only
-   documents testing on `esp32c3`. None of the four is hardware-tested —
+   documents testing on `esp32c3`. None of the three is hardware-tested —
    no BLE Mesh/Zigbee peripheral, 433MHz receiver/remote, or IR receiver/
    remote was physically available when written, the same standing
-   caveat most of this repo's own device types already carry. `firmware/
-   rf433-bridge/` and `firmware/ir-bridge/` are offered in `tools/
-   product-wizard/` (they fit its own one-chip/one-simplified-firmware
-   model cleanly, needing only one extra `EXTRA_COMPONENT_DIRS` entry);
-   `firmware/ble-mesh-bridge/` and `firmware/zigbee-bridge/` are not,
-   the same reasoning firmware/camera/'s own entry already establishes
+   caveat most of this repo's own device types already carry.
+   `firmware/rf-ir-bridge/` is offered in `tools/product-wizard/` (it
+   fits its own one-chip/one-simplified-firmware model cleanly, needing
+   only one extra `EXTRA_COMPONENT_DIRS` entry); `firmware/
+   ble-mesh-bridge/` and `firmware/zigbee-bridge/` are not, the same
+   reasoning firmware/camera/'s own entry already establishes
    (Espressif's own unmodified build files, no GPIO fields of their own
    to customize).
-2. Implement Matter **OTA** — partially done. Sixty-seven of the sixty-
-   nine firmware types ship `CONFIG_ENABLE_OTA_REQUESTOR=y`, which adds
+2. Implement Matter **OTA** — partially done. Sixty-six of the sixty-
+   eight firmware types ship `CONFIG_ENABLE_OTA_REQUESTOR=y`, which adds
    the OTA Requestor cluster to the root node endpoint entirely via
    Kconfig — esp-matter's own core startup (`esp_matter_core.cpp`) calls
    `esp_matter_ota_requestor_init()`/`_start()` automatically once that
    flag is on, so no app code was needed. Confirmed on real hardware for
    `firmware/contact-sensor/` and `firmware/switch/` (clean boot, cluster
-   registered, zero errors); the other sixty-four device types built with
+   registered, zero errors); the other sixty-three device types built with
    this repo's own template `sdkconfig.defaults` build identically since
    the code path is generic to every device type, not device-specific.
    The two exceptions, confirmed directly (not assumed) by checking
