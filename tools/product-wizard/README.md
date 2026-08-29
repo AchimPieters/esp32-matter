@@ -168,7 +168,13 @@ open tools/product-wizard/index.html
     reuse the same shape — see CLAUDE.md's own "hobbyist cluster
     expansion" entry under "Open next steps" for the complete detail,
     including the real esp-matter/wizard sourcing behind every one of the
-    6 new sensor chips this unlocked.
+    6 new sensor chips this unlocked. Confirmed genuinely reusable, not
+    accidentally air-quality-specific: Smoke/CO Alarm's own sidebar now
+    shows the same checkbox list (just Temperature + Relative Humidity,
+    sharing one chip choice) with zero new wizard mechanism needed, only
+    new `COMPONENT_LIBRARY` entries — see that device type's own
+    `clusterOptions`/`chipChoiceGroups` entry in `index.html` and
+    CLAUDE.md's own updated `firmware/smoke-co-alarm/` entry.
   - Real bug fixed alongside that redesign: for single-data-pin sensors
     (DHT11/DHT22/DS18B20's single-wire DATA line, the LDR's ADC pin —
     anything with `usesPin2: false` in `COMPONENT_LIBRARY`), the "pin 2"

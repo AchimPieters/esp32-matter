@@ -120,6 +120,32 @@
  * regardless of a specific module's exact wiring polarity — a
  * deliberately conservative check rather than one tuned to any single
  * module's normal-vs-fault voltage split.
+ *
+ * --- Temperature + RelativeHumidity ("hobbyist cluster expansion" pilot,
+ * see CLAUDE.md's own "Open next steps") ---------------------------------
+ * Originally deliberately NOT added: this device type's only sensing
+ * hardware was the MQ2/MQ7 gas-sensor pair, with no temperature/humidity
+ * chip anywhere in this file to back either cluster honestly. Revisited
+ * the same way firmware/air-quality-sensor/'s own identical gap was —
+ * `SMOKE_CO_ALARM_HAS_TEMP_HUMIDITY` reuses firmware/temperature-sensor/'s
+ * own already-datasheet-verified 4-chip I2C driver library verbatim
+ * (SHT3x/SHT4x/AHT20/BME280 — see that file's own header comment for the
+ * full per-chip sourcing; not re-verified here). Both clusters land on
+ * this SAME SmokeCoAlarm endpoint, code-driven (registry-lookup +
+ * SetMeasuredValue(), same pattern as firmware/temperature-sensor/'s own
+ * update_temperature()/update_humidity()) — confirmed NOT the same
+ * attribute-write mechanism as SmokeState/COState above (those go through
+ * SmokeCoAlarmCluster's own setters) or CO's own LevelValue (a plain
+ * ember attribute) — a third, independent attribute-write pattern
+ * coexisting on this one endpoint. Unlike air-quality-sensor's own I2C
+ * bus (already shared with CCS811), this device has NO existing I2C bus
+ * at all — the MQ2/MQ7 pair is pure analog ADC — so this adds a genuinely
+ * new, dedicated SDA/SCL pin pair (`SMOKE_CO_ALARM_TEMP_HUMIDITY_SDA_GPIO`/
+ * `_SCL_GPIO`, defaulting to GPIO 21/22, this repo's usual I2C default,
+ * chosen to avoid the existing ADC1 pins 34/35 and the identify LED's
+ * GPIO 2) rather than reusing an existing field. A real, currently-sold
+ * combination smoke/CO/temperature alarm is a genuinely common product
+ * category, not a contrived addition.
  */
 
 #include <array>
@@ -127,6 +153,7 @@
 #include <esp_log.h>
 #include <nvs_flash.h>
 #include <driver/gpio.h>
+#include <driver/i2c_master.h>
 #include <esp_adc/adc_oneshot.h>
 #include <esp_adc/adc_cali.h>
 #include <esp_adc/adc_cali_scheme.h>
@@ -138,6 +165,8 @@
 #include <esp_matter.h>
 #include <data_model_provider/esp_matter_data_model_provider.h>
 #include <app/clusters/smoke-co-alarm-server/SmokeCoAlarmCluster.h>
+#include <app/clusters/temperature-measurement-server/TemperatureMeasurementCluster.h>
+#include <app/clusters/relative-humidity-measurement-server/RelativeHumidityMeasurementCluster.h>
 
 static const char *TAG = "matter_smoke_co_alarm";
 
@@ -194,6 +223,22 @@ static const char *TAG = "matter_smoke_co_alarm";
 #define SMOKE_CO_ALARM_FAULT_RAW_LOW 20
 #define SMOKE_CO_ALARM_FAULT_RAW_HIGH 4075 /* out of a 12-bit 0-4095 range */
 
+/* --- Temperature + RelativeHumidity — see the header comment above --- */
+#define SMOKE_CO_ALARM_HAS_TEMP_HUMIDITY 0
+#define SMOKE_CO_ALARM_TEMP_HUMIDITY_CHIP_SHT3X 1
+#define SMOKE_CO_ALARM_TEMP_HUMIDITY_CHIP_SHT4X 2
+#define SMOKE_CO_ALARM_TEMP_HUMIDITY_CHIP_AHT20 3
+#define SMOKE_CO_ALARM_TEMP_HUMIDITY_CHIP_BME280 4
+#define SMOKE_CO_ALARM_TEMP_HUMIDITY_CHIP SMOKE_CO_ALARM_TEMP_HUMIDITY_CHIP_SHT3X
+
+/* A dedicated I2C bus — this device has no existing one (MQ2/MQ7 are pure
+ * analog), unlike firmware/air-quality-sensor/'s own reuse of an existing
+ * bus. Defaults avoid the ADC1 pins above (34/35) and the identify LED
+ * (2). */
+#define SMOKE_CO_ALARM_TEMP_HUMIDITY_SDA_GPIO GPIO_NUM_21
+#define SMOKE_CO_ALARM_TEMP_HUMIDITY_SCL_GPIO GPIO_NUM_22
+#define SMOKE_CO_ALARM_TEMP_HUMIDITY_I2C_FREQ_HZ 100000
+
 /* LED for the Matter "Identify" cluster — blinks so you can physically find
  * this device when a controller asks it to identify itself. GPIO 2 is
  * commonly the onboard/user LED on classic ESP32 (WROOM-32) devkits and
@@ -213,6 +258,9 @@ using namespace esp_matter::endpoint;
 using namespace chip::app::Clusters;
 
 static uint16_t smoke_co_alarm_endpoint_id = 0;
+#if SMOKE_CO_ALARM_HAS_TEMP_HUMIDITY
+static bool temp_humidity_ok = false;
+#endif
 static esp_timer_handle_t identify_led_timer = NULL;
 
 /* Toggles the identify LED each time the timer fires — the actual blink. */
@@ -258,6 +306,356 @@ static chip::app::Clusters::SmokeCoAlarmCluster *get_smoke_co_alarm_cluster(uint
     }
     return static_cast<chip::app::Clusters::SmokeCoAlarmCluster *>(iface);
 }
+
+/* ======================================================================
+ * Temperature + RelativeHumidity driver — the same 4 I2C chip options
+ * firmware/temperature-sensor/ (and, since, firmware/air-quality-sensor/)
+ * already established, ported verbatim. Unlike air-quality-sensor's own
+ * multi-device bus, this device only ever has ONE I2C device, so a
+ * plain single-device bus setup (matching temperature-sensor's own
+ * original i2c_bus_setup() shape) is enough — no shared bus-add helper
+ * needed. See the header comment above for the full sourcing.
+ * ====================================================================== */
+#if SMOKE_CO_ALARM_HAS_TEMP_HUMIDITY
+static i2c_master_dev_handle_t temp_humidity_i2c_dev = NULL;
+
+static bool temp_humidity_i2c_bus_setup(uint16_t device_address)
+{
+    i2c_master_bus_config_t bus_config = {};
+    bus_config.i2c_port = I2C_NUM_0;
+    bus_config.sda_io_num = SMOKE_CO_ALARM_TEMP_HUMIDITY_SDA_GPIO;
+    bus_config.scl_io_num = SMOKE_CO_ALARM_TEMP_HUMIDITY_SCL_GPIO;
+    bus_config.clk_source = I2C_CLK_SRC_DEFAULT;
+    bus_config.glitch_ignore_cnt = 7;
+    bus_config.flags.enable_internal_pullup = true;
+
+    i2c_master_bus_handle_t bus = NULL;
+    esp_err_t err = i2c_new_master_bus(&bus_config, &bus);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "i2c_new_master_bus failed: %s", esp_err_to_name(err));
+        return false;
+    }
+
+    i2c_device_config_t dev_config = {};
+    dev_config.dev_addr_length = I2C_ADDR_BIT_LEN_7;
+    dev_config.device_address = device_address;
+    dev_config.scl_speed_hz = SMOKE_CO_ALARM_TEMP_HUMIDITY_I2C_FREQ_HZ;
+
+    err = i2c_master_bus_add_device(bus, &dev_config, &temp_humidity_i2c_dev);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "i2c_master_bus_add_device failed: %s", esp_err_to_name(err));
+        return false;
+    }
+    return true;
+}
+
+/* Sensirion CRC-8 (polynomial 0x31, init 0xFF) — used by SHT3x/SHT4x. */
+static uint8_t sensirion_crc8(const uint8_t *data, size_t len)
+{
+    uint8_t crc = 0xFF;
+    for (size_t i = 0; i < len; i++) {
+        crc ^= data[i];
+        for (int bit = 0; bit < 8; bit++) {
+            crc = (crc & 0x80) ? (uint8_t)((crc << 1) ^ 0x31) : (uint8_t)(crc << 1);
+        }
+    }
+    return crc;
+}
+
+#if SMOKE_CO_ALARM_TEMP_HUMIDITY_CHIP == SMOKE_CO_ALARM_TEMP_HUMIDITY_CHIP_SHT3X
+
+#define TEMP_HUMIDITY_SHT3X_I2C_ADDR 0x44 /* 0x45 if ADDR is tied to VDD */
+
+static bool temp_humidity_setup(void)
+{
+    return temp_humidity_i2c_bus_setup(TEMP_HUMIDITY_SHT3X_I2C_ADDR);
+}
+
+static bool temp_humidity_read(float *temperature_c, float *humidity_pct)
+{
+    const uint8_t cmd[2] = {0x24, 0x00}; /* single shot, high repeatability */
+    if (i2c_master_transmit(temp_humidity_i2c_dev, cmd, sizeof(cmd), 1000) != ESP_OK) {
+        return false;
+    }
+    vTaskDelay(pdMS_TO_TICKS(20));
+
+    uint8_t data[6];
+    if (i2c_master_receive(temp_humidity_i2c_dev, data, sizeof(data), 1000) != ESP_OK) {
+        return false;
+    }
+    if (sensirion_crc8(data, 2) != data[2] || sensirion_crc8(data + 3, 2) != data[5]) {
+        ESP_LOGW(TAG, "SHT3x CRC mismatch — discarding reading");
+        return false;
+    }
+
+    uint16_t temp_ticks = ((uint16_t)data[0] << 8) | data[1];
+    uint16_t hum_ticks = ((uint16_t)data[3] << 8) | data[4];
+    *temperature_c = -45.0f + 175.0f * ((float)temp_ticks / 65535.0f);
+    *humidity_pct = 100.0f * ((float)hum_ticks / 65535.0f);
+    return true;
+}
+
+#elif SMOKE_CO_ALARM_TEMP_HUMIDITY_CHIP == SMOKE_CO_ALARM_TEMP_HUMIDITY_CHIP_SHT4X
+
+#define TEMP_HUMIDITY_SHT4X_I2C_ADDR 0x44
+
+static bool temp_humidity_setup(void)
+{
+    return temp_humidity_i2c_bus_setup(TEMP_HUMIDITY_SHT4X_I2C_ADDR);
+}
+
+static bool temp_humidity_read(float *temperature_c, float *humidity_pct)
+{
+    const uint8_t cmd[1] = {0xFD}; /* measure T & RH, high precision */
+    if (i2c_master_transmit(temp_humidity_i2c_dev, cmd, sizeof(cmd), 1000) != ESP_OK) {
+        return false;
+    }
+    vTaskDelay(pdMS_TO_TICKS(15));
+
+    uint8_t data[6];
+    if (i2c_master_receive(temp_humidity_i2c_dev, data, sizeof(data), 1000) != ESP_OK) {
+        return false;
+    }
+    if (sensirion_crc8(data, 2) != data[2] || sensirion_crc8(data + 3, 2) != data[5]) {
+        ESP_LOGW(TAG, "SHT4x CRC mismatch — discarding reading");
+        return false;
+    }
+
+    uint16_t temp_ticks = ((uint16_t)data[0] << 8) | data[1];
+    uint16_t hum_ticks = ((uint16_t)data[3] << 8) | data[4];
+    *temperature_c = -45.0f + 175.0f * ((float)temp_ticks / 65535.0f);
+    *humidity_pct = -6.0f + 125.0f * ((float)hum_ticks / 65535.0f);
+    if (*humidity_pct < 0.0f) {
+        *humidity_pct = 0.0f;
+    } else if (*humidity_pct > 100.0f) {
+        *humidity_pct = 100.0f;
+    }
+    return true;
+}
+
+#elif SMOKE_CO_ALARM_TEMP_HUMIDITY_CHIP == SMOKE_CO_ALARM_TEMP_HUMIDITY_CHIP_AHT20
+
+#define TEMP_HUMIDITY_AHT20_I2C_ADDR 0x38
+
+static bool temp_humidity_setup(void)
+{
+    if (!temp_humidity_i2c_bus_setup(TEMP_HUMIDITY_AHT20_I2C_ADDR)) {
+        return false;
+    }
+    const uint8_t init_cmd[3] = {0xBE, 0x08, 0x00};
+    if (i2c_master_transmit(temp_humidity_i2c_dev, init_cmd, sizeof(init_cmd), 1000) != ESP_OK) {
+        ESP_LOGE(TAG, "AHT20 init command failed");
+        return false;
+    }
+    vTaskDelay(pdMS_TO_TICKS(40));
+    return true;
+}
+
+static bool temp_humidity_read(float *temperature_c, float *humidity_pct)
+{
+    const uint8_t trigger_cmd[3] = {0xAC, 0x33, 0x00};
+    if (i2c_master_transmit(temp_humidity_i2c_dev, trigger_cmd, sizeof(trigger_cmd), 1000) != ESP_OK) {
+        return false;
+    }
+    vTaskDelay(pdMS_TO_TICKS(85));
+
+    uint8_t data[6];
+    if (i2c_master_receive(temp_humidity_i2c_dev, data, sizeof(data), 1000) != ESP_OK) {
+        return false;
+    }
+    if (data[0] & 0x80) {
+        ESP_LOGW(TAG, "AHT20 still busy — discarding reading");
+        return false;
+    }
+
+    uint32_t raw_humidity = ((uint32_t)data[1] << 12) | ((uint32_t)data[2] << 4) | (data[3] >> 4);
+    uint32_t raw_temperature = (((uint32_t)data[3] & 0x0F) << 16) | ((uint32_t)data[4] << 8) | data[5];
+
+    *humidity_pct = (float)raw_humidity * 100.0f / 1048576.0f;
+    *temperature_c = (float)raw_temperature * 200.0f / 1048576.0f - 50.0f;
+    return true;
+}
+
+#elif SMOKE_CO_ALARM_TEMP_HUMIDITY_CHIP == SMOKE_CO_ALARM_TEMP_HUMIDITY_CHIP_BME280
+
+#define TEMP_HUMIDITY_BME280_I2C_ADDR 0x76 /* 0x77 if SDO is tied to VDD */
+#define TEMP_HUMIDITY_BME280_REG_CHIP_ID 0xD0
+#define TEMP_HUMIDITY_BME280_REG_CALIB_T 0x88
+#define TEMP_HUMIDITY_BME280_REG_CALIB_H1 0xA1
+#define TEMP_HUMIDITY_BME280_REG_CALIB_H2 0xE1
+#define TEMP_HUMIDITY_BME280_REG_CTRL_HUM 0xF2
+#define TEMP_HUMIDITY_BME280_REG_CTRL_MEAS 0xF4
+#define TEMP_HUMIDITY_BME280_REG_DATA 0xFA
+#define TEMP_HUMIDITY_BME280_CHIP_ID_EXPECTED 0x60
+
+struct bme280_calib_data {
+    uint16_t dig_t1;
+    int16_t dig_t2;
+    int16_t dig_t3;
+    uint8_t dig_h1;
+    int16_t dig_h2;
+    uint8_t dig_h3;
+    int16_t dig_h4;
+    int16_t dig_h5;
+    int8_t dig_h6;
+};
+
+static struct bme280_calib_data bme280_calib;
+
+static bool bme280_write_reg(uint8_t reg, uint8_t value)
+{
+    uint8_t buf[2] = {reg, value};
+    return i2c_master_transmit(temp_humidity_i2c_dev, buf, sizeof(buf), 1000) == ESP_OK;
+}
+
+static bool bme280_read_regs(uint8_t reg, uint8_t *out, size_t len)
+{
+    return i2c_master_transmit_receive(temp_humidity_i2c_dev, &reg, 1, out, len, 1000) == ESP_OK;
+}
+
+static int16_t sign_extend_12bit(uint16_t value)
+{
+    return (int16_t)((value & 0x0800) ? (value | 0xF000) : value);
+}
+
+static bool temp_humidity_setup(void)
+{
+    if (!temp_humidity_i2c_bus_setup(TEMP_HUMIDITY_BME280_I2C_ADDR)) {
+        return false;
+    }
+
+    uint8_t chip_id = 0;
+    if (!bme280_read_regs(TEMP_HUMIDITY_BME280_REG_CHIP_ID, &chip_id, 1) || chip_id != TEMP_HUMIDITY_BME280_CHIP_ID_EXPECTED) {
+        ESP_LOGE(TAG, "BME280 chip ID mismatch (got 0x%02X, expected 0x%02X)", chip_id, TEMP_HUMIDITY_BME280_CHIP_ID_EXPECTED);
+        return false;
+    }
+
+    uint8_t calib_t[6];
+    if (!bme280_read_regs(TEMP_HUMIDITY_BME280_REG_CALIB_T, calib_t, sizeof(calib_t))) {
+        return false;
+    }
+    bme280_calib.dig_t1 = (uint16_t)(calib_t[0] | (calib_t[1] << 8));
+    bme280_calib.dig_t2 = (int16_t)(calib_t[2] | (calib_t[3] << 8));
+    bme280_calib.dig_t3 = (int16_t)(calib_t[4] | (calib_t[5] << 8));
+
+    uint8_t dig_h1 = 0;
+    if (!bme280_read_regs(TEMP_HUMIDITY_BME280_REG_CALIB_H1, &dig_h1, 1)) {
+        return false;
+    }
+    bme280_calib.dig_h1 = dig_h1;
+
+    uint8_t calib_h[7];
+    if (!bme280_read_regs(TEMP_HUMIDITY_BME280_REG_CALIB_H2, calib_h, sizeof(calib_h))) {
+        return false;
+    }
+    bme280_calib.dig_h2 = (int16_t)(calib_h[0] | (calib_h[1] << 8));
+    bme280_calib.dig_h3 = calib_h[2];
+    bme280_calib.dig_h4 = sign_extend_12bit((uint16_t)((calib_h[3] << 4) | (calib_h[4] & 0x0F)));
+    bme280_calib.dig_h5 = sign_extend_12bit((uint16_t)((calib_h[5] << 4) | (calib_h[4] >> 4)));
+    bme280_calib.dig_h6 = (int8_t)calib_h[6];
+
+    if (!bme280_write_reg(TEMP_HUMIDITY_BME280_REG_CTRL_HUM, 0x01)) {
+        return false;
+    }
+    return true;
+}
+
+static int32_t bme280_compensate_temperature(int32_t adc_t, int32_t *t_fine)
+{
+    int32_t var1 = ((adc_t / 8) - ((int32_t)bme280_calib.dig_t1 * 2)) * ((int32_t)bme280_calib.dig_t2) / 2048;
+    int32_t var2_pre = (adc_t / 16) - ((int32_t)bme280_calib.dig_t1);
+    int32_t var2 = (((var2_pre * var2_pre) / 4096) * ((int32_t)bme280_calib.dig_t3)) / 16384;
+    *t_fine = var1 + var2;
+    int32_t temperature = (*t_fine * 5 + 128) / 256;
+    if (temperature < -4000) {
+        temperature = -4000;
+    } else if (temperature > 8500) {
+        temperature = 8500;
+    }
+    return temperature;
+}
+
+static uint32_t bme280_compensate_humidity(int32_t adc_h, int32_t t_fine)
+{
+    int32_t var1 = t_fine - 76800;
+    int32_t var2 = adc_h * 16384;
+    int32_t var3 = ((int32_t)bme280_calib.dig_h4) * 1048576;
+    int32_t var4 = ((int32_t)bme280_calib.dig_h5) * var1;
+    int32_t var5 = (((var2 - var3) - var4) + 16384) / 32768;
+    var2 = (var1 * ((int32_t)bme280_calib.dig_h6)) / 1024;
+    var3 = (var1 * ((int32_t)bme280_calib.dig_h3)) / 2048;
+    var4 = ((var2 * (var3 + 32768)) / 1024) + 2097152;
+    var2 = ((var4 * ((int32_t)bme280_calib.dig_h2)) + 8192) / 16384;
+    var3 = var5 * var2;
+    int32_t var4b = ((var3 / 32768) * (var3 / 32768)) / 128;
+    int32_t var5b = var3 - ((var4b * ((int32_t)bme280_calib.dig_h1)) / 16);
+    if (var5b < 0) {
+        var5b = 0;
+    } else if (var5b > 419430400) {
+        var5b = 419430400;
+    }
+    uint32_t humidity = (uint32_t)(var5b / 4096);
+    if (humidity > 102400) {
+        humidity = 102400;
+    }
+    return humidity;
+}
+
+static bool temp_humidity_read(float *temperature_c, float *humidity_pct)
+{
+    if (!bme280_write_reg(TEMP_HUMIDITY_BME280_REG_CTRL_MEAS, 0x25)) { /* osrs_t=x1, osrs_p=x1, forced mode */
+        return false;
+    }
+    vTaskDelay(pdMS_TO_TICKS(50));
+
+    uint8_t data[5];
+    if (!bme280_read_regs(TEMP_HUMIDITY_BME280_REG_DATA, data, sizeof(data))) {
+        return false;
+    }
+
+    int32_t adc_t = (int32_t)(((uint32_t)data[0] << 12) | ((uint32_t)data[1] << 4) | (data[2] >> 4));
+    int32_t adc_h = (int32_t)(((uint32_t)data[3] << 8) | data[4]);
+
+    int32_t t_fine = 0;
+    int32_t temp_centidegrees = bme280_compensate_temperature(adc_t, &t_fine);
+    uint32_t hum_q22_10 = bme280_compensate_humidity(adc_h, t_fine);
+
+    *temperature_c = temp_centidegrees / 100.0f;
+    *humidity_pct = hum_q22_10 / 1024.0f;
+    return true;
+}
+
+#else
+#error "Unknown SMOKE_CO_ALARM_TEMP_HUMIDITY_CHIP"
+#endif
+
+/* Code-driven cluster setters — see the header comment above. Same
+ * ScopedChipStackLock convention firmware/temperature-sensor/'s own
+ * update_temperature()/update_humidity() already establish. */
+static void update_temperature(chip::app::DataModel::Nullable<int16_t> value)
+{
+    lock::ScopedChipStackLock stack_lock(portMAX_DELAY);
+    chip::app::ConcreteClusterPath path(smoke_co_alarm_endpoint_id, TemperatureMeasurement::Id);
+    chip::app::ServerClusterInterface *iface = esp_matter::data_model::provider::get_instance().registry().Get(path);
+    if (!iface) {
+        ESP_LOGE(TAG, "TemperatureMeasurement cluster not found on endpoint %u", smoke_co_alarm_endpoint_id);
+        return;
+    }
+    static_cast<chip::app::Clusters::TemperatureMeasurementCluster *>(iface)->SetMeasuredValue(value);
+}
+
+static void update_humidity(chip::app::DataModel::Nullable<uint16_t> value)
+{
+    lock::ScopedChipStackLock stack_lock(portMAX_DELAY);
+    chip::app::ConcreteClusterPath path(smoke_co_alarm_endpoint_id, RelativeHumidityMeasurement::Id);
+    chip::app::ServerClusterInterface *iface = esp_matter::data_model::provider::get_instance().registry().Get(path);
+    if (!iface) {
+        ESP_LOGE(TAG, "RelativeHumidityMeasurement cluster not found on endpoint %u", smoke_co_alarm_endpoint_id);
+        return;
+    }
+    static_cast<chip::app::Clusters::RelativeHumidityMeasurementCluster *>(iface)->SetMeasuredValue(value);
+}
+#endif /* SMOKE_CO_ALARM_HAS_TEMP_HUMIDITY */
 
 /* ======================================================================
  * ADC driver — shared by both MQ2 and MQ7 (they're the same kind of
@@ -478,6 +876,22 @@ static void sensor_task(void *arg)
         }
 #endif
 
+#if SMOKE_CO_ALARM_HAS_TEMP_HUMIDITY
+        if (temp_humidity_ok) {
+            float temperature_c = 0.0f, humidity_pct = 0.0f;
+            if (temp_humidity_read(&temperature_c, &humidity_pct)) {
+                int16_t temp_centidegrees = (int16_t)(temperature_c * 100.0f);
+                uint16_t hum_centipercent = (uint16_t)(humidity_pct * 100.0f);
+                update_temperature(chip::app::DataModel::Nullable<int16_t>(temp_centidegrees));
+                update_humidity(chip::app::DataModel::Nullable<uint16_t>(hum_centipercent));
+                ESP_LOGI(TAG, "Temp/Humidity: %.2f degC, %.2f %%RH", temperature_c, humidity_pct);
+            } else {
+                update_temperature(chip::app::DataModel::Nullable<int16_t>());
+                update_humidity(chip::app::DataModel::Nullable<uint16_t>());
+            }
+        }
+#endif
+
         if (auto *cluster = get_smoke_co_alarm_cluster(smoke_co_alarm_endpoint_id)) {
             if (any_fault != hardware_fault_active) {
                 hardware_fault_active = any_fault;
@@ -636,6 +1050,17 @@ extern "C" void app_main(void)
         return;
     }
 
+#if SMOKE_CO_ALARM_HAS_TEMP_HUMIDITY
+    /* 2a. Set up the optional temperature/humidity chip — non-fatal if it
+     * fails (unlike the mandatory gas sensor above), same per-chip
+     * graceful-degradation precedent firmware/air-quality-sensor/'s own
+     * multi-sensor setup already establishes. */
+    temp_humidity_ok = temp_humidity_setup();
+    if (!temp_humidity_ok) {
+        ESP_LOGE(TAG, "Temperature/humidity sensor init failed — no readings will be reported");
+    }
+#endif
+
     /* 2b. Configure the identify LED + its blink timer (not started yet —
      * only runs while a controller has an identify request active). */
     gpio_config_t identify_io_conf = {};
@@ -714,15 +1139,27 @@ extern "C" void app_main(void)
     cluster::carbon_monoxide_concentration_measurement::create(endpoint, &co_concentration_config, CLUSTER_FLAG_SERVER);
 #endif
 
+#if SMOKE_CO_ALARM_HAS_TEMP_HUMIDITY
     /* Temperature Measurement and Relative Humidity Measurement (both
-     * server, also optionalConform on this XML) are deliberately NOT
-     * added: this device type's only sensing hardware is the MQ2/MQ7 gas
-     * sensor pair (see the header comment above) — no temperature/
-     * humidity chip exists anywhere in this file to back either cluster
-     * with a real reading. Same "no sensor, no fabricated data" honesty
-     * precedent firmware/evse/'s always-NoError FaultState and this same
-     * file's own MQ2/MQ7 threshold-not-ppm classifier already establish —
-     * a deliberate product-scope decision, not a technical limitation. */
+     * server, also optionalConform on this XML) — see the header comment
+     * above ("hobbyist cluster expansion" pilot) for why these are no
+     * longer skipped. Code-driven (registry-lookup + SetMeasuredValue()),
+     * confirmed via the same check every other code-driven cluster in
+     * this repo uses (a real temperature_measurement/
+     * relative_humidity_measurement folder exists under
+     * data_model_provider/clusters/). */
+    cluster::temperature_measurement::config_t temp_config;
+    temp_config.measured_value = nullable<int16_t>();
+    temp_config.min_measured_value = nullable<int16_t>(-4000);
+    temp_config.max_measured_value = nullable<int16_t>(8500);
+    cluster::temperature_measurement::create(endpoint, &temp_config, CLUSTER_FLAG_SERVER);
+
+    cluster::relative_humidity_measurement::config_t hum_config;
+    hum_config.measured_value = nullable<uint16_t>();
+    hum_config.min_measured_value = nullable<uint16_t>(0);
+    hum_config.max_measured_value = nullable<uint16_t>(10000);
+    cluster::relative_humidity_measurement::create(endpoint, &hum_config, CLUSTER_FLAG_SERVER);
+#endif
 
     /* 4. Start Matter — begins BLE advertising so a controller can commission it. */
     err = esp_matter::start(app_event_cb);

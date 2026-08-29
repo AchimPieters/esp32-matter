@@ -1672,6 +1672,77 @@ firmware/smoke-co-alarm/  Smoke/CO Alarm — fourteenth device type, and this
                            the CO concentration cluster's own `#if` guard
                            compiles correctly out of both single-sensor
                            builds.
+
+                           Later revisited ("hobbyist cluster expansion"
+                           pilot — see CLAUDE.md's own "Open next steps",
+                           and firmware/air-quality-sensor/'s own identical
+                           gap, the pilot's own first device type): the
+                           paragraph above no longer holds — a real,
+                           currently-sold combination smoke/CO/temperature
+                           alarm is a common product category, so
+                           `SMOKE_CO_ALARM_HAS_TEMP_HUMIDITY` (defaulting
+                           off, unchanged default build) reuses firmware/
+                           temperature-sensor/'s own already-datasheet-
+                           verified 4-chip I2C driver library verbatim
+                           (`SMOKE_CO_ALARM_TEMP_HUMIDITY_CHIP` choosing
+                           SHT3x/SHT4x/AHT20/BME280), the same reuse
+                           firmware/air-quality-sensor/'s own identical
+                           addition already established — not re-verified
+                           against the datasheets a third time here. Both
+                           clusters land on this SAME SmokeCoAlarm
+                           endpoint, code-driven (registry-lookup +
+                           SetMeasuredValue()) — a third, independent
+                           attribute-write pattern now coexisting on this
+                           one endpoint alongside SmokeState/COState
+                           (SmokeCoAlarmCluster's own setters) and CO's own
+                           LevelValue (a plain ember attribute). Unlike
+                           air-quality-sensor's own I2C bus (already shared
+                           with CCS811), this device had NO existing I2C
+                           bus at all — MQ2/MQ7 are pure analog ADC — so
+                           this adds a genuinely new, dedicated SDA/SCL
+                           pin pair (GPIO 21/22 default, chosen to avoid
+                           the existing ADC1 pins 34/35 and the identify
+                           LED's GPIO 2) rather than reusing an existing
+                           field.
+
+                           Wizard integration is this repo's first real
+                           confirmation that `clusterOptions`/
+                           `chipChoiceGroups` (built for air-quality-
+                           sensor) is genuinely reusable, not accidentally
+                           air-quality-specific: this device type's own
+                           entry needed zero new wizard mechanism, only
+                           new `COMPONENT_LIBRARY` entries (`SCA_TEMP_
+                           SHT3X`/`_SHT4X`/`_AHT20`/`_BME280`) and its own
+                           two-entry `clusterOptions` array sharing one
+                           `chipChoiceGroups` group. The one real
+                           difference from air-quality-sensor's own
+                           temp/humidity chips: since this device has no
+                           existing bus to share, each chip entry here
+                           carries its own `pins` array (a dedicated
+                           SDA/SCL pair) — the exact same `pins`-array
+                           mechanism air-quality's own MQ7/MQ131/PMS5003/
+                           ZE08CH2O entries already exercise, reused here
+                           for a different reason (a whole new bus, not a
+                           shared one), confirming that half of the
+                           mechanism generalizes too. Verified with the
+                           same Node.js sandboxed method (all 47 device
+                           types re-swept through all 4 render/complete/
+                           sed/review functions with zero exceptions,
+                           smoke-co-alarm's own checkbox-auto-check-sibling
+                           behavior simulated end to end, generated sed
+                           commands inspected directly). Build-verified in
+                           Docker: the reverted default config (SENSOR_TYPE
+                           unchanged, `SMOKE_CO_ALARM_HAS_TEMP_HUMIDITY 0`)
+                           confirmed byte-identical to the pre-pilot build;
+                           `SMOKE_CO_ALARM_HAS_TEMP_HUMIDITY 1` build-
+                           verified against all 3 `SENSOR_TYPE` configs
+                           (MQ2+MQ7, MQ2-only, MQ7-only) and all 4
+                           temperature/humidity chip choices. Not hardware-
+                           tested — no physical temperature/humidity module
+                           was available for this specific addition (the
+                           4-chip driver library itself is already
+                           hardware-verified for SHT3x in firmware/
+                           temperature-sensor/).
   partitions.csv           same OTA + fctry layout as firmware/light/
   sdkconfig.defaults        same as firmware/light/
 firmware/occupancy-sensor/  Occupancy Sensor — fifteenth device type. First

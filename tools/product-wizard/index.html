@@ -957,6 +957,32 @@ const COMPONENT_LIBRARY = {
     { label: "UART TX", defineName: "AIR_QUALITY_ZE08CH2O_TX_GPIO", defaultsByModule: { esp32: 19, esp32c2: 19, esp32c3: 19, esp32c5: 19, esp32c6: 19, esp32c61: 19, esp32s3: 19, esp32h2: 19 } },
   ] },
   AQ_MICS4514: { name: "MiCS-4514 (I2C breakout)", category: "air-quality-no2", bus: "I2C (shared)", verified: false, enableDefineName: "AIR_QUALITY_HAS_MICS4514_NO2", note: "The lowest-confidence chip in this device type — a DFRobot Gravity I2C breakout, ported from that library's own real open-source driver since no register-level datasheet exists for the module itself. Shares this device's existing I2C bus at its own address — no extra GPIOs needed. See app_main.cpp's header comment for the full detail." },
+  // Smoke/CO Alarm's own clusterOptions chip choices — same 4-chip
+  // I2C library as AQ_TEMP_* above, second real use of the
+  // clusterOptions/chipChoiceGroups mechanism (see the DEVICE_TYPES
+  // comment on its own clusterOptions entry). Unlike air-quality-sensor,
+  // this device has NO existing I2C bus to share (its own `driver` field
+  // is an ADC pin, not I2C) — so each entry here carries its own `pins`
+  // array (a dedicated SDA/SCL pair), the same mechanism firmware/
+  // outlet/'s power-monitor chips and air-quality's own MQ7/MQ131/
+  // PMS5003/ZE08CH2O entries already use, reused here for a genuinely
+  // different reason (a whole new bus, not a shared one).
+  SCA_TEMP_SHT3X: { name: "SHT3x", category: "smoke-co-alarm-temp-humidity", bus: "I2C", verified: true, defineValue: "SMOKE_CO_ALARM_TEMP_HUMIDITY_CHIP_SHT3X", enableDefineName: "SMOKE_CO_ALARM_HAS_TEMP_HUMIDITY", note: "Same driver already verified on real hardware in firmware/temperature-sensor/.", pins: [
+    { label: "SDA", defineName: "SMOKE_CO_ALARM_TEMP_HUMIDITY_SDA_GPIO", defaultsByModule: { esp32: 21, esp32c2: 21, esp32c3: 21, esp32c5: 21, esp32c6: 21, esp32c61: 21, esp32s3: 21, esp32h2: 21 } },
+    { label: "SCL", defineName: "SMOKE_CO_ALARM_TEMP_HUMIDITY_SCL_GPIO", defaultsByModule: { esp32: 22, esp32c2: 22, esp32c3: 22, esp32c5: 22, esp32c6: 22, esp32c61: 22, esp32s3: 22, esp32h2: 22 } },
+  ] },
+  SCA_TEMP_SHT4X: { name: "SHT4x", category: "smoke-co-alarm-temp-humidity", bus: "I2C", verified: false, defineValue: "SMOKE_CO_ALARM_TEMP_HUMIDITY_CHIP_SHT4X", enableDefineName: "SMOKE_CO_ALARM_HAS_TEMP_HUMIDITY", pins: [
+    { label: "SDA", defineName: "SMOKE_CO_ALARM_TEMP_HUMIDITY_SDA_GPIO", defaultsByModule: { esp32: 21, esp32c2: 21, esp32c3: 21, esp32c5: 21, esp32c6: 21, esp32c61: 21, esp32s3: 21, esp32h2: 21 } },
+    { label: "SCL", defineName: "SMOKE_CO_ALARM_TEMP_HUMIDITY_SCL_GPIO", defaultsByModule: { esp32: 22, esp32c2: 22, esp32c3: 22, esp32c5: 22, esp32c6: 22, esp32c61: 22, esp32s3: 22, esp32h2: 22 } },
+  ] },
+  SCA_TEMP_AHT20: { name: "AHT20", category: "smoke-co-alarm-temp-humidity", bus: "I2C", verified: false, defineValue: "SMOKE_CO_ALARM_TEMP_HUMIDITY_CHIP_AHT20", enableDefineName: "SMOKE_CO_ALARM_HAS_TEMP_HUMIDITY", pins: [
+    { label: "SDA", defineName: "SMOKE_CO_ALARM_TEMP_HUMIDITY_SDA_GPIO", defaultsByModule: { esp32: 21, esp32c2: 21, esp32c3: 21, esp32c5: 21, esp32c6: 21, esp32c61: 21, esp32s3: 21, esp32h2: 21 } },
+    { label: "SCL", defineName: "SMOKE_CO_ALARM_TEMP_HUMIDITY_SCL_GPIO", defaultsByModule: { esp32: 22, esp32c2: 22, esp32c3: 22, esp32c5: 22, esp32c6: 22, esp32c61: 22, esp32s3: 22, esp32h2: 22 } },
+  ] },
+  SCA_TEMP_BME280: { name: "BME280", category: "smoke-co-alarm-temp-humidity", bus: "I2C", verified: false, defineValue: "SMOKE_CO_ALARM_TEMP_HUMIDITY_CHIP_BME280", enableDefineName: "SMOKE_CO_ALARM_HAS_TEMP_HUMIDITY", pins: [
+    { label: "SDA", defineName: "SMOKE_CO_ALARM_TEMP_HUMIDITY_SDA_GPIO", defaultsByModule: { esp32: 21, esp32c2: 21, esp32c3: 21, esp32c5: 21, esp32c6: 21, esp32c61: 21, esp32s3: 21, esp32h2: 21 } },
+    { label: "SCL", defineName: "SMOKE_CO_ALARM_TEMP_HUMIDITY_SCL_GPIO", defaultsByModule: { esp32: 22, esp32c2: 22, esp32c3: 22, esp32c5: 22, esp32c6: 22, esp32c61: 22, esp32s3: 22, esp32h2: 22 } },
+  ] },
   // Pressure Sensor's own sensor picker — one entry today (BMP280), same
   // "scaffold ready to grow" shape as AQ_CCS811 above.
   PRESSURE_BMP280: { name: "BMP280", category: "pressure", bus: "I2C", pin1Label: "SDA", pin2Label: "SCL", usesPin2: true, verified: false, defineValue: "PRESSURE_SENSOR_BMP280", note: "Real barometric pressure sensor (300-1100 hPa). Register map and Bosch's own 64-bit fixed-point compensation formula confirmed directly against Bosch's official BMP280 datasheet — see firmware/pressure-sensor/main/app_main.cpp's header comment for the full detail." },
@@ -1950,8 +1976,8 @@ const DEVICE_TYPES = [
   {
     id: "smoke-co-alarm",
     name: "Smoke/CO Alarm",
-    desc: "Matter Smoke/CO Alarm: an MQ-2 (smoke) and/or MQ-7 (CO) gas sensor drives the SmokeCoAlarm cluster's SmokeState/COState attributes via a plain adjustable-millivolt-threshold classifier, not a calibrated ppm reading (Matter's own cluster has no numeric concentration attribute either — only the Normal/Warning/Critical tri-state). A real controller's SelfTestRequest command is fully supported (simulated locally, since there's no real self-test routine to run against a plain analog sensor). Reference device in firmware/smoke-co-alarm/.",
-    shortDesc: "MQ-2 smoke and/or MQ-7 CO, threshold-based.",
+    desc: "Matter Smoke/CO Alarm: an MQ-2 (smoke) and/or MQ-7 (CO) gas sensor drives the SmokeCoAlarm cluster's SmokeState/COState attributes via a plain adjustable-millivolt-threshold classifier, not a calibrated ppm reading (Matter's own cluster has no numeric concentration attribute either — only the Normal/Warning/Critical tri-state). A real controller's SelfTestRequest command is fully supported (simulated locally, since there's no real self-test routine to run against a plain analog sensor). Optionally add a real Temperature/Humidity chip too (check the clusters below) for a genuine combination smoke/CO/temperature alarm. Reference device in firmware/smoke-co-alarm/.",
+    shortDesc: "MQ-2 smoke and/or MQ-7 CO, threshold-based; optional temp/humidity.",
     // Matches project(matter_smoke_co_alarm) in
     // firmware/smoke-co-alarm/CMakeLists.txt.
     binName: "matter_smoke_co_alarm.bin",
@@ -1969,6 +1995,20 @@ const DEVICE_TYPES = [
         options: ["SMOKE_MQ2_MQ7", "SMOKE_MQ2", "SMOKE_MQ7"],
         defineName: "SENSOR_TYPE",
       },
+    ],
+    // Second real use of the clusterOptions/chipChoiceGroups mechanism
+    // (see air-quality-sensor's own DEVICE_TYPES entry for the full
+    // mechanism description) — confirms it's genuinely reusable across
+    // device types, not air-quality-specific despite being built there
+    // first. Both clusters share one chip choice (a combination smoke/
+    // CO/temperature alarm has exactly one temp/humidity sensor, not a
+    // separate one per attribute), so both list the same `group`.
+    clusterOptions: [
+      { id: "Temperature", label: "Temperature", group: "tempHumidityChip" },
+      { id: "RelativeHumidity", label: "Relative Humidity", group: "tempHumidityChip" },
+    ],
+    chipChoiceGroups: [
+      { key: "tempHumidityChip", label: "Temperature/Humidity chip", chips: ["SCA_TEMP_SHT3X", "SCA_TEMP_SHT4X", "SCA_TEMP_AHT20", "SCA_TEMP_BME280"], defineName: "SMOKE_CO_ALARM_TEMP_HUMIDITY_CHIP" },
     ],
     // `driver` renders unconditionally (no null-check gate in
     // renderConfigureDevice) — same door-lock precedent this entry
