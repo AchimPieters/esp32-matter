@@ -1205,6 +1205,17 @@ variable button count also present; and a hardcoded "AirQualitySensor.xml"
 Radon footnote that had been silently wrong on smoke-co-alarm's own page
 too). See CLAUDE.md's own "Open next steps" for the complete detail.
 
+`firmware/pump/` gained three more real, independently-checkable optional
+clusters via the same `clusterOptions` mechanism — Fluid Temperature
+(DS18B20), Line Pressure (BMP280), and Flow Rate (a YF-S201-class pulse
+sensor) — each reusing an already-verified driver from elsewhere in this
+repo. This is the mechanism's first case where every entry is single-chip
+(a plain `chip:` reference on the `clusterOptions` entry, no
+`chipChoiceGroups` needed at all). See CLAUDE.md's own "Open next steps"
+for the complete detail, including a real process mistake this pass
+caught (a Docker verification step's `git checkout` briefly discarded
+uncommitted firmware edits) and how it was fixed going forward.
+
 ## Known limitations
 
 - `firmware/camera/` (Matter Camera, this repo's twelfth device type)

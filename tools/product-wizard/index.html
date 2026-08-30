@@ -1028,6 +1028,27 @@ const COMPONENT_LIBRARY = {
     { label: "SCK", defineName: "COOKTOP_TEMP_SENSOR_SCK_GPIO", defaultsByModule: { esp32: 18, esp32c2: 18, esp32c3: 18, esp32c5: 18, esp32c6: 18, esp32c61: 18, esp32s3: 18, esp32h2: 18 } },
     { label: "SO", defineName: "COOKTOP_TEMP_SENSOR_SO_GPIO", defaultsByModule: { esp32: 19, esp32c2: 19, esp32c3: 19, esp32c5: 19, esp32c6: 19, esp32c61: 19, esp32s3: 19, esp32h2: 19 } },
   ] },
+  // firmware/pump/'s own three optional TemperatureMeasurement/
+  // PressureMeasurement/FlowMeasurement clusters (see its DEVICE_TYPES
+  // entry's `clusterOptions`) — this repo's third clusterOptions rollout
+  // beyond air-quality-sensor/smoke-co-alarm, and the first case where
+  // every cluster has exactly ONE realistic backing chip (a plain
+  // `chip:` reference, no `chipChoiceGroups` needed). Named PUMP_* (not
+  // reused from the existing DS18B20/PRESSURE_BMP280 entries above)
+  // since those use the componentOptions pin1Label/usesPin2 shape, not
+  // the `pins` array shape this mechanism needs — same chip, different
+  // wizard-entry shape, matching cooktop's own precedent of not reusing
+  // an incompatible existing entry.
+  PUMP_DS18B20: { name: "DS18B20", category: "pump-temp", bus: "1-Wire", verified: false, enableDefineName: "PUMP_HAS_TEMPERATURE_MEASUREMENT", note: "Waterproof-probe temperature sensor reading the pumped fluid itself. Same driver already used in firmware/thermostat/, firmware/water-heater/, and elsewhere in this repo.", pins: [
+    { label: "DATA", defineName: "PUMP_TEMP_SENSOR_GPIO", defaultsByModule: { esp32: 18, esp32c2: 18, esp32c3: 18, esp32c5: 18, esp32c6: 18, esp32c61: 18, esp32s3: 18, esp32h2: 18 } },
+  ] },
+  PUMP_BMP280: { name: "BMP280", category: "pump-pressure", bus: "I2C", verified: false, enableDefineName: "PUMP_HAS_PRESSURE_MEASUREMENT", note: "Plain barometric pressure sensor (300-1100 hPa) — not a pump-rated pressure transducer, real pump line pressures can exceed this range. Same driver already used in firmware/pressure-sensor/.", pins: [
+    { label: "SDA", defineName: "PUMP_PRESSURE_SDA_GPIO", defaultsByModule: { esp32: 21, esp32c2: 21, esp32c3: 21, esp32c5: 21, esp32c6: 21, esp32c61: 21, esp32s3: 21, esp32h2: 21 } },
+    { label: "SCL", defineName: "PUMP_PRESSURE_SCL_GPIO", defaultsByModule: { esp32: 22, esp32c2: 22, esp32c3: 22, esp32c5: 22, esp32c6: 22, esp32c61: 22, esp32s3: 22, esp32h2: 22 } },
+  ] },
+  PUMP_FLOW_YFS201: { name: "YF-S201-class Hall pulse sensor", category: "pump-flow", bus: "GPIO (pulse)", verified: false, enableDefineName: "PUMP_HAS_FLOW_MEASUREMENT", note: "Widely cloned Hall-effect pulse-output flow sensor, rated 1-30 L/min. Same driver already used in firmware/flow-sensor/.", pins: [
+    { label: "Pulse", defineName: "PUMP_FLOW_PULSE_GPIO", defaultsByModule: { esp32: 19, esp32c2: 19, esp32c3: 19, esp32c5: 19, esp32c6: 19, esp32c61: 19, esp32s3: 19, esp32h2: 19 } },
+  ] },
   REED_SWITCH: { name: "Reed Switch (magnetic)", category: "contact", bus: "GPIO", pin1Label: "Contact", pin2Label: null, usesPin2: false, verified: true },
   HALL_SENSOR: { name: "Hall-Effect Sensor (e.g. A3144, US5881)", category: "contact", bus: "GPIO", pin1Label: "Contact", pin2Label: null, usesPin2: false, verified: false },
   MICROSWITCH: { name: "Microswitch / mechanical contact", category: "contact", bus: "GPIO", pin1Label: "Contact", pin2Label: null, usesPin2: false, verified: false },
@@ -3214,7 +3235,7 @@ const DEVICE_TYPES = [
     id: "pump",
     category: "appliances",
     name: "Pump",
-    desc: "Matter pump: PumpConfigurationAndControl (ConstantSpeed) + On/Off + LevelControl. A relay gates the pump motor's own power while a separate PWM output drives a real speed-controller/VFD's speed input — the same plain enable-line-plus-speed-signal split a real variable-speed pump/circulator exposes. OperationMode (Normal/Minimum/Maximum) selects between LevelControl's own CurrentLevel and the feature-configured Min/MaxConstSpeed bounds. Reference device in firmware/pump/.",
+    desc: "Matter pump: PumpConfigurationAndControl (ConstantSpeed) + On/Off + LevelControl. A relay gates the pump motor's own power while a separate PWM output drives a real speed-controller/VFD's speed input — the same plain enable-line-plus-speed-signal split a real variable-speed pump/circulator exposes. OperationMode (Normal/Minimum/Maximum) selects between LevelControl's own CurrentLevel and the feature-configured Min/MaxConstSpeed bounds. Optionally add real TemperatureMeasurement (DS18B20 probe), PressureMeasurement (BMP280), and/or FlowMeasurement (YF-S201-class pulse sensor) — each independently checkable, reusing already-verified drivers from elsewhere in this repo. Reference device in firmware/pump/.",
     shortDesc: "Relay enable + PWM speed output.",
     // Matches project(matter_pump) in firmware/pump/CMakeLists.txt. Reuses
     // the exact driver+secondary two-independent-GPIO shape firmware/
@@ -3223,6 +3244,17 @@ const DEVICE_TYPES = [
     // speed output (secondary, PUMP_SPEED_PWM_GPIO) instead of a relay
     // plus a 1-Wire sensor input. No componentOptions on this entry, so
     // `secondary` always renders unconditionally, same as water-heater's.
+    // clusterOptions: three independently-checkable optional clusters,
+    // each with exactly ONE realistic backing chip (a plain `chip:`
+    // reference — no chipChoiceGroups needed, this repo's first
+    // clusterOptions device type where every entry is single-chip). See
+    // firmware/pump/main/app_main.cpp's own header comment for the full
+    // sourcing/reuse detail on all three drivers.
+    clusterOptions: [
+      { id: "TemperatureMeasurement", label: "Fluid Temperature (DS18B20 probe)", chip: "PUMP_DS18B20" },
+      { id: "PressureMeasurement", label: "Line Pressure (BMP280)", chip: "PUMP_BMP280" },
+      { id: "FlowMeasurement", label: "Flow Rate (YF-S201-class pulse sensor)", chip: "PUMP_FLOW_YFS201" },
+    ],
     binName: "matter_pump.bin",
     driver: {
       summary: "GPIO (relay, active-LOW)",

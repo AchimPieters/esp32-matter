@@ -4316,6 +4316,71 @@ firmware/pump/             Pump — thirtieth device type, and this repo's
                            hardware-tested (no pump/relay/PWM-speed-
                            controller hardware for this device type
                            physically available when written).
+
+                           Later extended (continuing the `clusterOptions`
+                           rollout firmware/cooktop/ started, this repo's
+                           first case where every cluster has exactly ONE
+                           realistic backing chip — a plain `chip:`
+                           reference, no `chipChoiceGroups` needed): the
+                           three optionalConform TemperatureMeasurement/
+                           PressureMeasurement/FlowMeasurement clusters
+                           this file's own header comment originally
+                           documented as skipped — "since this repo
+                           already has real, working driver code for all
+                           three measurement clusters elsewhere... if any
+                           of them are ever wanted here later" — are now
+                           each independently checkable
+                           (`PUMP_HAS_TEMPERATURE_MEASUREMENT`/
+                           `PUMP_HAS_PRESSURE_MEASUREMENT`/
+                           `PUMP_HAS_FLOW_MEASUREMENT`, all default off,
+                           unchanged default build). All three drivers are
+                           reused byte-for-byte from their own already-
+                           datasheet-verified source files: DS18B20 1-Wire
+                           (firmware/water-heater/'s own, itself firmware/
+                           thermostat/'s) for fluid temperature, BMP280
+                           I2C (firmware/pressure-sensor/'s own) for line
+                           pressure — a plain barometric sensor, not a
+                           pump-rated pressure transducer, real pump line
+                           pressures can exceed its 300-1100 hPa range
+                           entirely, documented as such rather than
+                           implied more capable than it is — and the
+                           YF-S201-class pulse-counting driver (firmware/
+                           flow-sensor/'s own) for flow rate. All three
+                           clusters are added onto the SAME Pump endpoint
+                           via the usual "add extra clusters onto an
+                           already-correct endpoint" pattern; a single
+                           shared `pump_sensors_task` polls whichever are
+                           enabled once per `PUMP_SENSOR_POLL_INTERVAL_MS`
+                           (5s) — these are independent readings with no
+                           interaction with the pump's own direct-
+                           attribute-write speed control, so one combined
+                           task is enough, unlike a real hysteresis
+                           control loop. GPIO defaults (18 for DS18B20,
+                           21/22 for BMP280's I2C, 19 for the flow pulse
+                           input) avoid this file's own existing relay
+                           (16)/PWM (17)/identify (2) pins. Wizard
+                           integration needed no new mechanism beyond
+                           three new `COMPONENT_LIBRARY` entries
+                           (`PUMP_DS18B20`/`PUMP_BMP280`/
+                           `PUMP_FLOW_YFS201`, each using the `pins` array
+                           shape `clusterOptions` needs — not the existing
+                           `DS18B20`/`PRESSURE_BMP280` entries, which use
+                           the incompatible componentOptions pin1Label/
+                           usesPin2 shape) and a 3-entry `clusterOptions`
+                           array on the device type. Verified with the
+                           established Node.js sandboxed regression check
+                           (all 65 device types re-swept through all 4
+                           render/complete/sed/review functions with zero
+                           exceptions, plus targeted checks for each
+                           cluster off/on individually and all three at
+                           once) and a real sed dry-run against a Docker
+                           copy — byte-identical no-op except the three
+                           intended `#define`s. Build-verified in Docker
+                           for the unchanged default (all off) config and
+                           all three toggles individually and together;
+                           not hardware-tested (no DS18B20/BMP280/
+                           YF-S201-class hardware for this device type
+                           physically available when written).
   partitions.csv           same OTA + fctry layout as firmware/light/
   sdkconfig.defaults        same as firmware/light/
 firmware/laundry-dryer/    Laundry Dryer — thirty-first device type, and the
@@ -11933,6 +11998,69 @@ SECURITY.md               flash encryption / secure boot / signed OTA guidance
     for the unchanged default config and both chip choices; not hardware-
     tested (no MAX6675/MAX31855 module or thermocouple probe physically
     available when written).
+
+15. **More `clusterOptions` candidates, found via a rigorous XML-parse
+    sweep (not grep) and confirmed still open.** Asked to keep searching
+    beyond item 14's own single cooktop candidate — a Python script (run
+    inside the pinned Docker image, using `xml.etree.ElementTree`, not a
+    text-based grep) parsed every built device type's own full
+    `<clusters>` block with its real conform type, catching a case grep-
+    based sweeps had missed: `firmware/pump/`'s own header comment already
+    documented its skipped TemperatureMeasurement/PressureMeasurement/
+    FlowMeasurement as "if any of them are ever wanted here later," but no
+    prior pass had actually revisited it. Three real, currently-open
+    candidates were confirmed this way — `firmware/pump/` (Temperature +
+    Pressure + Flow Measurement, all optionalConform on Pump.xml, each
+    with exactly one already-proven backing driver already in this repo),
+    `firmware/soil-sensor/` (Temperature Measurement, optional on
+    SoilSensor.xml), and `firmware/room-air-conditioner/` (Temperature +
+    Relative Humidity Measurement, both optional on
+    RoomAirConditioner.xml) — plus one real false candidate ruled out
+    before implementation: Temperature Alarm's own conform tag
+    (`<otherwiseConform><provisionalConform/><optionalConform/>
+    </otherwiseConform>`) means it's still provisionalConform in practice,
+    not a genuine ratified requirement, same "provisional, no real
+    controller or SDK support" precedent this repo already applies
+    elsewhere (e.g. firmware/addressable-light/'s skipped
+    DynamicLighting). The user chose to work through all three,
+    one at a time.
+
+    `firmware/pump/` done first: this repo's first `clusterOptions` case
+    where every entry is single-chip (a plain `chip:` reference, no
+    `chipChoiceGroups` needed at all) — see its own repository-layout
+    entry above for the complete detail. A real process mistake happened
+    and was caught during this pass, worth remembering: a Docker
+    verification step used `git checkout -- <file>` inside the container
+    to revert a temporary sed toggle, which — since the real firmware
+    edits were still UNCOMMITTED at that point — silently discarded all of
+    them, not just the toggle (exactly the class of risk [[docker-verify-
+    mounted-volume-sed-gotcha]]'s own memory already warns about, one
+    level worse: destroying real work, not just leaving a stray mutation).
+    Caught immediately by checking `grep` for the new code after the
+    "successful" build notification, all edits were re-applied from this
+    session's own conversation history and re-verified byte-identical
+    (same diff --stat as before the loss). Fixed going forward two ways:
+    commit real edits to git BEFORE any Docker step that might mutate the
+    mounted file, and never use `git checkout`/`git stash` inside a
+    container on a file with uncommitted work — flip a toggle back with a
+    second plain `sed`, or better, copy the file into an isolated
+    directory first. That isolation attempt itself hit a second, separate
+    real finding: `/private/tmp/.../scratchpad` (this session's own
+    scratchpad directory) is NOT reachable by Docker Desktop's file
+    sharing on this host — a bind-mounted scratchpad path silently
+    produces an empty/inaccessible directory inside the container (cmake
+    then fails confusingly deep inside `project.cmake`, not with a clear
+    "path not found") — worth remembering for any future session on this
+    same machine: do isolated Docker-mounted verification copies inside
+    the repo's own working tree (e.g. a git-ignored `.tmp_*/` directory,
+    removed after use), never under `/tmp`/the scratchpad. Also
+    re-confirmed, the hard way a second time, CLAUDE.md's own documented
+    entrypoint gotcha ("the entrypoint also leaves you in $ESP_MATTER_PATH
+    ... no matter what -w you pass") — an isolated verification copy still
+    needs an explicit `cd` inside the container command itself.
+
+    Soil Sensor and Room Air Conditioner are still queued next in this
+    same pass.
 
 ## Note on hardware/USB
 

@@ -48,12 +48,12 @@
  * genuinely doesn't need it, confirmed by reading the plain legacy
  * `level_control::config_t` directly rather than copying dimmable-light's
  * own lighting-feature setup blindly. Groups/ScenesManagement/
- * Temperature-Pressure-Flow-Measurement/OccupancySensing(client) are all
- * skipped — same "smallest reasonable next step" scope cut this repo
- * applies to every other device type's own optional extras, particularly
- * since this repo already has real, working driver code for all three
- * measurement clusters elsewhere (firmware/temperature-sensor/,
- * firmware/pressure-sensor/) if any of them are ever wanted here later.
+ * OccupancySensing(client) remain skipped — same "smallest reasonable
+ * next step" scope cut this repo applies to every other device type's own
+ * optional extras. TemperatureMeasurement/PressureMeasurement/
+ * FlowMeasurement were originally skipped here too, for the identical
+ * reason — but later added on request; see the "Later extended" section
+ * further down this comment for the full detail.
  *
  * --- PumpConfigurationAndControl: SPD (ConstantSpeed) only, plain ember
  * attributes with no Delegate at all ------------------------------------
@@ -148,6 +148,53 @@
  * Standard quick-power-cycle factory reset. Build-verified in Docker; not
  * hardware-tested (no pump/relay/PWM-speed-controller hardware for this
  * device type physically available when written).
+ *
+ * --- Later extended: TemperatureMeasurement/PressureMeasurement/
+ * FlowMeasurement, on request (continuing the `clusterOptions` rollout
+ * firmware/cooktop/ started) ------------------------------------------
+ * This file's own header comment above already named the gap: three
+ * optionalConform measurement clusters, deliberately skipped at first
+ * "since this repo already has real, working driver code for all three
+ * measurement clusters elsewhere... if any of them are ever wanted here
+ * later." Closed now, each independently checkable via
+ * `PUMP_HAS_TEMPERATURE_MEASUREMENT`/`PUMP_HAS_PRESSURE_MEASUREMENT`/
+ * `PUMP_HAS_FLOW_MEASUREMENT` (all default off, unchanged default build).
+ * Unlike firmware/cooktop/'s own two-chip choice, each of these three
+ * clusters has exactly ONE realistic backing chip already proven in this
+ * repo — no `chipChoiceGroups` needed, just three independent `clusterOptions`
+ * entries each naming a single fixed `chip`, the same shape firmware/
+ * air-quality-sensor/'s own single-chip clusters (CO/Ozone/etc.) already
+ * establish.
+ *
+ * All three drivers are reused byte-for-byte from their own already-
+ * datasheet-verified source files, not reimplemented: `PUMP_TEMP_SENSOR_GPIO`
+ * drives the exact same DS18B20 1-Wire bit-bang/CRC-8 sequence firmware/
+ * water-heater/'s own (itself firmware/thermostat/'s own) driver already
+ * establishes — a waterproof probe reading the pumped fluid's own
+ * temperature, a real, common feature on circulation/well pumps.
+ * `PUMP_PRESSURE_SDA_GPIO`/`PUMP_PRESSURE_SCL_GPIO` drive the exact same
+ * BMP280 I2C register map + Bosch's own 64-bit fixed-point compensation
+ * formula firmware/pressure-sensor/'s own driver already establishes — a
+ * real, common feature on well/booster pumps (line pressure). Note this is
+ * a plain barometric sensor, not a pump-rated pressure transducer — real
+ * pump line pressures can exceed a BMP280's own 300-1100 hPa range
+ * entirely; this is the same "real, working, already-verified driver
+ * reused as-is" choice this repo makes throughout, not a claim that a
+ * BMP280 is the ideal sensor for this specific job. `PUMP_FLOW_PULSE_GPIO`
+ * drives the exact same YF-S201-class pulse-counting driver firmware/
+ * flow-sensor/'s own file already establishes — a real, common feature on
+ * any pump moving a metered amount of fluid. All three clusters are added
+ * onto the SAME Pump endpoint that already carries On/Off/LevelControl/
+ * PumpConfigurationAndControl — the usual "add extra clusters onto an
+ * already-correct endpoint" pattern. A single shared
+ * `pump_sensors_task` polls whichever of the three are enabled once per
+ * `PUMP_SENSOR_POLL_INTERVAL_MS` — these are independent readings with no
+ * interaction with the pump's own direct-attribute-write speed control
+ * above, so one plain shared polling task (rather than three separate
+ * ones) is enough. Build-verified in Docker for the unchanged default
+ * (all off) config and all three toggles individually and together; not
+ * hardware-tested (no DS18B20/BMP280/YF-S201-class hardware for this
+ * device type physically available when written).
  */
 
 #include <esp_err.h>
@@ -155,11 +202,20 @@
 #include <nvs_flash.h>
 #include <driver/gpio.h>
 #include <driver/ledc.h>
+#include <driver/i2c_master.h>
 #include <esp_timer.h>
+#include <esp_rom_sys.h>
+
+#include <freertos/FreeRTOS.h>
+#include <freertos/task.h>
 
 #include <esp_matter.h>
 #include <esp_matter_core.h>
 #include <app-common/zap-generated/cluster-objects.h>
+#include <data_model_provider/esp_matter_data_model_provider.h>
+#include <app/clusters/temperature-measurement-server/TemperatureMeasurementCluster.h>
+#include <app/clusters/pressure-measurement-server/PressureMeasurementCluster.h>
+#include <app/clusters/flow-measurement-server/FlowMeasurementCluster.h>
 
 static const char *TAG = "matter_pump";
 
@@ -172,6 +228,48 @@ static const char *TAG = "matter_pump";
 #define PUMP_SPEED_PWM_GPIO GPIO_NUM_17    /* PWM speed signal to a speed controller/VFD */
 
 #define IDENTIFY_BLINK_INTERVAL_MS 500
+
+/* --- Optional TemperatureMeasurement/PressureMeasurement/FlowMeasurement
+ * — see the header comment above for the full sourcing/reuse detail. Each
+ * is its own independent toggle (all default off — unchanged default
+ * build); GPIOs chosen to avoid the three pins above. */
+#define PUMP_HAS_TEMPERATURE_MEASUREMENT 0
+#define PUMP_TEMP_SENSOR_GPIO GPIO_NUM_18 /* DS18B20 1-Wire data pin */
+
+#define PUMP_HAS_PRESSURE_MEASUREMENT 0
+#define PUMP_PRESSURE_SDA_GPIO GPIO_NUM_21 /* BMP280 I2C */
+#define PUMP_PRESSURE_SCL_GPIO GPIO_NUM_22
+#define PUMP_PRESSURE_I2C_FREQ_HZ 100000
+
+#define PUMP_HAS_FLOW_MEASUREMENT 0
+#define PUMP_FLOW_PULSE_GPIO GPIO_NUM_19 /* YF-S201-class pulse output */
+
+/* One shared poll interval for all three — see the header comment above
+ * for why one combined task is enough. */
+#define PUMP_SENSOR_POLL_INTERVAL_MS 5000
+
+#if PUMP_HAS_PRESSURE_MEASUREMENT
+#define PUMP_BMP280_I2C_ADDR 0x76 /* SDO pin low — this file's assumed/documented wiring */
+#define PUMP_BMP280_REG_CALIB_START 0x88
+#define PUMP_BMP280_REG_CHIP_ID 0xD0
+#define PUMP_BMP280_REG_CTRL_MEAS 0xF4
+#define PUMP_BMP280_REG_PRESS_MSB 0xF7
+#define PUMP_BMP280_CHIP_ID_VALUE 0x58
+/* osrs_t=001 (x1), osrs_p=011 (x4), mode=01 (Forced) — Bosch's own
+ * "Standard resolution" preset, same as firmware/pressure-sensor/'s. */
+#define PUMP_BMP280_CTRL_MEAS_FORCED_STANDARD 0b00101101
+#endif
+
+/* Output ranges — see the header comment above (BMP280's own real
+ * operating range for pressure; a plausible pumped-fluid range for
+ * temperature; the YF-S201-class sensor's own rated 1-30 L/min range for
+ * flow, same as firmware/flow-sensor/'s own). */
+#define PUMP_PRESSURE_MIN_HPA 300
+#define PUMP_PRESSURE_MAX_HPA 1100
+#define PUMP_TEMP_MIN_CENTIDEGREES (-5000)  /* -50.00 degC */
+#define PUMP_TEMP_MAX_CENTIDEGREES 15000    /* 150.00 degC */
+#define PUMP_FLOW_MIN_MEASURED_VALUE 1      /* 1 L/min -> 0.1 m3/h */
+#define PUMP_FLOW_MAX_MEASURED_VALUE 18     /* 30 L/min -> 1.8 m3/h */
 
 /* LEDC (PWM) setup — same pattern firmware/dimmable-light/'s own
  * brightness output already establishes: one timer, one channel,
@@ -201,6 +299,417 @@ static esp_timer_handle_t identify_led_timer = NULL;
 static bool g_on_off = false;
 static uint8_t g_current_level = 254; /* LevelControl's own default */
 static uint8_t g_operation_mode = chip::to_underlying(PumpConfigurationAndControl::OperationModeEnum::kNormal);
+
+#if PUMP_HAS_TEMPERATURE_MEASUREMENT
+/* --- DS18B20 1-Wire driver — reused byte-for-byte from firmware/
+ * water-heater/'s own driver (itself firmware/thermostat/'s own), see the
+ * header comment above for the full timing/CRC/sourcing detail. Only the
+ * pin macro name differs. */
+static bool pump_temp_ow_reset(void)
+{
+    gpio_set_level(PUMP_TEMP_SENSOR_GPIO, 0);
+    esp_rom_delay_us(480);
+    gpio_set_level(PUMP_TEMP_SENSOR_GPIO, 1);
+    esp_rom_delay_us(70);
+    bool present = (gpio_get_level(PUMP_TEMP_SENSOR_GPIO) == 0);
+    esp_rom_delay_us(410);
+    return present;
+}
+
+static void pump_temp_ow_write_bit(int bit)
+{
+    gpio_set_level(PUMP_TEMP_SENSOR_GPIO, 0);
+    if (bit) {
+        esp_rom_delay_us(6);
+        gpio_set_level(PUMP_TEMP_SENSOR_GPIO, 1);
+        esp_rom_delay_us(64);
+    } else {
+        esp_rom_delay_us(60);
+        gpio_set_level(PUMP_TEMP_SENSOR_GPIO, 1);
+        esp_rom_delay_us(10);
+    }
+}
+
+static int pump_temp_ow_read_bit(void)
+{
+    gpio_set_level(PUMP_TEMP_SENSOR_GPIO, 0);
+    esp_rom_delay_us(2);
+    gpio_set_level(PUMP_TEMP_SENSOR_GPIO, 1);
+    esp_rom_delay_us(8);
+    int bit = gpio_get_level(PUMP_TEMP_SENSOR_GPIO);
+    esp_rom_delay_us(50);
+    return bit;
+}
+
+static void pump_temp_ow_write_byte(uint8_t byte)
+{
+    for (int i = 0; i < 8; i++) {
+        pump_temp_ow_write_bit(byte & 0x01);
+        byte >>= 1;
+    }
+}
+
+static uint8_t pump_temp_ow_read_byte(void)
+{
+    uint8_t byte = 0;
+    for (int i = 0; i < 8; i++) {
+        byte = (uint8_t)(byte | (pump_temp_ow_read_bit() << i));
+    }
+    return byte;
+}
+
+/* Dallas/Maxim 1-Wire CRC-8 (reflected, polynomial 0x8C, init 0x00). */
+static uint8_t pump_temp_onewire_crc8(const uint8_t *data, size_t len)
+{
+    uint8_t crc = 0;
+    for (size_t i = 0; i < len; i++) {
+        uint8_t byte = data[i];
+        for (int b = 0; b < 8; b++) {
+            uint8_t mix = (uint8_t)((crc ^ byte) & 0x01);
+            crc >>= 1;
+            if (mix) {
+                crc ^= 0x8C;
+            }
+            byte >>= 1;
+        }
+    }
+    return crc;
+}
+
+static bool pump_temp_sensor_setup(void)
+{
+    gpio_config_t io_conf = {};
+    io_conf.pin_bit_mask = (1ULL << PUMP_TEMP_SENSOR_GPIO);
+    io_conf.mode = GPIO_MODE_INPUT_OUTPUT_OD;
+    io_conf.pull_up_en = GPIO_PULLUP_ENABLE;
+    gpio_config(&io_conf);
+    gpio_set_level(PUMP_TEMP_SENSOR_GPIO, 1);
+    return true;
+}
+
+static bool pump_temp_sensor_read(float *temperature_c)
+{
+    portDISABLE_INTERRUPTS();
+    bool present = pump_temp_ow_reset();
+    if (present) {
+        pump_temp_ow_write_byte(0xCC); /* Skip ROM */
+        pump_temp_ow_write_byte(0x44); /* Convert T */
+    }
+    portENABLE_INTERRUPTS();
+    if (!present) {
+        ESP_LOGW(TAG, "DS18B20 not responding to reset — check wiring/pull-up");
+        return false;
+    }
+
+    vTaskDelay(pdMS_TO_TICKS(750)); /* max conversion time at default 12-bit resolution */
+
+    portDISABLE_INTERRUPTS();
+    present = pump_temp_ow_reset();
+    uint8_t scratchpad[9] = {0};
+    if (present) {
+        pump_temp_ow_write_byte(0xCC);
+        pump_temp_ow_write_byte(0xBE); /* Read Scratchpad */
+        for (int i = 0; i < 9; i++) {
+            scratchpad[i] = pump_temp_ow_read_byte();
+        }
+    }
+    portENABLE_INTERRUPTS();
+    if (!present) {
+        ESP_LOGW(TAG, "DS18B20 not responding to reset (read phase)");
+        return false;
+    }
+
+    if (pump_temp_onewire_crc8(scratchpad, 8) != scratchpad[8]) {
+        ESP_LOGW(TAG, "DS18B20 CRC mismatch — discarding reading");
+        return false;
+    }
+
+    int16_t raw = (int16_t)(((uint16_t)scratchpad[1] << 8) | scratchpad[0]);
+    *temperature_c = raw * 0.0625f; /* 12-bit default resolution: 1 LSB = 1/16 degC */
+    return true;
+}
+
+/* Same registry-lookup-and-cast pattern firmware/refrigerator/'s own
+ * get_temperature_measurement_cluster() already establishes —
+ * TemperatureMeasurement is a "code-driven" cluster class in this SDK
+ * version, not the generic ember-style attribute store. */
+static void pump_update_temperature(uint16_t endpoint_id, float temperature_c)
+{
+    chip::app::ConcreteClusterPath path(endpoint_id, TemperatureMeasurement::Id);
+    chip::app::ServerClusterInterface *iface = esp_matter::data_model::provider::get_instance().registry().Get(path);
+    if (!iface) {
+        ESP_LOGE(TAG, "TemperatureMeasurement cluster not found on endpoint %u", endpoint_id);
+        return;
+    }
+    int16_t measured_value = (int16_t)(temperature_c * 100.0f);
+    static_cast<TemperatureMeasurementCluster *>(iface)->SetMeasuredValue(chip::app::DataModel::Nullable<int16_t>(measured_value));
+}
+#endif /* PUMP_HAS_TEMPERATURE_MEASUREMENT */
+
+#if PUMP_HAS_PRESSURE_MEASUREMENT
+/* --- BMP280 I2C driver — reused byte-for-byte from firmware/
+ * pressure-sensor/'s own driver, see the header comment above for the
+ * full register-map/compensation-formula/sourcing detail. */
+static i2c_master_dev_handle_t pump_pressure_i2c_dev = NULL;
+
+static uint16_t pump_bmp280_dig_T1;
+static int16_t pump_bmp280_dig_T2, pump_bmp280_dig_T3;
+static uint16_t pump_bmp280_dig_P1;
+static int16_t pump_bmp280_dig_P2, pump_bmp280_dig_P3, pump_bmp280_dig_P4, pump_bmp280_dig_P5,
+    pump_bmp280_dig_P6, pump_bmp280_dig_P7, pump_bmp280_dig_P8, pump_bmp280_dig_P9;
+
+static bool pump_pressure_i2c_bus_setup(uint16_t device_address)
+{
+    i2c_master_bus_config_t bus_config = {};
+    bus_config.i2c_port = I2C_NUM_1; /* NUM_0 may be in use by another sensor on this device */
+    bus_config.sda_io_num = PUMP_PRESSURE_SDA_GPIO;
+    bus_config.scl_io_num = PUMP_PRESSURE_SCL_GPIO;
+    bus_config.clk_source = I2C_CLK_SRC_DEFAULT;
+    bus_config.glitch_ignore_cnt = 7;
+    bus_config.flags.enable_internal_pullup = true;
+
+    i2c_master_bus_handle_t bus = NULL;
+    esp_err_t err = i2c_new_master_bus(&bus_config, &bus);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "i2c_new_master_bus failed: %s", esp_err_to_name(err));
+        return false;
+    }
+
+    i2c_device_config_t dev_config = {};
+    dev_config.dev_addr_length = I2C_ADDR_BIT_LEN_7;
+    dev_config.device_address = device_address;
+    dev_config.scl_speed_hz = PUMP_PRESSURE_I2C_FREQ_HZ;
+
+    err = i2c_master_bus_add_device(bus, &dev_config, &pump_pressure_i2c_dev);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "i2c_master_bus_add_device failed: %s", esp_err_to_name(err));
+        return false;
+    }
+    return true;
+}
+
+static bool pump_bmp280_write_reg(uint8_t reg, uint8_t value)
+{
+    uint8_t buf[2] = { reg, value };
+    return i2c_master_transmit(pump_pressure_i2c_dev, buf, sizeof(buf), 1000) == ESP_OK;
+}
+
+static bool pump_bmp280_read_reg(uint8_t reg, uint8_t *data, size_t len)
+{
+    return i2c_master_transmit_receive(pump_pressure_i2c_dev, &reg, 1, data, len, 1000) == ESP_OK;
+}
+
+static bool pump_bmp280_init(void)
+{
+    if (!pump_pressure_i2c_bus_setup(PUMP_BMP280_I2C_ADDR)) {
+        return false;
+    }
+
+    uint8_t chip_id = 0;
+    if (!pump_bmp280_read_reg(PUMP_BMP280_REG_CHIP_ID, &chip_id, 1) || chip_id != PUMP_BMP280_CHIP_ID_VALUE) {
+        ESP_LOGE(TAG, "BMP280 not found (CHIP_ID=0x%02X, expected 0x%02X) — check wiring/I2C address", chip_id, PUMP_BMP280_CHIP_ID_VALUE);
+        return false;
+    }
+
+    uint8_t calib[24] = { 0 };
+    if (!pump_bmp280_read_reg(PUMP_BMP280_REG_CALIB_START, calib, sizeof(calib))) {
+        ESP_LOGE(TAG, "BMP280 calibration data read failed");
+        return false;
+    }
+    pump_bmp280_dig_T1 = (uint16_t)(calib[0] | (calib[1] << 8));
+    pump_bmp280_dig_T2 = (int16_t)(calib[2] | (calib[3] << 8));
+    pump_bmp280_dig_T3 = (int16_t)(calib[4] | (calib[5] << 8));
+    pump_bmp280_dig_P1 = (uint16_t)(calib[6] | (calib[7] << 8));
+    pump_bmp280_dig_P2 = (int16_t)(calib[8] | (calib[9] << 8));
+    pump_bmp280_dig_P3 = (int16_t)(calib[10] | (calib[11] << 8));
+    pump_bmp280_dig_P4 = (int16_t)(calib[12] | (calib[13] << 8));
+    pump_bmp280_dig_P5 = (int16_t)(calib[14] | (calib[15] << 8));
+    pump_bmp280_dig_P6 = (int16_t)(calib[16] | (calib[17] << 8));
+    pump_bmp280_dig_P7 = (int16_t)(calib[18] | (calib[19] << 8));
+    pump_bmp280_dig_P8 = (int16_t)(calib[20] | (calib[21] << 8));
+    pump_bmp280_dig_P9 = (int16_t)(calib[22] | (calib[23] << 8));
+
+    ESP_LOGI(TAG, "BMP280 initialized");
+    return true;
+}
+
+/* Bosch's own official 32-bit fixed-point compensation formula (datasheet
+ * section 8.2), reproduced verbatim — see the header comment above. */
+static int32_t pump_bmp280_compensate_temperature(int32_t adc_T, int32_t *t_fine_out)
+{
+    int32_t var1, var2, T;
+    var1 = ((((adc_T >> 3) - ((int32_t)pump_bmp280_dig_T1 << 1))) * ((int32_t)pump_bmp280_dig_T2)) >> 11;
+    var2 = (((((adc_T >> 4) - ((int32_t)pump_bmp280_dig_T1)) * ((adc_T >> 4) - ((int32_t)pump_bmp280_dig_T1))) >> 12) * ((int32_t)pump_bmp280_dig_T3)) >> 14;
+    int32_t t_fine = var1 + var2;
+    *t_fine_out = t_fine;
+    T = (t_fine * 5 + 128) >> 8;
+    return T;
+}
+
+static uint32_t pump_bmp280_compensate_pressure(int32_t adc_P, int32_t t_fine)
+{
+    int64_t var1, var2, p;
+    var1 = (int64_t)t_fine - 128000;
+    var2 = var1 * var1 * (int64_t)pump_bmp280_dig_P6;
+    var2 = var2 + ((var1 * (int64_t)pump_bmp280_dig_P5) << 17);
+    var2 = var2 + (((int64_t)pump_bmp280_dig_P4) << 35);
+    var1 = ((var1 * var1 * (int64_t)pump_bmp280_dig_P3) >> 8) + ((var1 * (int64_t)pump_bmp280_dig_P2) << 12);
+    var1 = (((((int64_t)1) << 47) + var1)) * ((int64_t)pump_bmp280_dig_P1) >> 33;
+    if (var1 == 0) {
+        return 0;
+    }
+    p = 1048576 - adc_P;
+    p = (((p << 31) - var2) * 3125) / var1;
+    var1 = (((int64_t)pump_bmp280_dig_P9) * (p >> 13) * (p >> 13)) >> 25;
+    var2 = (((int64_t)pump_bmp280_dig_P8) * p) >> 19;
+    p = ((p + var1 + var2) >> 8) + (((int64_t)pump_bmp280_dig_P7) << 4);
+    return (uint32_t)(p / 256);
+}
+
+static bool pump_bmp280_read_hpa(float *pressure_hpa)
+{
+    if (!pump_bmp280_write_reg(PUMP_BMP280_REG_CTRL_MEAS, PUMP_BMP280_CTRL_MEAS_FORCED_STANDARD)) {
+        return false;
+    }
+    vTaskDelay(pdMS_TO_TICKS(40));
+
+    uint8_t data[6] = { 0 };
+    if (!pump_bmp280_read_reg(PUMP_BMP280_REG_PRESS_MSB, data, sizeof(data))) {
+        return false;
+    }
+    int32_t adc_P = ((int32_t)data[0] << 12) | ((int32_t)data[1] << 4) | (data[2] >> 4);
+    int32_t adc_T = ((int32_t)data[3] << 12) | ((int32_t)data[4] << 4) | (data[5] >> 4);
+
+    int32_t t_fine = 0;
+    int32_t temp_centidegrees = pump_bmp280_compensate_temperature(adc_T, &t_fine);
+    uint32_t pressure_pa = pump_bmp280_compensate_pressure(adc_P, t_fine);
+
+    *pressure_hpa = pressure_pa / 100.0f;
+    ESP_LOGI(TAG, "BMP280: %.2f hPa (die temp %ld.%02ld degC, not reported via Matter)",
+             *pressure_hpa, (long)(temp_centidegrees / 100), (long)(temp_centidegrees % 100));
+    return true;
+}
+
+/* Same registry-lookup-and-cast pattern as pump_update_temperature() above
+ * — PressureMeasurement is also a "code-driven" cluster class. */
+static void pump_update_pressure(uint16_t endpoint_id, float pressure_hpa)
+{
+    chip::app::ConcreteClusterPath path(endpoint_id, PressureMeasurement::Id);
+    chip::app::ServerClusterInterface *iface = esp_matter::data_model::provider::get_instance().registry().Get(path);
+    if (!iface) {
+        ESP_LOGE(TAG, "PressureMeasurement cluster not found on endpoint %u", endpoint_id);
+        return;
+    }
+    int16_t measured_value = (int16_t)(pressure_hpa + (pressure_hpa >= 0 ? 0.5f : -0.5f));
+    static_cast<PressureMeasurementCluster *>(iface)->SetMeasuredValue(chip::app::DataModel::Nullable<int16_t>(measured_value));
+}
+#endif /* PUMP_HAS_PRESSURE_MEASUREMENT */
+
+#if PUMP_HAS_FLOW_MEASUREMENT
+/* --- YF-S201-class pulse-counting flow driver — reused byte-for-byte from
+ * firmware/flow-sensor/'s own driver, see the header comment above for the
+ * full sourcing/conversion detail. */
+#define PUMP_FLOW_PULSES_PER_HZ_PER_LPM 7.5f
+
+static volatile uint32_t pump_flow_pulse_count = 0;
+
+static void IRAM_ATTR pump_flow_pulse_isr(void *arg)
+{
+    pump_flow_pulse_count++;
+}
+
+static bool pump_flow_pulse_gpio_setup(void)
+{
+    gpio_config_t pulse_conf = {};
+    pulse_conf.pin_bit_mask = (1ULL << PUMP_FLOW_PULSE_GPIO);
+    pulse_conf.mode = GPIO_MODE_INPUT;
+    pulse_conf.pull_up_en = GPIO_PULLUP_ENABLE;
+    pulse_conf.intr_type = GPIO_INTR_POSEDGE;
+    gpio_config(&pulse_conf);
+
+    esp_err_t isr_svc_err = gpio_install_isr_service(0);
+    if (isr_svc_err != ESP_OK && isr_svc_err != ESP_ERR_INVALID_STATE) {
+        ESP_LOGE(TAG, "gpio_install_isr_service failed: %s", esp_err_to_name(isr_svc_err));
+        return false;
+    }
+    esp_err_t isr_add_err = gpio_isr_handler_add(PUMP_FLOW_PULSE_GPIO, pump_flow_pulse_isr, NULL);
+    if (isr_add_err != ESP_OK) {
+        ESP_LOGE(TAG, "gpio_isr_handler_add failed: %s", esp_err_to_name(isr_add_err));
+        return false;
+    }
+    return true;
+}
+
+/* Same registry-lookup-and-cast pattern as the other two above —
+ * FlowMeasurement is also a "code-driven" cluster class. */
+static void pump_update_flow(uint16_t endpoint_id, uint16_t measured_value)
+{
+    chip::app::ConcreteClusterPath path(endpoint_id, FlowMeasurement::Id);
+    chip::app::ServerClusterInterface *iface = esp_matter::data_model::provider::get_instance().registry().Get(path);
+    if (!iface) {
+        ESP_LOGE(TAG, "FlowMeasurement cluster not found on endpoint %u", endpoint_id);
+        return;
+    }
+    static_cast<FlowMeasurementCluster *>(iface)->SetMeasuredValue(chip::app::DataModel::Nullable<uint16_t>(measured_value));
+}
+#endif /* PUMP_HAS_FLOW_MEASUREMENT */
+
+#if PUMP_HAS_TEMPERATURE_MEASUREMENT || PUMP_HAS_PRESSURE_MEASUREMENT || PUMP_HAS_FLOW_MEASUREMENT
+/* One shared task polling whichever of the three optional sensors is
+ * enabled, once per PUMP_SENSOR_POLL_INTERVAL_MS — see the header comment
+ * above for why one combined task is enough (these are independent
+ * readings with no interaction with the pump's own direct-attribute-write
+ * speed control). */
+static void pump_sensors_task(void *arg)
+{
+#if PUMP_HAS_TEMPERATURE_MEASUREMENT
+    if (!pump_temp_sensor_setup()) {
+        ESP_LOGE(TAG, "Temperature sensor GPIO setup failed — temperature readings will not be reported");
+    }
+#endif
+#if PUMP_HAS_PRESSURE_MEASUREMENT
+    bool pressure_ready = pump_bmp280_init();
+    if (!pressure_ready) {
+        ESP_LOGE(TAG, "BMP280 init failed — pressure readings will not be reported");
+    }
+#endif
+#if PUMP_HAS_FLOW_MEASUREMENT
+    if (!pump_flow_pulse_gpio_setup()) {
+        ESP_LOGE(TAG, "Flow sensor GPIO setup failed — flow readings will not be reported");
+    }
+    pump_flow_pulse_count = 0;
+#endif
+
+    for (;;) {
+#if PUMP_HAS_TEMPERATURE_MEASUREMENT
+        float temperature_c = 0.0f;
+        if (pump_temp_sensor_read(&temperature_c)) {
+            pump_update_temperature(pump_endpoint_id, temperature_c);
+            ESP_LOGI(TAG, "Pump fluid temperature: %.2f degC", temperature_c);
+        }
+#endif
+#if PUMP_HAS_PRESSURE_MEASUREMENT
+        if (pressure_ready) {
+            float pressure_hpa = 0.0f;
+            if (pump_bmp280_read_hpa(&pressure_hpa)) {
+                pump_update_pressure(pump_endpoint_id, pressure_hpa);
+            }
+        }
+#endif
+#if PUMP_HAS_FLOW_MEASUREMENT
+        uint32_t count = pump_flow_pulse_count;
+        pump_flow_pulse_count = 0;
+        float window_s = PUMP_SENSOR_POLL_INTERVAL_MS / 1000.0f;
+        float frequency_hz = (float)count / window_s;
+        float flow_lpm = frequency_hz / PUMP_FLOW_PULSES_PER_HZ_PER_LPM;
+        uint16_t flow_measured_value = (uint16_t)(flow_lpm * 0.6f + 0.5f);
+        pump_update_flow(pump_endpoint_id, flow_measured_value);
+        ESP_LOGI(TAG, "Pump flow: %.2f L/min (%lu pulses)", flow_lpm, (unsigned long)count);
+#endif
+        vTaskDelay(pdMS_TO_TICKS(PUMP_SENSOR_POLL_INTERVAL_MS));
+    }
+}
+#endif /* any optional sensor enabled */
 
 /* Recomputes and applies the real PWM duty from the current OnOff/
  * CurrentLevel/OperationMode state — see the header comment above. */
@@ -458,6 +967,33 @@ extern "C" void app_main(void)
     level_control_config.max_level = 254;
     cluster::level_control::create(endpoint, &level_control_config, CLUSTER_FLAG_SERVER);
 
+#if PUMP_HAS_TEMPERATURE_MEASUREMENT
+    /* 3b. TemperatureMeasurement — optionalConform, see the header comment
+     * above for the full sourcing/reuse detail. */
+    cluster::temperature_measurement::config_t temp_meas_config;
+    temp_meas_config.min_measured_value = nullable<int16_t>((int16_t)PUMP_TEMP_MIN_CENTIDEGREES);
+    temp_meas_config.max_measured_value = nullable<int16_t>((int16_t)PUMP_TEMP_MAX_CENTIDEGREES);
+    cluster::temperature_measurement::create(endpoint, &temp_meas_config, CLUSTER_FLAG_SERVER);
+#endif
+
+#if PUMP_HAS_PRESSURE_MEASUREMENT
+    /* 3c. PressureMeasurement — optionalConform, see the header comment
+     * above for the full sourcing/reuse detail. */
+    cluster::pressure_measurement::config_t pressure_meas_config;
+    pressure_meas_config.min_measured_value = nullable<int16_t>((int16_t)PUMP_PRESSURE_MIN_HPA);
+    pressure_meas_config.max_measured_value = nullable<int16_t>((int16_t)PUMP_PRESSURE_MAX_HPA);
+    cluster::pressure_measurement::create(endpoint, &pressure_meas_config, CLUSTER_FLAG_SERVER);
+#endif
+
+#if PUMP_HAS_FLOW_MEASUREMENT
+    /* 3d. FlowMeasurement — optionalConform, see the header comment above
+     * for the full sourcing/reuse detail. */
+    cluster::flow_measurement::config_t flow_meas_config;
+    flow_meas_config.min_measured_value = nullable<uint16_t>((uint16_t)PUMP_FLOW_MIN_MEASURED_VALUE);
+    flow_meas_config.max_measured_value = nullable<uint16_t>((uint16_t)PUMP_FLOW_MAX_MEASURED_VALUE);
+    cluster::flow_measurement::create(endpoint, &flow_meas_config, CLUSTER_FLAG_SERVER);
+#endif
+
     /* 4. Start Matter — begins BLE advertising so a controller can commission it. */
     err = esp_matter::start(app_event_cb);
     if (err != ESP_OK) {
@@ -474,6 +1010,10 @@ extern "C" void app_main(void)
     }
 
     apply_pump_output(); /* boots off, but sets a real, consistent initial duty of 0 */
+
+#if PUMP_HAS_TEMPERATURE_MEASUREMENT || PUMP_HAS_PRESSURE_MEASUREMENT || PUMP_HAS_FLOW_MEASUREMENT
+    xTaskCreate(pump_sensors_task, "pump_sensors_task", 4096, NULL, 5, NULL);
+#endif
 
     ESP_LOGI(TAG, "Matter pump started. Scan the QR code to commission.");
 }
