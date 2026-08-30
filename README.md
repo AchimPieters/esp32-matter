@@ -1,582 +1,638 @@
 # esp32-matter
 
-ESP32 **Matter** devices, built in a fully transparent way — no hidden code, no
-cloud, no data sharing. Development happens in the **Docker-based ESP-IDF
-environment** from the StudioPieters guide, adapted for Matter.
+**A fully transparent toolkit for building [Matter](https://csa-iot.org/all-solutions/matter/)
+smart-home devices on ESP32 chips.** No hidden code, no cloud, no telemetry.
+Everything is plain, readable C++ built on the open-source
+[esp-matter](https://github.com/espressif/esp-matter) SDK — you compile it
+inside Docker, flash it from your own machine, and generate the commissioning
+QR code offline.
 
-Everything is built on the open-source [esp-matter](https://github.com/espressif/esp-matter)
-SDK. You compile inside Docker, flash from your host, and generate the
-commissioning QR code locally. Matter itself is local-first: pairing runs over
-Bluetooth + your LAN and control runs over your local network. Nothing leaves
-your home unless you deliberately add a cloud hub. With Home Assistant it stays
-entirely local.
+Matter is local-first by design: pairing runs over Bluetooth LE + your Wi-Fi/
+Thread network, and control runs over your LAN. Nothing leaves your home unless
+*you* add a cloud hub. Paired with Home Assistant it stays 100 % local.
 
-Default target is the classic **ESP32 (WROOM-32)** to match the StudioPieters
-setup; the code also runs on ESP32-C2/C3/C5/C6/C61/S3/H2.
+- **69 device types** already implemented — lights, sensors, switches, locks,
+  thermostats, appliances, energy meters, bridges and more (full catalog below).
+- **A local Product Wizard** (`tools/product-wizard/`) that walks you through
+  picking a device type, an ESP32 module and GPIO pins, then hands you the exact
+  build + flash commands to run — no guesswork.
+- **Reproducible builds** — pinned to esp-matter's own recommended
+  `espressif/esp-matter:release-v1.6_idf_v5.5.4` Docker image.
+- **License: MIT.**
 
-> Dev environment reference: <https://www.studiopieters.nl/esp32-homekit-development/>
+> Development-environment reference (Docker + ESP-IDF, StudioPieters style):
+> <https://www.studiopieters.nl/esp32-homekit-development/> — by AchimPieters /
+> [StudioPieters](https://www.studiopieters.nl).
 
 ---
 
-## What's in here
+## Table of contents
+
+- [Is this for me?](#is-this-for-me)
+- [Core principles](#core-principles)
+- [What you need](#what-you-need)
+- [Path A — the easy way: the Product Wizard](#path-a--the-easy-way-the-product-wizard)
+- [Path B — the manual way: build your first device by hand](#path-b--the-manual-way-build-your-first-device-by-hand)
+- [Commissioning & controller apps](#commissioning--controller-apps)
+- [Quick-power-cycle factory reset](#quick-power-cycle-factory-reset)
+- [Over-the-air (OTA) updates](#over-the-air-ota-updates)
+- [The device catalog (69 types)](#the-device-catalog-69-types)
+- [For advanced users](#for-advanced-users)
+  - [Repository layout](#repository-layout)
+  - [Anatomy of a firmware folder](#anatomy-of-a-firmware-folder)
+  - [Adding a new device type](#adding-a-new-device-type)
+  - [Build-system gotchas](#build-system-gotchas)
+  - [Supported chips & targets](#supported-chips--targets)
+  - [Two-chip device types](#two-chip-device-types)
+- [Security hardening](#security-hardening)
+- [Hardware-verification status](#hardware-verification-status)
+- [Honest expectations](#honest-expectations)
+- [Project status & contributing](#project-status--contributing)
+- [License & credits](#license--credits)
+
+---
+
+## Is this for me?
+
+| You want to… | Start here |
+|---|---|
+| Build one specific device with the least fuss | [Path A — the Product Wizard](#path-a--the-easy-way-the-product-wizard) |
+| Understand every step, or you're comfortable with a terminal | [Path B — build by hand](#path-b--the-manual-way-build-your-first-device-by-hand) |
+| Add a brand-new device type or hack on the firmware | [For advanced users](#for-advanced-users) |
+| Just see what's possible | [The device catalog](#the-device-catalog-69-types) |
+
+**This is a real firmware project, not a no-code app.** Even with the wizard you
+will paste two commands into a terminal and flash a chip over USB. In return you
+own and can read every line of what runs on your device.
+
+---
+
+## Core principles
+
+These are non-negotiable for anything that lands in this repo:
+
+1. **No hidden code.** Everything is plain, readable C++/shell/YAML on top of the
+   open-source esp-matter SDK. No prebuilt or obfuscated framework blobs.
+2. **No cloud, no data sharing, no telemetry.** Matter is local-first: pairing
+   over BLE + LAN, control over the local network. Nothing phones home.
+3. **Local QR generation.** Commissioning data and the QR code are generated
+   entirely offline, on your machine.
+4. **Reproducible.** The toolchain is pinned to one Docker image tag.
+5. **MIT-licensed.**
+
+---
+
+## What you need
+
+**Hardware**
+
+- An **ESP32 board**. The classic **ESP32 DevKit (WROOM-32)** is the default
+  target and matches every wiring example. Also supported: ESP32-C2 / C3 / C5 /
+  C6 / C61 / S3 / H2 (see [Supported chips](#supported-chips--targets)).
+- A **USB cable** (and a USB-to-serial adapter if your board has no on-board
+  USB).
+- Whatever the device needs — an LED, a relay module, a sensor, etc. Each
+  firmware's `main/app_main.cpp` header comment documents its wiring.
+
+**Software (host machine only)**
+
+- **[Docker Desktop](https://www.docker.com/products/docker-desktop/)**,
+  installed and running. All compiling happens inside a container — no local
+  ESP-IDF toolchain to install or break.
+- **Python 3 + esptool** for flashing over USB:
+  ```bash
+  python3 -m pip install esptool
+  esptool.py --version
+  ```
+- A **Matter controller** to commission the device: Apple Home, Google Home,
+  Amazon Alexa, SmartThings, or **Home Assistant** (recommended — see
+  [Commissioning](#commissioning--controller-apps)).
+
+**First-time setup (once):**
+
+```bash
+git clone https://github.com/AchimPieters/esp32-matter.git
+cd esp32-matter
+docker pull espressif/esp-matter:release-v1.6_idf_v5.5.4
+```
+
+No `--recursive` — esp-matter and connectedhomeip live inside the Docker image,
+not as git submodules here.
+
+---
+
+## Path A — the easy way: the Product Wizard
+
+A local, offline, no-build web page that generates the exact commands for your
+device. Nothing is uploaded anywhere; it stores your product list in your
+browser's `localStorage` only.
+
+1. **Open it:**
+   ```bash
+   open tools/product-wizard/index.html
+   ```
+   (or double-click the file, or drag it into a browser tab).
+
+2. **Create a product**, give it a name, then walk the steps:
+   - **Get Started** — pick one of the 65 device types (grouped into Lighting,
+     Switches & Remotes, Outlets & Power, Sensors, Climate & Ventilation,
+     Doors/Windows & Closures, Appliances, Doorbell & Chime, Bridges).
+   - **Select Module** — pick your ESP32 chip.
+   - **Configure Device** — set the GPIO pins, pick a sensor/driver chip where
+     the device type offers a choice, tick any optional features.
+   - **Customise & Review** — check the summary.
+   - **Generate Firmware** — copy the two generated commands.
+
+3. **Run the first command** (builds inside Docker *and* generates your factory
+   partition + QR code):
+   ```bash
+   docker run --rm -it -v "<path-to-esp32-matter>:/project" -w /project \
+     espressif/esp-matter:release-v1.6_idf_v5.5.4 bash -c \
+     "cd /project/firmware/<type> && <sed edits> && idf.py set-target <chip> && idf.py build && \
+      PRODUCT_NAME='<name>' /project/tools/gen_factory.sh"
+   ```
+
+4. **Run the second command** on your host (flashes everything over USB —
+   replace `<PORT>`):
+   ```bash
+   esptool.py --chip <chip> -p <PORT> -b 460800 --before default_reset --after hard_reset write_flash \
+     --flash_mode dio --flash_size 4MB --flash_freq 40m \
+     <offset> firmware/<type>/build/bootloader/bootloader.bin \
+     0x8000   firmware/<type>/build/partition_table/partition-table.bin \
+     0x10000  firmware/<type>/build/ota_data_initial.bin \
+     0x20000  firmware/<type>/build/matter_<type>.bin \
+     0x3E0000 firmware/<type>/out/*/*/*-partition.bin
+   ```
+
+5. **Scan the QR code** (`firmware/<type>/out/**/**-qrcode.png`) in your
+   controller app.
+
+The wizard's own `tools/product-wizard/README.md` documents every step, every
+option and every device type in detail.
+
+---
+
+## Path B — the manual way: build your first device by hand
+
+This builds `firmware/light/` — a minimal On/Off light with an LED on **GPIO 2**
+of a classic ESP32 (WROOM-32). It's the reference every other device type is
+copied from.
+
+### 1. Open the dev environment
+
+```bash
+./tools/dev.sh
+```
+
+This is a thin wrapper around the StudioPieters-style command:
+
+```bash
+docker run --rm -it -v "$PWD":/project -w /project \
+  espressif/esp-matter:release-v1.6_idf_v5.5.4 /bin/bash
+```
+
+You're now inside the container with ESP-IDF **and** esp-matter already
+activated (the image's entrypoint sources both `export.sh` scripts for you).
+
+> ⚠️ **The entrypoint drops you in `$ESP_MATTER_PATH`
+> (`/opt/espressif/esp-matter`), *not* `/project`** — regardless of the `-w`
+> flag. Your repo is still mounted at `/project`; always use the absolute path.
+
+### 2. Build (inside the container)
+
+```bash
+cd /project/firmware/light
+idf.py set-target esp32          # or esp32c2 / esp32c3 / esp32c5 / esp32c6 / esp32c61 / esp32s3 / esp32h2
+idf.py build
+```
+
+Build output lands in `firmware/light/build/`, visible on your host too via the
+mounted volume.
+
+### 3. Generate your commissioning QR code (offline, inside the container)
+
+```bash
+pip install esp-matter-mfg-tool          # once; chip-cert already ships in the image
+cd /project/firmware/light
+/project/tools/gen_factory.sh
+```
+
+This writes, under `firmware/light/out/<vid_pid>/<uuid>/`:
+
+- `*-partition.bin` — the factory partition (per-device certificates +
+  commissioning data)
+- `*-qrcode.png` — the QR code to scan
+- a manual pairing code (also in the generated CSV)
+
+Re-run `gen_factory.sh` **once per physical unit** — every device needs its own
+identity.
+
+### 4. Flash from your host (outside the container)
+
+Docker Desktop on macOS/Windows can't see the USB serial port, so flash from the
+host with esptool. Find `<PORT>` with `ls /dev/tty.*` (macOS) or
+`ls /dev/ttyUSB*` (Linux).
+
+```bash
+esptool.py --chip esp32 -p <PORT> -b 460800 --before default_reset --after hard_reset write_flash \
+  --flash_mode dio --flash_size 4MB --flash_freq 40m \
+  0x1000   firmware/light/build/bootloader/bootloader.bin \
+  0x8000   firmware/light/build/partition_table/partition-table.bin \
+  0x10000  firmware/light/build/ota_data_initial.bin \
+  0x20000  firmware/light/build/matter_light.bin \
+  0x3E0000 firmware/light/out/*/*/*-partition.bin
+```
+
+Notes:
+
+- **Bootloader offset is `0x1000` on the classic ESP32**, but `0x0` on every
+  later chip (C2/C3/C5/C6/C61/S3/H2). `idf.py build` prints the authoritative
+  offsets for whatever you just built — cross-check there if a board won't boot.
+- **`ota_data_initial.bin` at `0x10000` is required.** This partition table has
+  no "factory" app slot (only OTA A/B slots), so the bootloader needs the OTA
+  data partition to know which slot to boot.
+- **`0x3E0000` is the `fctry` partition** — where the factory data / QR
+  identity from step 3 goes.
+
+On Linux you can alternatively pass the port into the container
+(`docker run … --device=/dev/ttyUSB0 …`) and use `idf.py flash` directly.
+
+### 5. Commission
+
+Open your controller app → *Add device / Add Matter device* → scan the QR code
+from step 3. Toggle it and watch the LED (and the serial log) respond.
+
+---
+
+## Commissioning & controller apps
+
+| Controller | Works with this repo's TEST certificates? |
+|---|---|
+| **Home Assistant** | ✅ Yes — commissions self-signed test devices without complaint. Recommended, and fully local. |
+| **chip-tool** (CLI) | ✅ Yes. |
+| **Apple Home** | ⚠️ Usually **no** in the normal consumer flow — it validates the device-attestation chain against Apple's bundled list of CSA-recognised roots, and a locally generated test PAA will never be on it. |
+| **Google Home** | ⚠️ Same limitation as Apple Home. |
+
+`tools/gen_factory.sh` generates a self-signed **test** Product Attestation
+Authority the first time it runs and reuses it after. For **home / hobby use**
+with Home Assistant this is all you need. For a **real certified product** you
+need your own Vendor ID from the [CSA](https://csa-iot.org/) and a matching
+attestation chain — see `SECURITY.md` and the comment at the top of
+`tools/gen_factory.sh`.
+
+Default identity uses a **test Vendor ID** (`0xFFF1`–`0xFFF4`). Override via
+environment variables to `gen_factory.sh` (`VENDOR_ID=…`, `PRODUCT_ID=…`, …).
+
+---
+
+## Quick-power-cycle factory reset
+
+Every one of the single-chip device types supports a no-button factory reset,
+matching how real plug-in / hard-wired smart-home gear (which often has no
+accessible button once installed) does it:
+
+> **Power the device off and on 3 times in a row** — roughly 2 seconds on,
+> 2 seconds off, repeated 3 times — and it factory-resets and re-enters
+> commissioning setup mode.
+
+A plain counter in its own `boot_info` NVS namespace increments on every boot and
+starts a 10-second one-shot timer; if the device stays powered past that, the
+counter clears (a "confirmed" normal boot, so a single power outage never
+triggers it). Three quick reboots call esp-matter's own
+`esp_matter::factory_reset()` after the Matter server has started. Build-verified
+across every device type; not yet exhaustively hardware-tested.
+
+---
+
+## Over-the-air (OTA) updates
+
+- **OTA Requestor cluster: enabled.** 67 of the 69 firmware types build with
+  `CONFIG_ENABLE_OTA_REQUESTOR=y`, which adds Matter's OTA Requestor cluster to
+  the root node automatically (no app code). The `ota_0` / `ota_1` A/B slots and
+  `otadata` partition it needs are already in every `partitions.csv`. Verified on
+  real hardware for `firmware/contact-sensor/` and `firmware/switch/` (boots
+  clean, cluster registered). The two exceptions are `firmware/ble-mesh-bridge/`
+  and `firmware/zigbee-bridge/`, which keep Espressif's own unmodified reference
+  `sdkconfig.defaults`.
+- **A real OTA transfer is not wired up yet.** It needs an OTA Provider node
+  commissioned onto the same fabric, actually serving a `.bin`. Downloading an
+  update straight from a GitHub Release also needs a small bridge piece that
+  doesn't exist here yet (Matter OTA is BDX-from-a-Provider, not arbitrary
+  URLs). Tracked in `CLAUDE.md` → *Open next steps*.
+
+For now: rebuild and re-flash following [Path A](#path-a--the-easy-way-the-product-wizard)
+or [Path B](#path-b--the-manual-way-build-your-first-device-by-hand) whenever you
+change a firmware. Bump `PROJECT_VER` in the firmware's root `CMakeLists.txt` per
+release.
+
+---
+
+## The device catalog (69 types)
+
+Every folder under `firmware/` is real, buildable firmware — not a placeholder.
+Each `main/app_main.cpp` opens with a long header comment documenting exactly
+what was checked against the Matter spec / chip datasheets, the wiring, and any
+known limitations. `CLAUDE.md` has an exhaustive per-device engineering log.
+
+**Legend:** ✅ = verified end-to-end on real hardware · 🔨 = build-verified in
+Docker only (most of the catalog — hardware for every device type simply wasn't
+on hand). Where a device type offers a choice of sensor/driver chip, only some
+of those chips are hardware-verified; see the firmware's own header comment.
+
+<details open>
+<summary><b>Lighting</b> (7)</summary>
+
+| Device | Folder | Notes |
+|---|---|---|
+| On/Off Light | `light/` | ✅ The reference device. LED on GPIO 2. |
+| Dimmable Light | `dimmable-light/` | ✅ OnOff + LevelControl, real PWM via LEDC. Remembers brightness across off/on. |
+| Color Light (RGB / RGBW / RGBWW) | `color-light/` | 🔨 Extended Color Light, Hue/Saturation (+ ColorTemperature in RGBWW/RGBCCT mode). 3 build-time hardware variants. |
+| Addressable LED Strip | `addressable-light/` | ✅ (WS2812B, SK6812 RGBW) Single-color over 8 chips: WS2812B/WS2813/WS2815/SK6812/SK6812-RGBW/WS2805 (RMT), APA102 (SPI), SM2335EGH (bit-banged). |
+| Color Temperature Light | `color-temperature-light/` | 🔨 Tunable white — cool + warm channels only, no RGB. |
+| Mounted On/Off Control | `mounted-onoff-control/` | 🔨 In-wall relay module (Shelly 1 / Sonoff Basic class). |
+| Mounted Dimmable Load Control | `mounted-dimmable-load-control/` | 🔨 In-wall dimmer module. |
+
+</details>
+
+<details>
+<summary><b>Switches & Remotes</b> (client / control-only devices)</summary>
+
+| Device | Folder | Notes |
+|---|---|---|
+| On/Off Light Switch | `switch/` | ✅ (single button) 1–4 independent buttons, each its own bindable endpoint. |
+| Generic Switch | `generic-switch/` | 🔨 "Smart button" — single/double/triple/long-press events for automations. |
+| Dimmer Switch | `dimmer-switch/` | 🔨 Button + rotary encoder, sends On/Off + LevelControl to a bound light. |
+| Color Dimmer Switch | `color-dimmer-switch/` | 🔨 Dimmer Switch + a second encoder for hue. |
+| Mode Select | `mode-select/` | 🔨 Physical scene/activity selector (Home / Away / Night). |
+| Door Lock Controller | `door-lock-controller/` | 🔨 Lock / Unlock buttons for a bound door lock (timed invoke). |
+| Thermostat Controller | `thermostat-controller/` | 🔨 Rotary-knob setpoint remote. |
+| Window Covering Controller | `window-covering-controller/` | 🔨 Open / Close / Stop remote. |
+| Closure Controller | `closure-controller/` | 🔨 Open / Close remote for a garage door / shutter. |
+| Pump Controller | `pump-controller/` | 🔨 On/Off remote for a bound pump. |
+| Control Bridge | `control-bridge/` | 🔨 Universal light remote (On/Off + Level + Color). |
+| On/Off Sensor | `on-off-sensor/` | 🔨 A PIR/radar module that sends On/Off directly to a bound light — no sensing cluster of its own. |
+
+</details>
+
+<details>
+<summary><b>Outlets & Power</b></summary>
+
+| Device | Folder | Notes |
+|---|---|---|
+| Outlet (On/Off Plug-in Unit) | `outlet/` | ✅ Button toggles its own OnOff. Optional relay, status LED, and one of 6 power-monitor chips (2nd Electrical Sensor endpoint). |
+| Dimmable Plug-In Unit | `dimmable-plug/` | 🔨 Outlet + LevelControl (PWM into a dimmer module). |
+| Electrical Meter | `electrical-meter/` | 🔨 Whole-circuit energy meter, 6-chip power-monitor subsystem. |
+| Electrical Utility Meter | `electrical-utility-meter/` | 🔨 Electrical Meter + Meter Identification + root-node time sync. |
+| Meter Reference Point | `meter-reference-point/` | 🔨 The simplest firmware here — Identify + root time sync only. |
+| Battery Storage | `battery-storage/` | 🔨 Home battery system — PowerSource battery metrics + composed Electrical Sensor. |
+| Solar Power | `solar-power/` | 🔨 Solar inverter power meter (exported-energy framing). |
+| Energy EVSE | `evse/` | 🔨 EV charger controller. ⚠️ Gates an *already-certified* EVSE's enable input — does **not** implement the SAE J1772 Control Pilot. |
+
+</details>
+
+<details>
+<summary><b>Sensors</b></summary>
+
+| Device | Folder | Notes |
+|---|---|---|
+| Contact Sensor | `contact-sensor/` | ✅ Reed switch → Boolean State. |
+| Temperature Sensor | `temperature-sensor/` | ✅ (SHT3x, DHT11, DHT22) Choice of 7 chips: SHT3x/SHT4x/AHT20/DHT11/DHT22/DS18B20/BME280. Multi-endpoint (temp + humidity). |
+| Humidity Sensor | `humidity-sensor/` | 🔨 Standalone humidity, 6-chip choice (no DS18B20). |
+| Light Sensor | `light-sensor/` | 🔨 LDR (analog/ADC) or BH1750 (I2C). |
+| Occupancy Sensor | `occupancy-sensor/` | ✅ (PIR) PIR / RCWL-0516 / HLK-LD2410. |
+| Air Quality Sensor | `air-quality-sensor/` | 🔨 CCS811 eCO2/eTVOC + optional MQ-7/MQ-131/PMS5003/ZE08-CH2O/MiCS-4514 + temp/humidity. |
+| Pressure Sensor | `pressure-sensor/` | 🔨 BMP280 barometric. |
+| Flow Sensor | `flow-sensor/` | 🔨 YF-S201-class Hall-effect pulse flow sensor. |
+| Soil Sensor | `soil-sensor/` | 🔨 Capacitive soil-moisture probe + optional DS18B20 soil temp. |
+| Water Leak Detector | `water-leak-detector/` | 🔨 LM393 water probe → Boolean State (`true` = leak). |
+| Water Freeze Detector | `water-freeze-detector/` | 🔨 DS18B20 + threshold classifier. |
+| Rain Sensor | `rain-sensor/` | 🔨 Same LM393 board as the leak detector, mounted for rain. |
+| Smoke CO Alarm | `smoke-co-alarm/` | 🔨 MQ-2 smoke + MQ-7 CO + optional temp/humidity. Life-safety alarm cluster. |
+
+</details>
+
+<details>
+<summary><b>Climate & Ventilation</b></summary>
+
+| Device | Folder | Notes |
+|---|---|---|
+| Thermostat (Heat + Cool) | `thermostat/` | 🔨 Real control loop. Relay / bound relay / native **OpenTherm** master. Optional rotary encoder + GC9A01/ST7789/SSD1306 display. |
+| Room Air Conditioner | `room-air-conditioner/` | 🔨 Cool-only Thermostat + Fan + optional filter monitoring + temp/humidity. |
+| Heat Pump | `heat-pump/` | 🔨 Composed: root + Thermostat child endpoint. Compressor + reversing-valve relays. Optional 6-chip power monitor. |
+| Fan | `fan/` | 🔨 PWM speed (0–100 %) via LEDC. |
+| Air Purifier | `air-purifier/` | 🔨 Fan + HEPA/carbon filter monitoring (time-based life estimate). |
+| Extractor Hood | `extractor-hood/` | 🔨 Fan + grease/carbon filter monitoring. |
+
+</details>
+
+<details>
+<summary><b>Doors, Windows & Closures</b></summary>
+
+| Device | Folder | Notes |
+|---|---|---|
+| Door Lock | `door-lock/` | 🔨 Servo (thumb-turn retrofit) or relay (strike). Optional position sensor. |
+| Window Covering | `window-covering/` | 🔨 Two relays (up/down), time-based position estimate. |
+| Closure | `closure/` | 🔨 Garage door / roller shutter / awning (Closure Control cluster). |
+| Water Valve | `valve/` | 🔨 Relay solenoid, cluster-owned auto-close countdown. |
+
+</details>
+
+<details>
+<summary><b>Appliances</b></summary>
+
+| Device | Folder | Notes |
+|---|---|---|
+| Refrigerator | `refrigerator/` | 🔨 Composed: root + Fridge + Freezer child cabinets. |
+| Dishwasher | `dishwasher/` | 🔨 Operational State cycle + mode + alarm + door interlock. |
+| Laundry Washer | `laundry-washer/` | 🔨 Wash cycle, spin-speed / rinse-count controls. |
+| Laundry Dryer | `laundry-dryer/` | 🔨 Heat + tumble, dryness-level → cycle time. |
+| Oven | `oven/` | 🔨 Composed: root + heated cavity. Oven Mode + Oven Cavity Operational State (hand-assembled clusters). |
+| Microwave Oven | `microwave-oven/` | 🔨 Duty-cycle power control. ⚠️ Gates an OEM cooking module's enable input, not a consumer microwave's internals. |
+| Cooktop | `cooktop/` | 🔨 Composed: Cooktop + Cook Surface. TemperatureLevel power steps; optional MAX6675/MAX31855 thermocouple. |
+| Water Heater | `water-heater/` | 🔨 Thermostat + Water Heater Management (Boost) + DS18B20. Optional 6-chip power monitor. |
+| Robotic Vacuum Cleaner | `robot-vacuum/` | 🔨 Run/Clean modes + Operational State. Two drive motors; no navigation (honest scope cut). |
+| Pump | `pump/` | 🔨 On/Off + speed + OperationMode. Optional temp/pressure/flow measurement. |
+| Irrigation System | `irrigation-system/` | 🔨 Single-zone valve + flow measurement + timed cycle. |
+| Temperature Controlled Cabinet | `temperature-controlled-cabinet/` | 🔨 Standalone wine cooler / mini-fridge. |
+
+</details>
+
+<details>
+<summary><b>Doorbell & Chime</b></summary>
+
+| Device | Folder | Notes |
+|---|---|---|
+| Doorbell | `doorbell/` | 🔨 Button → Chime client. Binds to a Chime device. |
+| Chime | `chime/` | 🔨 Piezo-buzzer receiver — two tone patterns, LEDC audio-frequency PWM. |
+
+</details>
+
+<details>
+<summary><b>Bridges & infrastructure</b></summary>
+
+| Device | Folder | Wizard? | Notes |
+|---|---|---|---|
+| RF433 / IR Bridge | `rf-ir-bridge/` | ✅ | Learns EV1527/PT2262 433 MHz codes **and** NEC IR button presses → dynamic Generic Switch endpoints. Both protocols independently toggleable. |
+| BLE Mesh Bridge | `ble-mesh-bridge/` | ✖ | Verbatim port of esp-matter's reference. Exposes provisioned BLE Mesh nodes as Matter endpoints. |
+| Zigbee Bridge | `zigbee-bridge/` | ✖ | Two-chip (ESP32-S3 host + ESP32-H2 RCP). Verbatim port of esp-matter's reference. |
+| Thread Border Router | `thread-border-router/` | ✖ | Two-chip (ESP32-S3 + ESP32-H2). Real OpenThread Border Router — makes a separate Thread mesh reachable. |
+| Matter Camera | `camera/` | ✖ | Two-chip (ESP32-P4 + ESP32-C6) split architecture. Verbatim port of esp-matter's reference; needs the external Amazon KVS WebRTC SDK. See `firmware/camera/README.md`. |
+
+</details>
+
+---
+
+## For advanced users
+
+### Repository layout
 
 ```
 esp32-matter/
-├── firmware/
-│   ├── light/               # A minimal On/Off light — your starting point
-│   │   ├── main/app_main.cpp
-│   │   ├── main/CMakeLists.txt
-│   │   ├── CMakeLists.txt
-│   │   ├── partitions.csv   # OTA A/B slots + separate factory partition
-│   │   └── sdkconfig.defaults
-│   └── switch/              # A minimal On/Off switch — copied from light/
-│       └── (same layout as light/)
+├── firmware/<type>/          One folder per device type (69). Each has:
+│   ├── main/app_main.cpp       plain esp-matter C++ + a long header comment
+│   ├── main/CMakeLists.txt
+│   ├── CMakeLists.txt          root project file; sets PROJECT_VER + project-wide flags
+│   ├── partitions.csv          OTA A/B slots + separate fctry partition (fits 4 MB)
+│   └── sdkconfig.defaults      factory-data provider, custom partitions, OTA requestor
 ├── tools/
-│   ├── dev.sh               # Opens the Docker dev environment
-│   ├── gen_factory.sh       # Generates the factory partition + QR code locally
-│   └── product-wizard/      # Local no-build web UI to set up a device + generate build/flash commands
-├── docs/
-│   └── getting-started.md  # Step-by-step first-device guide
-└── SECURITY.md             # How to enable flash encryption + secure boot
+│   ├── dev.sh                  opens the pinned Docker dev environment
+│   ├── gen_factory.sh          offline factory partition + QR generator
+│   └── product-wizard/         local no-build web UI (index.html + README.md)
+├── modules/                    per-chip SVG illustrations used by the wizard
+├── Icons/                      hand-drawn device-type icon source (SVG)
+├── docs/getting-started.md     first-device walkthrough
+├── SECURITY.md                 flash encryption / secure boot / signed OTA
+├── CLAUDE.md                   exhaustive engineering log — read this for depth
+└── LICENSE                     MIT
 ```
 
-## Quick start (Docker)
+**`CLAUDE.md` is the real design document.** It carries a full per-device
+engineering log: what was checked against the Matter spec and chip datasheets,
+every SDK gotcha found, what's hardware-verified vs. build-verified, and why each
+scoping decision was made.
 
-1. **Install Docker Desktop** and make sure it's running.
+### Anatomy of a firmware folder
 
-2. **Pull the esp-matter image** (ESP-IDF + esp-matter pre-installed). Pinned
-   to esp-matter's own recommended ESP-IDF version (v5.5.4) for reproducible
-   builds — esp-matter doesn't support ESP-IDF v6.0.x yet:
-   ```bash
-   docker pull espressif/esp-matter:release-v1.6_idf_v5.5.4
-   ```
+Every device type is self-contained and follows the same shape as
+`firmware/light/`:
 
-3. **Clone this repository:**
-   ```bash
-   git clone https://github.com/AchimPieters/esp32-matter.git
-   cd esp32-matter
-   ```
-   (No `--recursive` — esp-matter/connectedhomeip live inside the Docker
-   image, not as git submodules here.)
+- **`main/app_main.cpp`** — creates the Matter node + endpoint(s), wires cluster
+  callbacks to GPIO, runs the app. The header comment is the per-device spec.
+- **Compile-time configuration is via `#define`s** near the top of
+  `app_main.cpp` (e.g. `SENSOR_TYPE`, `OUTLET_POWER_MONITOR`,
+  `SWITCH_BUTTON_COUNT`, `*_GPIO`). The wizard edits these with `sed`; you can
+  edit them by hand.
+- **`partitions.csv`** — identical layout everywhere: `nvs`, `nvs_keys`,
+  `otadata`, `phy_init`, `ota_0` (`0x20000`), `ota_1` (`0x200000`), `fctry`
+  (`0x3E0000`). No factory app slot — OTA data drives boot slot selection.
+- **`sdkconfig.defaults`** — factory-data provider reading from `fctry`, the
+  custom partition table, `CONFIG_ENABLE_OTA_REQUESTOR=y`, BLE + IPv6 for
+  commissioning, `CONFIG_MBEDTLS_HKDF_C=y`. Security hardening options are
+  present but commented out (see `SECURITY.md`).
 
-4. **Open the dev environment** (mounts the repo at /project inside the container):
-   ```bash
-   ./tools/dev.sh
-   ```
-   Or manually, exactly in the StudioPieters style:
-   ```bash
-   docker run --rm -it -v "$PWD":/project -w /project espressif/esp-matter:release-v1.6_idf_v5.5.4 /bin/bash
-   ```
+### Adding a new device type
 
-5. **Build inside the container.** The image's entrypoint already activates
-   ESP-IDF and esp-matter for you, but it also leaves the shell in
-   `$ESP_MATTER_PATH`, not `/project` — use the absolute path:
-   ```bash
-   cd /project/firmware/light
-   idf.py set-target esp32        # or esp32c2 / esp32c3 / esp32c5 / esp32c6 / esp32c61 / esp32s3 / esp32h2
-   idf.py build
-   ```
+1. Copy the closest existing folder (`cp -r firmware/light firmware/my-thing`).
+2. In `main/app_main.cpp`, swap the endpoint type — esp-matter ships ready-made
+   helpers (`endpoint::dimmable_light::create()`,
+   `endpoint::temperature_sensor::create()`,
+   `endpoint::robotic_vacuum_cleaner::create()`, …). Prefer a **complete
+   top-level helper** where one exists: it creates the endpoint's Descriptor
+   cluster automatically via `common::create<T>()`. Hand-assembling from
+   `endpoint::create()` + individual `cluster::*::create()` calls is only needed
+   when the helper doesn't wire up a cluster you need — and then you must call
+   `cluster::descriptor::create()` yourself first (a missing Descriptor cluster
+   is silently tolerated by Home Assistant but rejected by Apple Home).
+3. In the root `CMakeLists.txt`, rename `project(matter_light)` to
+   `project(matter_my_thing)` — the binary name follows.
+4. Verify against the **CSA device type XML** (inside the Docker image at
+   `$ESP_MATTER_PATH/connectedhomeip/connectedhomeip/data_model/1.6/device_types/`)
+   which clusters are `mandatoryConform` vs. `optionalConform` — don't trust a
+   secondary summary.
+5. Some cluster attributes are **not** writable via the generic
+   `attribute::update()` — "code-driven" cluster classes (BooleanState,
+   TemperatureMeasurement, OccupancySensing, …) need their own setter looked up
+   through the data model provider's registry. If there's a folder for the
+   cluster under `data_model_provider/clusters/`, it's code-driven.
+6. Add it to the wizard: a new `DEVICE_TYPES` entry + `COMPONENT_LIBRARY`
+   entries in `tools/product-wizard/index.html`. See its README for the
+   mechanisms (`componentOptions`, `extraPickers`, `clusterOptions`,
+   `numberFields`, …).
 
-6. **Flash from your host** (Docker Desktop on macOS can't see the USB port, so
-   flash outside the container — install esptool with `pip3 install esptool`).
-   `0x1000` is the bootloader offset for classic ESP32 specifically — it's
-   `0x0` on every later chip (C2/C3/C5/C6/C61/S3/H2). `ota_data_initial.bin` is
-   required too: this partition table has no "factory" app slot, so the
-   bootloader needs it to know which OTA slot to boot.
-   ```bash
-   esptool.py -p <PORT> write_flash \
-       0x1000  firmware/light/build/bootloader/bootloader.bin \
-       0x8000  firmware/light/build/partition_table/partition-table.bin \
-       0x10000 firmware/light/build/ota_data_initial.bin \
-       0x20000 firmware/light/build/matter_light.bin
-   ```
+### Build-system gotchas
 
-7. **Generate your QR code (offline)** and **commission** — see
-   `docs/getting-started.md`.
+Already worked around in this repo's `CMakeLists.txt` files, worth knowing if
+you copy one:
 
-## Adding more device types
+- **Don't add `$ESP_MATTER_PATH/examples/common` to `EXTRA_COMPONENT_DIRS`**
+  unless you use something from it — ESP-IDF tries to build every component it
+  finds there, and `app_reset` needs a `button` component this project doesn't
+  declare.
+- **`-DCHIP_HAVE_CONFIG_H` (and a few other flags) must be set project-wide**
+  via `idf_build_set_property(...)` *before* `project(...)` in the root
+  `CMakeLists.txt` — connectedhomeip/esp_matter compile as their own component,
+  so setting it only on `main` isn't enough.
 
-`firmware/switch/` is a second example, copied from `firmware/light/` with the
-endpoint type swapped to `on_off_light_switch` — each button sends a real
-OnOff Toggle command to whatever it's bound to, via esp-matter's client
-invoke API. Supports 1-4 independent buttons (`#define SWITCH_BUTTON_COUNT`,
-default 1), each its own endpoint independently bindable to a different
-target device — the same way Matter models a physical multi-gang wall
-switch. `client::set_request_callback()` only needs registering once
-regardless of button count (it's endpoint-agnostic by design). Both the
-single-button default and the 4-button path are build-verified in Docker;
-only the single-button configuration has been tested on real hardware so
-far. See its `app_main.cpp` header comment for the full explanation,
-including a documented limitation around two buttons pressed at almost the
-same instant (the second Toggle waits for the first press to fully release).
+### Supported chips & targets
 
-`firmware/contact-sensor/` is a third example (`contact_sensor` endpoint
-type): a digital input (e.g. a door/window reed switch) reported through the
-Boolean State cluster's StateValue attribute. Note for anyone copying it as a
-template for another sensor-style device: updating that attribute from app
-code needs esp-matter's cluster-specific setter API
-(`BooleanStateCluster::SetStateValue()`), not the generic `attribute::update()`
-that `firmware/light/` uses — BooleanState is implemented via a newer
-"code-driven" cluster class in this SDK version, and the generic attribute
-store returns `ESP_ERR_NOT_SUPPORTED` for it. See the comment above
-`update_contact_state()` in its `app_main.cpp` for the full explanation and
-the working pattern.
+Default target is the classic **ESP32 (WROOM-32)**. Also builds for `esp32c2`,
+`esp32c3`, `esp32c5`, `esp32c6`, `esp32c61`, `esp32s3`, `esp32h2` via
+`idf.py set-target`.
 
-`firmware/outlet/` (`on_off_plug_in_unit` endpoint type) is a fourth
-example: a physical button that toggles its *own* Matter OnOff attribute
-directly (`attribute::update()`, same server-side pattern as
-`firmware/light/`), so — unlike `firmware/switch/` — it shows up as a
-real, controllable tile in Apple/Google Home. Apple Home labels it
-"Outlet"/"Stopcontact" rather than "Switch"; that's expected, not a bug —
-Matter's device type library has no separate device type for "a wall
-switch with its own on/off state" distinct from a plug-in outlet (every
-device type with "Switch" in the name is a client/input device, none of
-them a controllable output). See the header comment in its `app_main.cpp`
-for the full explanation.
+- **Wi-Fi-only:** classic ESP32, C2, C3, C61, S3.
+- **802.15.4 / Thread-capable:** C5, C6, H2 (this repo builds Matter-over-Thread
+  for them, never Zigbee firmware).
+- **Excluded:** ESP32-H4 / H21 (radio defines commented out in ESP-IDF v5.5.4's
+  `soc_caps.h`), ESP32-P4 (no radio of its own), ESP32-S2 (no BLE, so no
+  standard Matter commissioning).
+- **Do not bump the Docker image to an ESP-IDF v6.0.x tag** — esp-matter doesn't
+  support it yet.
 
-`OUTLET_OUTPUT_TYPE` defaults to a relay module (active-LOW, matching what
-an actual power outlet/smart plug normally switches with; always check
-your specific module's own wiring, since polarity isn't universal) — not a
-wizard-exposed choice, since offering a plain LED as an equally-weighted
-alternative was misleading rather than useful; LED (active-HIGH) is still
-there in the source for breadboard testing, just edit the `#define`
-directly. A separate, independently-optional `OUTLET_STATUS_LED_GPIO` (off
-by default) adds a third LED some real plug hardware has: a small
-indicator that continuously mirrors on/off state, wired to its own GPIO —
-different from the required Identify LED, which only blinks temporarily on
-a controller's Identify command. And `OUTLET_POWER_MONITOR` optionally
-compiles in one of **six** power-monitoring chips — **BL0942** and
-**CSE7766** (UART), **BL0937**, **HLW8012**, and **CSE7759** (GPIO
-pulse-frequency), and **ADE7953** (I2C) — feeding a second Matter
-endpoint (Electrical Sensor, device type 0x0510). Power readings use a
-hand-written push-style `Delegate` (adapted from esp-matter's own
-`examples/all_device_types_app` reference, since the generic cluster
-config for it is an undocumented raw pointer); energy readings use
-esp-matter's own ready-made `ElectricalEnergyMeasurement` API directly —
-two different integration patterns for two clusters in the same file.
-Every chip's protocol/formula was checked against its own manufacturer
-datasheet, which caught two real bugs during development (BL0942 had
-current/voltage at swapped byte offsets; CSE7766's status byte was
-mischaracterized) — see the header comment in `app_main.cpp` for the
-full per-chip story, including which ones (CSE7759, ADE7953) could only
-be partially or indirectly verified. Build-verified in Docker for all 7
-power-monitor configurations; not hardware-tested (no module of any of
-the six chips was physically available here).
+### Two-chip device types
 
-`firmware/temperature-sensor/` is a fifth example, and this repo's first
-sensor device with more than one supported chip: change `SENSOR_TYPE` in
-`app_main.cpp` (or let the wizard's sed command do it) to pick from **SHT3x,
-SHT4x, AHT20, DHT11, DHT22, DS18B20, or BME280** — whichever you actually
-have wired up. Each is a genuinely different protocol/command set (I2C,
-single-wire bit-banged, or 1-Wire), not just a different pin, so all seven
-drivers live behind `#if SENSOR_TYPE == ...` in the one file rather than
-being a runtime setting. SHT3x, DHT11, and DHT22 are verified on real
-hardware in this repo; the other four are implemented from their
-datasheets/reference drivers but not personally hardware-tested here —
-each driver's own comment in `app_main.cpp` says which and why. It's also
-this repo's first multi-endpoint device: temperature (`temperature_sensor`
-device type) and humidity (`humidity_sensor`) each get their own endpoint,
-since Matter has no single device type combining both (DS18B20 is
-temperature-only, so it skips the humidity endpoint entirely). Both
-`TemperatureMeasurementCluster` and `RelativeHumidityMeasurementCluster`
-are the same kind of "code-driven" cluster class as `firmware/contact-
-sensor/`'s BooleanState — updating them needs `SetMeasuredValue()`, not
-the generic `attribute::update()`. See its `app_main.cpp` header comment
-for the full explanation, each sensor's wiring, and why classic ESP32
-needs an external sensor at all (it has no internal temperature sensor
-peripheral, unlike later chips such as S2/S3/C3/C6).
+`camera/`, `zigbee-bridge/` and `thread-border-router/` are genuinely two-chip
+architectures (a host chip + a radio co-processor / media chip). They keep
+Espressif's own unmodified reference build files, are **not** in the wizard, and
+their READMEs explain the extra build steps. `camera/` additionally needs an
+external SDK you clone separately.
 
-`firmware/light-sensor/` is a sixth example, and this repo's second
-device with a choice of sensor chip (after temperature): change
-`SENSOR_TYPE` in `app_main.cpp` (or let the wizard's sed command do it)
-to pick between an **LDR/photoresistor** (this repo's only analog/ADC
-device — every other type is digital: GPIO, I2C, single-wire, or 1-Wire)
-and a **BH1750** digital ambient light sensor over I2C (almost always
-sold as a "GY-30"/"GY-302" breakout). The LDR forms a voltage divider
-read via ESP-IDF's `esp_adc/adc_oneshot.h`, converted through ADC
-calibration (`esp_adc/adc_cali.h` — classic ESP32 only supports the
-"line fitting" scheme, not "curve fitting"; the code uses ESP-IDF's own
-documented `#if`/`#elif` portable pattern so the same source still
-builds correctly on chips that only have the other one) into millivolts,
-then into lux via the standard photoresistor characteristic curve
-(`R_LDR = R10 * (10/lux)^gamma`, using the common GL5528's typical
-datasheet values). BH1750 reports lux directly over I2C — no
-voltage-divider math needed — using its documented "One Time
-H-Resolution Mode" command (`0x20`) and `lux = raw / 1.2` conversion.
-Either way, Matter's Illuminance Measurement cluster stores
-`MeasuredValue` logarithmically (`10000 * log10(lux) + 1`, the same
-encoding Zigbee's ZCL illuminance cluster uses), not raw lux.
-`IlluminanceMeasurementCluster` is the same kind of "code-driven" cluster
-class as the temperature sensor's clusters — same `SetMeasuredValue()`
-fix needed. Unlike every other device type here, neither sensor has been
-tested against physical hardware in this repo (none was on hand when it
-was written) — implemented carefully from datasheet sources and flagged
-as such (in the code, and in the wizard), same standard as the
-temperature sensor's unverified sensor chips. See its `app_main.cpp`
-header comment for the full explanation and wiring for both sensors.
+---
 
-`firmware/dimmable-light/` is a seventh example, and this repo's first
-device type with a real actuator beyond plain on/off — every prior type
-is either a digital GPIO output, a sensor, or (for the switch) a
-remote-control client with no output of its own. Uses esp-matter's
-`dimmable_light` endpoint (OnOff + LevelControl, vs. `firmware/light/`'s
-OnOff-only `on_off_light`), driving the LED as real PWM via ESP-IDF's
-`driver/ledc.h` — one LEDC timer + channel, `LEDC_LOW_SPEED_MODE` for
-portability across every module this repo targets — instead of a plain
-`gpio_set_level()`. LevelControl's `CurrentLevel` turned out to be a
-plain "ember" attribute like OnOff, not one of the newer "code-driven"
-cluster classes other sensors in this repo needed a special setter for —
-confirmed by checking esp-matter's own `data_model_provider/clusters/`
-has no `level_control/` folder — so it uses the exact same
-`attribute::PRE_UPDATE` reaction pattern `firmware/light/` already uses
-for OnOff, just for a second cluster too. `CurrentLevel`'s 1-254 range
-maps directly onto LEDC's 0-255 duty range with no remapping math needed.
-The light boots Off (matching every other device type here), and output
-is on/off state × level together — turning off doesn't forget the
-brightness, so turning back on restores it, same as a real dimmer. See
-its `app_main.cpp` header comment for the full explanation, including
-exactly what was checked against esp-matter's own SDK/reference example
-before writing any of it. Validated end to end on real hardware (ESP32
-WROOM-32, LED on GPIO 2 — this device type's own default, no `#define`
-edits needed): built and flashed via the wizard's own generated commands,
-commissioned into Home Assistant with a clean PASE/CASE handshake, then
-both On/Off and the brightness slider exercised live from Home
-Assistant's UI — confirmed via the serial log, not just the controller's
-own display.
+## Security hardening
 
-`firmware/window-covering/` is an eighth example, and this repo's first
-device type with continuous, multi-second physical movement rather than
-an instant response. Uses esp-matter's `window_covering` endpoint (Lift +
-PositionAwareLift features — up/down travel with percentage position
-reporting, no Tilt). Unlike every other cluster this repo uses,
-WindowCovering doesn't drive hardware or simulate movement by itself —
-confirmed directly in esp-matter's source: it only validates commands and
-calls an app-supplied `Delegate`'s `HandleMovement()`/`HandleStopMotion()`.
-This file's delegate drives two relay outputs (UP/DOWN, active-LOW,
-mutually exclusive by construction) via a shared FreeRTOS task, estimating
-position through linear interpolation against a calibrated full-travel
-time — no position sensor assumed, the same technique ESPHome's/Tasmota's
-own time-based cover components use. Position accuracy is therefore only
-as good as that calibration; a stalled, slipped, or hand-moved covering
-drifts out of sync until the next full open/close command re-anchors it.
-Cross-checked against connectedhomeip's own real reference delegate
-(`examples/chef/common/clusters/window-covering/`) for the correct
-attribute update pattern before writing any of it — see its `app_main.cpp`
-header comment for the full explanation. Build-verified in Docker; not
-hardware-tested (no motor/relay hardware for this device type physically
-available when written).
+For real deployments, see **`SECURITY.md`** for the full walkthrough of:
 
-`firmware/color-light/` is a ninth example — an RGB/RGBW/RGBWW light,
-still declared as the `ExtendedColorLight` Matter device type but
-implementing only Hue/Saturation (plus ColorTemperatureMireds in RGBWW
-mode, see below), not esp-matter's `endpoint::extended_color_light
-::create()` default of Xy + ColorTemperature for every build (confirmed
-in esp-matter's own source that helper never actually adds HueSaturation
-at all, despite that being what most controllers' color wheels drive
-first). Built by calling esp-matter's own lower-level free functions
-directly (`endpoint::create()`, `add_device_type()`, each cluster's own
-`create()`/`feature::xxx::add()`) rather than the higher-level endpoint
-helper — the same public API that helper is itself built from, just
-composed to skip the CIE xyY color mode this repo isn't implementing a
-conversion for. OnOff/LevelControl/ColorControl's Hue and Saturation
-attributes are all plain ember attributes (confirmed against esp-matter's
-own `examples/light/main/app_driver.cpp`) — no Delegate needed. Three
-LEDC PWM channels (R/G/B, one shared timer) combine with LevelControl's
-brightness through a standard HSV→RGB conversion.
+- **Flash encryption** + **Secure Boot v2** (the commented-out
+  `CONFIG_SECURE_*` options in every `sdkconfig.defaults`).
+- **Signed OTA** (`esp_matter_ota_requestor_encrypted_init()`).
+- **`nvs_keys` partition** is already declared `encrypted` in `partitions.csv`.
 
-`COLOR_LIGHT_COLOR_MODE` selects one of three build-time hardware
-variants. RGBW adds a 4th channel driving an RGBW LED/strip's separate
-white output, derived from the same Hue/Saturation color via the
-standard "extract common white" technique (`W = min(R,G,B)`, then
-subtract `W` from each of R/G/B) — the same approach Home Assistant's own
-color utility and WLED use, not something invented for this file;
-Matter's ColorControl cluster itself has no "white" concept, this is
-purely a local hardware-rendering choice. RGBWW (sold by LED strip
-vendors as "RGBCCT"/"RGB+CCT" — same 5-channel hardware) adds separate
-cool-white and warm-white channels instead, and is a genuinely different
-case: real RGBCCT hardware doesn't blend RGB and white simultaneously
-(the same "color_interlock" ESPHome's own rgbww light component
-documents), so this variant adds Matter's ColorTemperature feature
-alongside HueSaturation and locally tracks which color space a
-controller most recently commanded — driving either the RGB channels or
-the cool/warm channels, never both. The mireds→channel-duty conversion
-reuses ESPHome's own `light_call.cpp` formula (clamp into range,
-linear-interpolate the warm/cool fraction, normalize both by their max so
-one channel always stays at full strength). See its `app_main.cpp`
-header comment for the full explanation of all three variants. Build-
-verified in Docker for RGB (default), RGBW, and RGBWW; not
-hardware-tested (no RGB(W)(W) LED/driver board physically available when
-written).
+Leave these **off while learning** — they make re-flashing harder — then turn
+them on before shipping anything.
 
-`firmware/addressable-light/` is a tenth example — the same Matter
-capability as `firmware/color-light/` (one Hue/Saturation/brightness
-color, plus color temperature for its two RGBCCT chips), but driving an
-addressable strip or driver chip instead of plain PWM channels. Every
-pixel/fixture is always set to the same color: Matter has no ratified way
-to command anything else (its `DynamicLighting` cluster, which would
-cover per-pixel/gradient effects, is still `provisional` and absent from
-every shipped Matter spec version — confirmed directly in
-connectedhomeip's own `controller-clusters.matter`), so this is a
-different physical layer for the same single-color light, not "RGBIC"
-per-zone control. `ADDRESSABLE_LIGHT_CHIP` selects from eight chips across
-three protocol families: six single-wire NRZ chips driven via ESP-IDF's
-`driver/rmt_tx.h` (WS2812B, WS2813, WS2815, SK6812, SK6812 RGBW, and
-WS2805 — the last a genuine 5-channel RGBCCT chip using the same
-ColorTemperature/interlock design as Color Light's own RGBWW mode);
-APA102 (DotStar), a real 2-wire SPI protocol driven via
-`driver/spi_master.h`; and SM2335EGH, a bit-banged 2-wire smart-bulb
-driver chip that — unlike every other chip here — drives one fixture's
-RGB+CW+WW channels directly rather than a chain of pixels, so the pixel
-count field doesn't apply to it. Every chip's protocol was independently
-verified against its own manufacturer datasheet where one exists
-(Worldsemi, fetched as PDFs and read with `pdftotext`) or the best
-available community-verified source where it doesn't (APA102, SM2335EGH
-— neither has a usable official protocol datasheet). Identify defaults to
-flashing the strip/fixture itself rather than a separate LED. See its
-`app_main.cpp` header comment for the full explanation of every chip's
-sourcing. Build-verified in Docker for all 8 chips; not hardware-tested
-(none of the 8 chips' hardware was physically available when written).
+**Never commit:** `out/`, `*.bin`, `*-qrcode.png`, generated CSVs (per-device
+secrets), `*.pem` / signing keys. All already covered by `.gitignore`.
 
-`firmware/thermostat/` (Heat + Cool) is this repo's newest, eleventh
-device type — a genuine control loop (local temperature vs. a setpoint)
-with a choice of three ways to actually reach a boiler/AC: direct relay
-wiring, a bound remote relay module (Matter's own Binding cluster), or a
-full native OpenTherm master, plus an optional rotary encoder and a
-choice of three local displays (GC9A01/ST7789 TFT, SSD1306 OLED). See
-CLAUDE.md's repository-layout entry for the full technical detail and
-sourcing. Docker build-verified across every output-mode/encoder/display
-combination; not yet hardware-tested (none of this device type's
-hardware was physically available when written).
+---
 
-`firmware/camera/` (Matter Camera) is this repo's twelfth device type,
-and unlike every other one, not something to copy-and-adapt: it's a
-verbatim copy of esp-matter's own reference camera example (Public
-Domain/CC0), needed because real Matter Camera (`WebRTCTransportProvider`
-+ `CameraAvStreamManagement`, live WebRTC video) requires simultaneous
-Matter signaling and real hardware video encoding — more than any single
-chip elsewhere in this repo can do. It's a two-chip split architecture
-(ESP32-P4 for camera/video encode + ESP32-C6 for Matter, one physical
-**ESP32-P4 Function EV Board**) where `firmware/camera/` is only the
-ESP32-C6 signaling half, and needs a real external SDK dependency (the
-Amazon Kinesis Video Streams WebRTC SDK, cloned separately) that this
-repo doesn't bundle. See `firmware/camera/README.md`'s own preamble and
-CLAUDE.md's repository-layout entry for the full detail. Genuinely
-Docker-build-verified with the real external SDK cloned and built
-against it; not hardware-tested (no ESP32-P4 Function EV Board was
-available), and not offered in the product wizard at all — its
-one-chip-one-firmware data model can't represent this honestly.
+## Hardware-verification status
 
-`firmware/door-lock/` (Matter Door Lock) is this repo's thirteenth device
-type, back to the normal one-chip/one-firmware pattern after camera's
-exception. It's this repo's first device type where the main command
-(LockDoor/UnlockDoor) is handled through a plain C weak-symbol override —
-`emberAfPluginDoorLockOnDoorLockCommand()`/`OnDoorUnlockCommand()` —
-rather than either the `attribute::PRE_UPDATE` pattern or a C++ Delegate
-class used elsewhere, the documented extension point connectedhomeip
-itself calls when no Delegate is configured. `DOOR_LOCK_OUTPUT_TYPE`
-offers SERVO (default — a hobby servo retrofitting an existing
-thumb-turn deadbolt) or RELAY (an electric strike/solenoid); an optional
-position sensor lets LockState reflect a real reading instead of the
-spec-allowed optimistic default. See CLAUDE.md's repository-layout entry
-for the full technical detail, including two real build failures (one
-compile, one link) an actual Docker build caught along the way. Docker
-build-verified across servo/relay and with/without the position sensor;
-not yet hardware-tested (no servo/relay/reed-switch hardware for this
-device type was physically available when written).
+Honesty matters here. Of the 69 device types:
 
-`firmware/smoke-co-alarm/` (Matter Smoke/CO Alarm) is this repo's
-fourteenth device type — its first over the SmokeCoAlarm cluster, a real
-life-safety alarm class rather than a plain sensor readout. An MQ-2 smoke
-sensor, an MQ-7 CO sensor, or both together (the default, matching how
-real combination smoke+CO alarms are sold) drive the cluster's
-SmokeState/COState through a plain adjustable-millivolt-threshold
-classifier — deliberately not a calibrated ppm reading, since MQ-series
-datasheets only document ppm as curves that shift per sensor/module, and
-Matter's own cluster has no numeric concentration attribute to report one
-into anyway. A real controller's SelfTestRequest command is fully
-supported, including a genuine SDK gap this file works around: the
-cluster sets `TestInProgress=true` on its own with no Delegate needed,
-but nothing clears it afterwards unless the app does — confirmed by
-reading `SmokeCoAlarmCluster`'s own source rather than assumed. See
-CLAUDE.md's repository-layout entry for the full detail. Docker
-build-verified across all 3 sensor configs (MQ2+MQ7, MQ2-only,
-MQ7-only); not yet hardware-tested (no MQ-2/MQ-7 module was physically
-available when written).
+- **Verified end-to-end on real hardware** (built, flashed, commissioned,
+  exercised): `light`, `contact-sensor`, `switch` (single-button config),
+  `outlet`, `temperature-sensor` (SHT3x / DHT11 / DHT22), `light-sensor` (LDR
+  boot only), `dimmable-light`, `addressable-light` (WS2812B, SK6812 RGBW),
+  `occupancy-sensor` (PIR).
+- **Everything else is build-verified in Docker only** — the hardware for each
+  device type simply wasn't on hand. The firmware compiles cleanly for its
+  target(s); the runtime wiring is written carefully against the SDK source and
+  chip datasheets, and flagged as unverified in both the code and the wizard.
 
-`firmware/occupancy-sensor/` (Matter Occupancy Sensor) is this repo's
-fifteenth device type — a motion module reporting occupied/unoccupied via
-the OccupancySensing cluster, with a choice of three sensors
-(`OCCUPANCY_SENSOR_TYPE`): PIR (default, e.g. HC-SR501), RCWL-0516
-(microwave Doppler radar), or HLK-LD2410 (24GHz mmWave presence radar —
-only its simple digital OUT pin is used, not its richer UART protocol).
-All three share the exact same GPIO interface, confirmed per chip against
-real sourcing. Built using esp-matter's own complete
-`endpoint::occupancy_sensor::create()` top-level helper rather than
-hand-assembling clusters — deliberately, since that's exactly what
-sidesteps the missing-Descriptor-cluster bug `firmware/color-light/` and
-`firmware/addressable-light/` were found to have during this repo's own
-Apple Home hardware testing (see CLAUDE.md's "Open next steps" for the
-full story). Docker build-verified for all three sensor types; only PIR
-is hardware-verified end to end: commissioned via Apple Home with zero
-errors, then real PIR motion correctly flipped the Home app's tile live.
+Each firmware's `app_main.cpp` header comment and `CLAUDE.md` state precisely
+what has and hasn't been confirmed.
 
-`firmware/fan/` (Matter Fan) is this repo's sixteenth device type and its
-second genuine Delegate-based cluster after Window Covering's
-WindowCovering — real PWM speed control (0-100%, PercentSetting/
-PercentCurrent only, no MultiSpeed/Auto/Rocking/Wind/Step/
-AirflowDirection) driving a MOSFET or fan-speed-controller board via the
-same LEDC peripheral `firmware/dimmable-light/` uses for brightness.
-Built with esp-matter's own complete `endpoint::fan::create()` top-level
-helper, same "avoid the missing-Descriptor-cluster bug class" precedent
-as `firmware/occupancy-sensor/`. Landing the right way to report
-PercentCurrent back to the cluster took two real, sequential Docker build
-failures — a compile error, then a link error — root-caused by reading
-esp-matter's own `fan_control/integration.cpp` directly rather than
-trusting connectedhomeip's generic header alone: esp-matter's build
-substitutes its own integration.cpp, which only implements
-`SetDefaultDelegate()`, not the `Attributes::PercentCurrent::Set()` free
-function the generic header declares — fixed with the same registry-
-lookup-and-cast pattern `firmware/contact-sensor/` and
-`firmware/occupancy-sensor/` already use. See CLAUDE.md's repository-
-layout entry for the full detail. Docker build-verified; not yet
-hardware-tested (no PWM fan/MOSFET driver board was physically available
-when written).
-
-`firmware/air-quality-sensor/` (Matter Air Quality Sensor) is this repo's
-seventeenth device type — a CCS811 I2C gas sensor reporting real
-calibrated eCO2 (ppm) and eTVOC (ppb) via
-CarbonDioxideConcentrationMeasurement/
-TotalVolatileOrganicCompoundsConcentrationMeasurement, plus a Good/Poor
-headline via the AirQuality cluster, all on one endpoint — confirmed as a
-legitimate combination directly against the CSA's own
-AirQualitySensor.xml before writing any code. A real esp-matter gap was
-found and deliberately scoped around: `air_quality::create()` hardcodes
-FeatureMap to 0 with no `config->feature_flags` field at all (unlike
-every comparable optional-feature cluster in this repo), so only
-AirQuality's base Good/Poor/Unknown scale is reachable through the
-helper today — the finer Fair/Moderate/VeryPoor/ExtremelyPoor states are
-a documented future step rather than an unverified workaround. CCS811's
-protocol (I2C address, nWAKE-to-GND wiring, boot sequence, register map,
-output ranges) was verified directly against ams's own datasheet and
-Programming Guide, fetched as PDFs and read via `pdftotext`. See
-CLAUDE.md's repository-layout entry for the full detail. Docker
-build-verified; not yet hardware-tested (no CCS811 module was physically
-available when written).
-
-`firmware/water-leak-detector/` (Matter Water Leak Detector) is this
-repo's eighteenth device type, and the closest sibling to
-`firmware/contact-sensor/` here — esp-matter's own `water_leak_detector::
-add()` and `contact_sensor::add()` are structurally identical (Identify +
-BooleanState + StateChange event). The one thing that genuinely differs:
-StateValue means the OPPOSITE thing here — `true` = "leak detected", not
-contact-sensor's `true` = "closed" — confirmed against Espressif's own
-`MatterWaterLeakDetector` Arduino-ESP32 API and Apple's HomeKit Leak
-Sensor characteristic direction before writing any code. Also surfaced
-the same class of esp-matter FeatureMap gap the air quality sensor found
-(`boolean_state::create()` never sets the ChangeEvent feature its own
-spec requires) — but unlike that one, this gap was judged safe to fix
-directly (a plain `attribute::update()` on FeatureMap before
-`esp_matter::start()`) rather than just documented, since the underlying
-event fires unconditionally either way. See CLAUDE.md's repository-layout
-entry for the full detail. Docker build-verified; not yet hardware-tested
-(no water sensor module was physically available when written).
-
-`firmware/air-purifier/` (Matter Air Purifier) is this repo's nineteenth
-device type — a direct extension of `firmware/fan/`: same FanControl
-Delegate, PWM output, and scope reused near-verbatim, plus
-HepaFilterMonitoring and ActivatedCarbonFilterMonitoring on the same
-endpoint, the two clusters that actually make it an air purifier rather
-than a plain fan. `resource_monitoring::create()` has the same
-FeatureMap-hardcoded-to-0 gap air-quality-sensor and water-leak-detector
-both found — but here esp-matter exposes a real, public
-`feature::condition::add()` API to enable it properly, plus a ready-made
-`GetClusterInstance()` free function for updating Condition/
-ChangeIndication at runtime, a fifth genuinely distinct pattern in this
-repo for writing code-driven cluster attributes from app code. Filter
-life is a plain, adjustable time-based estimate — accumulated
-fan-running seconds against each filter's own configurable rated life in
-hours, persisted across reboots — not a real sensor reading. See
-CLAUDE.md's repository-layout entry for the full detail, including two
-real compile errors an actual Docker build caught along the way. Docker
-build-verified; not yet hardware-tested (no PWM fan/MOSFET driver board
-was physically available when written).
-
-`firmware/valve/` (Matter Water Valve) is this repo's twentieth device
-type — a relay-driven solenoid valve responding to Open/Close commands.
-This repo's third genuine Delegate-based cluster, but
-`ValveConfigurationAndControlCluster` owns noticeably more of the work
-internally than FanControl or WindowCovering: Open/Close handling and the
-actual 1-second auto-close countdown timer (e.g. for a timed irrigation
-zone) are handled entirely inside the cluster itself — this file only
-actuates the relay and reports state back. A second real gap: unlike
-FanControl/ResourceMonitoring, esp-matter ships no public header
-declaring a `SetDefaultDelegate()`-style free function for this cluster
-at all, worked around via the cluster's own `SetDelegate()` method
-through the usual registry-lookup pattern. Researching this device
-type's own delegate registration is also what surfaced a real bug in
-`firmware/fan/` and `firmware/air-purifier/`: both called
-`FanControl::SetDefaultDelegate()` before `esp_matter::start()`, which
-silently no-oped the whole time (fixed in both — see CLAUDE.md's "Open
-next steps" for the full story). See CLAUDE.md's repository-layout entry
-for the complete detail. Docker build-verified; not yet hardware-tested
-(no relay/solenoid-valve hardware was physically available when
-written).
-
-`firmware/pressure-sensor/` (Matter Pressure Sensor) is this repo's
-twenty-first device type — the simplest device type XML in this repo so
-far (just Identify + one mandatory cluster). A BMP280 I2C barometric
-sensor reports MeasuredValue (kPa, resolution 0.1 kPa — an encoding not
-spelled out in Matter's own machine-readable cluster XML, confirmed
-instead against Home Assistant's own real, open-source Matter
-integration). BMP280's protocol verified against Bosch's own official
-datasheet, fetched as a PDF and read via `pdftotext`. A real, self-caught
-mistake along the way: the compensation formula was written from memory
-(correctly, as it turned out) but its own header comment initially cited
-the wrong datasheet section — caught by re-checking against the literal
-fetched PDF text before finalizing, not assumed correct just because the
-code looked familiar. See CLAUDE.md's repository-layout entry for the
-full detail. Docker build-verified (clean first attempt); not yet
-hardware-tested (no BMP280 module was physically available when
-written).
-
-To add another (simpler) type, copy any of the other twenty folders
-and swap the endpoint type in `app_main.cpp` — esp-matter provides many
-more ready-made types, e.g. `robotic_vacuum_cleaner`.
-
-## Updates
-
-No CI yet (see CLAUDE.md — an automated build/release workflow was tried
-but the multi-GB Docker image stalled out on GitHub-hosted runners, so it
-was reverted rather than left flaky). Build + flash a new version yourself
-following the Quick Start steps above whenever you change `app_main.cpp`.
-
-All twenty-one device types also ship with Matter's **OTA Requestor** cluster
-enabled (`CONFIG_ENABLE_OTA_REQUESTOR=y`), so once a device is bound to an
-OTA Provider node on the same fabric, it can fetch and install updates over
-the air using the existing `ota_0`/`ota_1` A/B partition slots — no app
-code needed, esp-matter wires the requestor up automatically. Setting up
-that binding needs a controller (same idea as `firmware/switch`'s Binding
-cluster for sending commands) and an OTA Provider node actually serving a
-`.bin` — this repo doesn't run one yet. The requestor side has been
-verified on real hardware (boots cleanly, registers the cluster, no
-errors); the provider side and a full transfer are open, tracked in
-CLAUDE.md's next steps alongside the binding test, which hits the same
-"needs a second commissioned device + tooling" wall.
-
-All twenty-one device types also have a quick-power-cycle factory reset
-(see CLAUDE.md's "Open next steps" for the full sourcing/verification
-detail): power the device off and on 3 times in a row (about 2 seconds
-each way) and it factory-resets and re-enters setup mode, no button or
-extra pin needed. Built on esp-matter's own `esp_matter::factory_reset()`,
-called only after Matter has started (confirmed against its own
-implementation and reference `app_reset` component).
-
-Docker build-verified across all twenty-one device types, not yet
-hardware-tested. The product wizard (`tools/product-wizard/`) shows the
-factory-reset procedure as a standalone info box under Configuration
-Summary. (An earlier optional RGB status LED feature was built and
-extended across every device type here too, then removed — see
-CLAUDE.md's "Open next steps" for why.)
+---
 
 ## Honest expectations
 
@@ -585,6 +641,33 @@ line with ESP-IDF and C++ (inside Docker, so no local toolchain mess). That's th
 price of "no hidden code, nothing shared" — in return you own and can read every
 part of it.
 
-## License
+Getting a device onto **Apple Home / Google Home** in their normal consumer flow
+needs a real CSA Vendor ID and attestation chain this repo can't provide.
+**Home Assistant works today, fully local.**
 
-MIT — see `LICENSE`.
+---
+
+## Project status & contributing
+
+- **No CI.** An automated build/release workflow was tried, but the multi-GB
+  Docker image stalled GitHub-hosted runners, so it was reverted rather than
+  left flaky. Releases are manual: build + flash per this README.
+- **Issues and PRs welcome.** New device types should follow the existing
+  pattern (a self-contained `firmware/<type>/` folder, a documented
+  `app_main.cpp` header, verification against the CSA device type XML, a wizard
+  entry) and note clearly what is and isn't hardware-tested.
+- Read **`CLAUDE.md`** before a substantial change — it captures the reasoning
+  behind decisions that aren't obvious from the code alone.
+
+---
+
+## License & credits
+
+**MIT** — see [`LICENSE`](LICENSE).
+
+Built by **Achim Pieters / [StudioPieters®](https://www.studiopieters.nl)** on
+top of Espressif's open-source [esp-matter](https://github.com/espressif/esp-matter)
+and [ESP-IDF](https://github.com/espressif/esp-idf), and the
+[Connectivity Standards Alliance](https://csa-iot.org/)'s Matter specification.
+Development environment adapted from the
+[StudioPieters ESP32 HomeKit development guide](https://www.studiopieters.nl/esp32-homekit-development/).

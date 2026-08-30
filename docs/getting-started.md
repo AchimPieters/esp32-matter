@@ -75,49 +75,71 @@ idf.py build
 The build output lands in `firmware/light/build/`, which is visible on your host
 too (thanks to the mounted volume).
 
-## 6. Flash from the host
+## 6. Generate your own QR code (offline, inside the container)
 
-Docker Desktop on macOS/Windows can't reach the USB serial port, so flash from
-your host (outside the container) with esptool:
-
-```bash
-esptool.py -p <PORT> write_flash \
-  0x0     firmware/light/build/bootloader/bootloader.bin \
-  0x8000  firmware/light/build/partition_table/partition-table.bin \
-  0x20000 firmware/light/build/matter_light.bin
-```
-
-Find `<PORT>` with `ls /dev/tty.*` (macOS) or `ls /dev/ttyUSB*` (Linux). On Linux
-you *can* also pass the device into Docker with `--device=/dev/ttyUSB0` and use
-`idf.py flash` directly, but the host route above works everywhere.
-
-## 7. Generate your own QR code (offline, inside the container)
+Still inside the container, from the firmware folder:
 
 ```bash
-pip install esp-matter-mfg-tool
-../../tools/gen_factory.sh
+pip install esp-matter-mfg-tool          # once; chip-cert already ships in the image
+cd /project/firmware/light
+/project/tools/gen_factory.sh
 ```
 
-This writes, under `out/<vid_pid>/<uuid>/`:
+This writes, under `firmware/light/out/<vid_pid>/<uuid>/`:
 
-- `*-partition.bin` — the factory partition (certificates + commissioning data)
+- `*-partition.bin` — the factory partition (per-device certificates +
+  commissioning data)
 - `*-qrcode.png` — the QR code to scan
 - a manual pairing code (also in the generated CSV)
 
-Flash the factory partition to the `fctry` slot (from the host):
+Run this **once per physical unit** — every device needs its own identity.
+
+## 7. Flash from the host
+
+Docker Desktop on macOS/Windows can't reach the USB serial port, so flash from
+your host (outside the container) with esptool. Find `<PORT>` with
+`ls /dev/tty.*` (macOS) or `ls /dev/ttyUSB*` (Linux).
 
 ```bash
-esptool.py -p <PORT> write_flash 0x3E0000 firmware/light/out/**/**-partition.bin
+esptool.py --chip esp32 -p <PORT> -b 460800 --before default_reset --after hard_reset write_flash \
+  --flash_mode dio --flash_size 4MB --flash_freq 40m \
+  0x1000   firmware/light/build/bootloader/bootloader.bin \
+  0x8000   firmware/light/build/partition_table/partition-table.bin \
+  0x10000  firmware/light/build/ota_data_initial.bin \
+  0x20000  firmware/light/build/matter_light.bin \
+  0x3E0000 firmware/light/out/*/*/*-partition.bin
 ```
+
+Notes:
+
+- **Bootloader offset is `0x1000` on the classic ESP32**, but `0x0` on every
+  later chip (C2/C3/C5/C6/C61/S3/H2). `idf.py build` prints the authoritative
+  offsets for whatever you just built.
+- **`ota_data_initial.bin` at `0x10000` is required** — this partition table has
+  no "factory" app slot, so the bootloader uses the OTA data partition to pick a
+  boot slot.
+- **`0x3E0000` is the `fctry` partition** — the factory data / QR identity from
+  step 6.
+
+On Linux you can alternatively pass the device into Docker with
+`--device=/dev/ttyUSB0` and use `idf.py flash` directly.
 
 ## 8. Commission the device
 
-Open your controller app — Apple Home, Google Home, Amazon Alexa, SmartThings,
-or Home Assistant — choose *Add device / Add Matter device*, and scan the QR
-code. Toggle it and watch the LED (and the serial log) respond.
+Open your controller app — **Home Assistant** is recommended for this repo's
+test certificates (see the note below) — choose *Add device / Add Matter
+device*, and scan the QR code. Toggle it and watch the LED (and the serial log)
+respond.
 
 ## 9. Next steps
 
-- Duplicate `firmware/light/` for other device types.
-- Push a `v*` tag to build and publish a Release automatically.
+- Try the **Product Wizard** (`tools/product-wizard/index.html`) — it generates
+  the build + flash commands for any of the 69 device types.
+- Browse the [device catalog](../README.md#the-device-catalog-69-types) and
+  duplicate the closest firmware folder for your own device.
 - Harden for real use: see `../SECURITY.md`.
+- Read `../CLAUDE.md` for the full per-device engineering log.
+
+> Note: Apple Home / Google Home reject this repo's self-signed **test**
+> certificates in their normal consumer flow. Home Assistant and `chip-tool`
+> commission them fine, and stay fully local.
