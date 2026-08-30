@@ -22,12 +22,12 @@
  * create<T>()` — by reading esp_matter_endpoint.cpp's own `soil_sensor::
  * add()` directly. Confirmed against the CSA's own data_model/1.6/
  * device_types/SoilSensor.xml: Identify and SoilMeasurement are
- * `<mandatoryConform/>`; an optional TemperatureMeasurement cluster is also
- * listed but NOT implemented here — real cheap capacitive soil-moisture
- * probes (see below) don't carry a temperature element at all, so there's
- * no sensor reading to back it with; same "smallest reasonable next step"
- * scope cut this repo applies to every other device type's own optional
- * extras.
+ * `<mandatoryConform/>`; an optional TemperatureMeasurement cluster is
+ * also listed — originally not implemented here (real cheap capacitive
+ * soil-moisture probes, see below, don't carry a temperature element at
+ * all), later added as an independently checkable option backed by a
+ * separately wired DS18B20 probe; see the "Later extended" section
+ * further down this comment for the full detail.
  *
  * --- SoilMeasurement: a genuinely new, more severe class of esp-matter gap
  * than anything found in this repo before -----------------------------
@@ -107,6 +107,32 @@
  * firmware/smoke-co-alarm/'s and firmware/air-quality-sensor/'s own
  * threshold classifiers already establish, applied here to a linear
  * two-point scale instead of a single threshold.
+ *
+ * --- Later extended: TemperatureMeasurement, on request (continuing the
+ * `clusterOptions` rollout firmware/cooktop/ and firmware/pump/ started) --
+ * This file's own header comment above already named the gap and the
+ * reason: real cheap capacitive soil-moisture probes don't carry a
+ * temperature element at all. That's still true of the probe itself —
+ * this addition is a SEPARATE sensor, not something extracted from the
+ * moisture probe's own signal: an independently wired DS18B20 waterproof
+ * 1-Wire probe, the exact same driver already reused across firmware/
+ * thermostat/, firmware/water-heater/, and firmware/pump/ — a real, common
+ * pairing for soil monitoring (soil temperature meaningfully affects both
+ * plant health and how moisture readings should be interpreted, and a
+ * waterproof DS18B20 probe is designed to be buried, unlike the fragile
+ * capacitive sensor board above). `SOIL_SENSOR_HAS_TEMPERATURE_
+ * MEASUREMENT` (default off, unchanged default build) adds
+ * TemperatureMeasurement onto this SAME Soil Sensor endpoint via the usual
+ * "add extra clusters onto an already-correct endpoint" pattern —
+ * confirmed to need none of SoilMeasurement's own "must-call-or-crash"
+ * complexity documented above: TemperatureMeasurement is a plain code-
+ * driven cluster with the same registry-lookup-and-cast
+ * `SetMeasuredValue()` setter every other TemperatureMeasurement instance
+ * in this repo already uses, no special init-order requirement. The
+ * existing `soil_sensor_task`'s own 30s poll loop reads and reports the
+ * DS18B20 alongside the moisture sensor each cycle — no second task
+ * needed, since both readings change slowly and there's no reason to
+ * poll temperature on a different cadence.
  */
 
 #include <esp_err.h>
@@ -114,6 +140,7 @@
 #include <nvs_flash.h>
 #include <driver/gpio.h>
 #include <esp_timer.h>
+#include <esp_rom_sys.h>
 
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
@@ -125,6 +152,8 @@
 #include <esp_matter.h>
 #include <app-common/zap-generated/cluster-objects.h>
 #include <data_model_provider/clusters/soil_measurement/integration.h>
+#include <data_model_provider/esp_matter_data_model_provider.h>
+#include <app/clusters/temperature-measurement-server/TemperatureMeasurementCluster.h>
 
 static const char *TAG = "matter_soil_sensor";
 
@@ -166,6 +195,14 @@ static const char *TAG = "matter_soil_sensor";
 
 /* Soil moisture changes slowly — no need to poll faster than this. */
 #define SOIL_SENSOR_POLL_INTERVAL_MS 30000
+
+/* --- Optional TemperatureMeasurement (DS18B20 probe) — see the header
+ * comment above for the full sourcing/reuse detail. Default off,
+ * unchanged default build. */
+#define SOIL_SENSOR_HAS_TEMPERATURE_MEASUREMENT 0
+#define SOIL_SENSOR_TEMP_SENSOR_GPIO GPIO_NUM_4 /* DS18B20 1-Wire data pin */
+#define SOIL_SENSOR_TEMP_MIN_CENTIDEGREES (-5500) /* -55.00 degC — DS18B20's own rated range */
+#define SOIL_SENSOR_TEMP_MAX_CENTIDEGREES 12500   /* 125.00 degC — DS18B20's own rated range */
 
 /* Quick-power-cycle factory reset — see firmware/light/main/app_main.cpp's
  * header comment for the full mechanism and its sourcing. */
@@ -300,12 +337,164 @@ static bool sensor_setup(void)
     return true;
 }
 
-/* Periodically reads the sensor and pushes a fresh moisture value into
- * Matter via esp-matter's own ready-made free function — see the header
+#if SOIL_SENSOR_HAS_TEMPERATURE_MEASUREMENT
+/* --- DS18B20 1-Wire driver — reused byte-for-byte from firmware/
+ * water-heater/'s own driver (itself firmware/thermostat/'s own, also
+ * reused verbatim in firmware/pump/), see the header comment above for
+ * the full timing/CRC/sourcing detail. Only the pin macro name differs. */
+static bool soil_temp_ow_reset(void)
+{
+    gpio_set_level(SOIL_SENSOR_TEMP_SENSOR_GPIO, 0);
+    esp_rom_delay_us(480);
+    gpio_set_level(SOIL_SENSOR_TEMP_SENSOR_GPIO, 1);
+    esp_rom_delay_us(70);
+    bool present = (gpio_get_level(SOIL_SENSOR_TEMP_SENSOR_GPIO) == 0);
+    esp_rom_delay_us(410);
+    return present;
+}
+
+static void soil_temp_ow_write_bit(int bit)
+{
+    gpio_set_level(SOIL_SENSOR_TEMP_SENSOR_GPIO, 0);
+    if (bit) {
+        esp_rom_delay_us(6);
+        gpio_set_level(SOIL_SENSOR_TEMP_SENSOR_GPIO, 1);
+        esp_rom_delay_us(64);
+    } else {
+        esp_rom_delay_us(60);
+        gpio_set_level(SOIL_SENSOR_TEMP_SENSOR_GPIO, 1);
+        esp_rom_delay_us(10);
+    }
+}
+
+static int soil_temp_ow_read_bit(void)
+{
+    gpio_set_level(SOIL_SENSOR_TEMP_SENSOR_GPIO, 0);
+    esp_rom_delay_us(2);
+    gpio_set_level(SOIL_SENSOR_TEMP_SENSOR_GPIO, 1);
+    esp_rom_delay_us(8);
+    int bit = gpio_get_level(SOIL_SENSOR_TEMP_SENSOR_GPIO);
+    esp_rom_delay_us(50);
+    return bit;
+}
+
+static void soil_temp_ow_write_byte(uint8_t byte)
+{
+    for (int i = 0; i < 8; i++) {
+        soil_temp_ow_write_bit(byte & 0x01);
+        byte >>= 1;
+    }
+}
+
+static uint8_t soil_temp_ow_read_byte(void)
+{
+    uint8_t byte = 0;
+    for (int i = 0; i < 8; i++) {
+        byte = (uint8_t)(byte | (soil_temp_ow_read_bit() << i));
+    }
+    return byte;
+}
+
+/* Dallas/Maxim 1-Wire CRC-8 (reflected, polynomial 0x8C, init 0x00). */
+static uint8_t soil_temp_onewire_crc8(const uint8_t *data, size_t len)
+{
+    uint8_t crc = 0;
+    for (size_t i = 0; i < len; i++) {
+        uint8_t byte = data[i];
+        for (int b = 0; b < 8; b++) {
+            uint8_t mix = (uint8_t)((crc ^ byte) & 0x01);
+            crc >>= 1;
+            if (mix) {
+                crc ^= 0x8C;
+            }
+            byte >>= 1;
+        }
+    }
+    return crc;
+}
+
+static bool soil_temp_sensor_setup(void)
+{
+    gpio_config_t io_conf = {};
+    io_conf.pin_bit_mask = (1ULL << SOIL_SENSOR_TEMP_SENSOR_GPIO);
+    io_conf.mode = GPIO_MODE_INPUT_OUTPUT_OD;
+    io_conf.pull_up_en = GPIO_PULLUP_ENABLE;
+    gpio_config(&io_conf);
+    gpio_set_level(SOIL_SENSOR_TEMP_SENSOR_GPIO, 1);
+    return true;
+}
+
+static bool soil_temp_sensor_read(float *temperature_c)
+{
+    portDISABLE_INTERRUPTS();
+    bool present = soil_temp_ow_reset();
+    if (present) {
+        soil_temp_ow_write_byte(0xCC); /* Skip ROM */
+        soil_temp_ow_write_byte(0x44); /* Convert T */
+    }
+    portENABLE_INTERRUPTS();
+    if (!present) {
+        ESP_LOGW(TAG, "DS18B20 not responding to reset — check wiring/pull-up");
+        return false;
+    }
+
+    vTaskDelay(pdMS_TO_TICKS(750)); /* max conversion time at default 12-bit resolution */
+
+    portDISABLE_INTERRUPTS();
+    present = soil_temp_ow_reset();
+    uint8_t scratchpad[9] = {0};
+    if (present) {
+        soil_temp_ow_write_byte(0xCC);
+        soil_temp_ow_write_byte(0xBE); /* Read Scratchpad */
+        for (int i = 0; i < 9; i++) {
+            scratchpad[i] = soil_temp_ow_read_byte();
+        }
+    }
+    portENABLE_INTERRUPTS();
+    if (!present) {
+        ESP_LOGW(TAG, "DS18B20 not responding to reset (read phase)");
+        return false;
+    }
+
+    if (soil_temp_onewire_crc8(scratchpad, 8) != scratchpad[8]) {
+        ESP_LOGW(TAG, "DS18B20 CRC mismatch — discarding reading");
+        return false;
+    }
+
+    int16_t raw = (int16_t)(((uint16_t)scratchpad[1] << 8) | scratchpad[0]);
+    *temperature_c = raw * 0.0625f; /* 12-bit default resolution: 1 LSB = 1/16 degC */
+    return true;
+}
+
+/* Same registry-lookup-and-cast pattern as the other TemperatureMeasurement
+ * instances in this repo — plain code-driven cluster, no "must-call-or-
+ * crash" special init requirement like SoilMeasurement above. */
+static void soil_update_temperature(uint16_t endpoint_id, float temperature_c)
+{
+    chip::app::ConcreteClusterPath path(endpoint_id, TemperatureMeasurement::Id);
+    chip::app::ServerClusterInterface *iface = esp_matter::data_model::provider::get_instance().registry().Get(path);
+    if (!iface) {
+        ESP_LOGE(TAG, "TemperatureMeasurement cluster not found on endpoint %u", endpoint_id);
+        return;
+    }
+    int16_t measured_value = (int16_t)(temperature_c * 100.0f);
+    static_cast<TemperatureMeasurementCluster *>(iface)->SetMeasuredValue(chip::app::DataModel::Nullable<int16_t>(measured_value));
+}
+#endif /* SOIL_SENSOR_HAS_TEMPERATURE_MEASUREMENT */
+
+/* Periodically reads the sensor(s) and pushes fresh values into Matter —
+ * moisture via esp-matter's own ready-made free function (see the header
  * comment above for why this cluster doesn't use this repo's usual
- * registry-lookup-and-cast pattern. */
+ * registry-lookup-and-cast pattern), and, if enabled, the DS18B20
+ * temperature probe alongside it on the same cycle. */
 static void soil_sensor_task(void *arg)
 {
+#if SOIL_SENSOR_HAS_TEMPERATURE_MEASUREMENT
+    if (!soil_temp_sensor_setup()) {
+        ESP_LOGE(TAG, "Temperature sensor GPIO setup failed — temperature readings will not be reported");
+    }
+#endif
+
     for (;;) {
         int mv = 0;
         if (read_adc_millivolts(&mv)) {
@@ -317,6 +506,14 @@ static void soil_sensor_task(void *arg)
             SoilMeasurement::SetSoilMoistureMeasuredValue(soil_sensor_endpoint_id,
                                                            chip::app::DataModel::Nullable<chip::Percent>());
         }
+
+#if SOIL_SENSOR_HAS_TEMPERATURE_MEASUREMENT
+        float temperature_c = 0.0f;
+        if (soil_temp_sensor_read(&temperature_c)) {
+            soil_update_temperature(soil_sensor_endpoint_id, temperature_c);
+            ESP_LOGI(TAG, "Soil temperature: %.2f degC", temperature_c);
+        }
+#endif
 
         vTaskDelay(pdMS_TO_TICKS(SOIL_SENSOR_POLL_INTERVAL_MS));
     }
@@ -484,6 +681,15 @@ extern "C" void app_main(void)
     soil_limits.minMeasuredValue = 0;
     soil_limits.maxMeasuredValue = 100;
     SoilMeasurement::SetSoilMoistureLimits(soil_sensor_endpoint_id, soil_limits);
+
+#if SOIL_SENSOR_HAS_TEMPERATURE_MEASUREMENT
+    /* 3b. TemperatureMeasurement (DS18B20 probe) — optionalConform, see
+     * the header comment above for the full sourcing/reuse detail. */
+    cluster::temperature_measurement::config_t temp_meas_config;
+    temp_meas_config.min_measured_value = nullable<int16_t>((int16_t)SOIL_SENSOR_TEMP_MIN_CENTIDEGREES);
+    temp_meas_config.max_measured_value = nullable<int16_t>((int16_t)SOIL_SENSOR_TEMP_MAX_CENTIDEGREES);
+    cluster::temperature_measurement::create(endpoint, &temp_meas_config, CLUSTER_FLAG_SERVER);
+#endif
 
     /* 4. Start Matter — begins BLE advertising so a controller can commission it. */
     err = esp_matter::start(app_event_cb);

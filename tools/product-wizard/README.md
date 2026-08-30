@@ -1216,6 +1216,14 @@ for the complete detail, including a real process mistake this pass
 caught (a Docker verification step's `git checkout` briefly discarded
 uncommitted firmware edits) and how it was fixed going forward.
 
+`firmware/soil-sensor/` gained a real, checkable optional
+TemperatureMeasurement cluster (a separately wired DS18B20 probe,
+independent from the capacitive moisture probe, which has no temperature
+element of its own) via the same `clusterOptions` mechanism — coexisting
+cleanly alongside this device type's own pre-existing `numberFields`
+(the dry/wet calibration millivolt fields). See CLAUDE.md's own "Open
+next steps" for the complete detail.
+
 ## Known limitations
 
 - `firmware/camera/` (Matter Camera, this repo's twelfth device type)

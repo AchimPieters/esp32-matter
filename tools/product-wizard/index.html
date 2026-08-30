@@ -1049,6 +1049,15 @@ const COMPONENT_LIBRARY = {
   PUMP_FLOW_YFS201: { name: "YF-S201-class Hall pulse sensor", category: "pump-flow", bus: "GPIO (pulse)", verified: false, enableDefineName: "PUMP_HAS_FLOW_MEASUREMENT", note: "Widely cloned Hall-effect pulse-output flow sensor, rated 1-30 L/min. Same driver already used in firmware/flow-sensor/.", pins: [
     { label: "Pulse", defineName: "PUMP_FLOW_PULSE_GPIO", defaultsByModule: { esp32: 19, esp32c2: 19, esp32c3: 19, esp32c5: 19, esp32c6: 19, esp32c61: 19, esp32s3: 19, esp32h2: 19 } },
   ] },
+  // firmware/soil-sensor/'s own optional TemperatureMeasurement chip (see
+  // its DEVICE_TYPES entry's `clusterOptions`) — a separately wired probe,
+  // not extracted from the capacitive moisture sensor itself (which has
+  // no temperature element at all). Same DS18B20 driver as PUMP_DS18B20
+  // above, its own dedicated COMPONENT_LIBRARY entry since it needs a
+  // different default GPIO and a different enableDefineName.
+  SOIL_DS18B20: { name: "DS18B20", category: "soil-temp", bus: "1-Wire", verified: false, enableDefineName: "SOIL_SENSOR_HAS_TEMPERATURE_MEASUREMENT", note: "Waterproof-probe temperature sensor, separately wired from the capacitive moisture probe (which has no temperature element of its own). Same driver already used in firmware/thermostat/, firmware/water-heater/, and firmware/pump/.", pins: [
+    { label: "DATA", defineName: "SOIL_SENSOR_TEMP_SENSOR_GPIO", defaultsByModule: { esp32: 4, esp32c2: 4, esp32c3: 4, esp32c5: 4, esp32c6: 4, esp32c61: 4, esp32s3: 4, esp32h2: 4 } },
+  ] },
   REED_SWITCH: { name: "Reed Switch (magnetic)", category: "contact", bus: "GPIO", pin1Label: "Contact", pin2Label: null, usesPin2: false, verified: true },
   HALL_SENSOR: { name: "Hall-Effect Sensor (e.g. A3144, US5881)", category: "contact", bus: "GPIO", pin1Label: "Contact", pin2Label: null, usesPin2: false, verified: false },
   MICROSWITCH: { name: "Microswitch / mechanical contact", category: "contact", bus: "GPIO", pin1Label: "Contact", pin2Label: null, usesPin2: false, verified: false },
@@ -3627,7 +3636,7 @@ const DEVICE_TYPES = [
     id: "soil-sensor",
     category: "sensors",
     name: "Soil Sensor",
-    desc: "Matter Soil Sensor: a cheap capacitive soil-moisture probe (analog output, ADC1) reports 0-100% via the Soil Measurement cluster. Needs a real two-point field calibration (dry air = 0%, submerged in water = 100%) — the shipped defaults are only representative placeholders, not a measured calibration. Reference device in firmware/soil-sensor/.",
+    desc: "Matter Soil Sensor: a cheap capacitive soil-moisture probe (analog output, ADC1) reports 0-100% via the Soil Measurement cluster. Needs a real two-point field calibration (dry air = 0%, submerged in water = 100%) — the shipped defaults are only representative placeholders, not a measured calibration. Optionally add real soil TemperatureMeasurement via a separately wired DS18B20 probe. Reference device in firmware/soil-sensor/.",
     shortDesc: "Capacitive probe (ADC), needs field calibration.",
     // Matches project(matter_soil_sensor) in firmware/soil-sensor/CMakeLists.txt.
     // Single GPIO (driver) + identify — same simple shape firmware/
@@ -3685,6 +3694,15 @@ const DEVICE_TYPES = [
         max: 3300,
         helpText: "Submerge the probe fully in water (100% moisture) and note the reading — enter that here. 1200mV is only a representative placeholder.",
       },
+    ],
+    // clusterOptions: TemperatureMeasurement via a separately wired
+    // DS18B20 probe — this device type's third clusterOptions rollout
+    // candidate found via the same XML-parse sweep that also confirmed
+    // firmware/pump/'s own gap (see CLAUDE.md's own "Open next steps").
+    // Single-chip, no chipChoiceGroups needed, same shape as pump's own
+    // three entries.
+    clusterOptions: [
+      { id: "TemperatureMeasurement", label: "Soil Temperature (DS18B20 probe)", chip: "SOIL_DS18B20" },
     ],
   },
   {

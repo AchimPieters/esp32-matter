@@ -5107,6 +5107,66 @@ firmware/soil-sensor/     Soil Sensor — thirty-seventh device type, and this
                            first attempt); not hardware-tested (no
                            capacitive soil-moisture sensor physically
                            available when written).
+
+                           Later extended (continuing the `clusterOptions`
+                           rollout firmware/cooktop/ and firmware/pump/
+                           started): the optional TemperatureMeasurement
+                           cluster this file's own header comment
+                           originally documented as skipped — "real cheap
+                           capacitive soil-moisture probes don't carry a
+                           temperature element at all" — is now
+                           independently checkable via
+                           `SOIL_SENSOR_HAS_TEMPERATURE_MEASUREMENT`
+                           (default off, unchanged default build). Still
+                           true that the moisture probe itself has no
+                           temperature element — this is a genuinely
+                           SEPARATE, independently wired sensor, not
+                           something extracted from the moisture probe's
+                           own signal: a waterproof DS18B20 1-Wire probe,
+                           the same driver already reused verbatim across
+                           firmware/thermostat/, firmware/water-heater/,
+                           and firmware/pump/ — a real, common pairing for
+                           soil monitoring (soil temperature affects both
+                           plant health and how a moisture reading should
+                           be interpreted). Confirmed to need none of
+                           SoilMeasurement's own "must-call-or-crash"
+                           complexity documented above — TemperatureMeasurement
+                           is a plain code-driven cluster with the usual
+                           registry-lookup-and-cast `SetMeasuredValue()`
+                           setter, added onto the same endpoint via the
+                           usual "add extra clusters onto an already-
+                           correct endpoint" pattern. The existing
+                           `soil_sensor_task`'s own 30s poll loop reads
+                           and reports the DS18B20 alongside the moisture
+                           sensor each cycle — no second task needed,
+                           since both readings change slowly. Min/
+                           MaxMeasuredValue use the DS18B20's own real
+                           rated range (-55.00 to 125.00 degC), unlike
+                           firmware/pump/'s own "plausible fluid range"
+                           choice, since this is a general ambient/soil
+                           probe with a well-documented true operating
+                           range. GPIO 4 default avoids this file's own
+                           existing ADC1 pin (34) and identify LED (2).
+                           Wizard integration needed one new
+                           `COMPONENT_LIBRARY` entry (`SOIL_DS18B20`,
+                           reusing the `pins`-array shape `clusterOptions`
+                           needs, not an existing componentOptions-shaped
+                           DS18B20 entry) and a 1-entry `clusterOptions`
+                           array — coexisting cleanly with this device
+                           type's own pre-existing `numberFields` (the
+                           dry/wet calibration millivolt fields), zero new
+                           mechanism needed for either. Verified with the
+                           established Node.js sandboxed regression check
+                           (all 65 device types re-swept, zero exceptions,
+                           plus targeted checks confirming the existing
+                           numberFields sed commands are unaffected) and a
+                           real sed dry-run against a Docker copy —
+                           byte-identical except the one intended
+                           `#define`. Build-verified in Docker for the
+                           unchanged default (off) config and the enabled
+                           config; not hardware-tested (no DS18B20
+                           hardware for this specific addition physically
+                           available when written).
   partitions.csv           same OTA + fctry layout as firmware/light/
   sdkconfig.defaults        same as firmware/light/
 firmware/dimmable-plug/   Dimmable Plug-In Unit — thirty-eighth device
@@ -12059,8 +12119,18 @@ SECURITY.md               flash encryption / secure boot / signed OTA guidance
     ... no matter what -w you pass") — an isolated verification copy still
     needs an explicit `cd` inside the container command itself.
 
-    Soil Sensor and Room Air Conditioner are still queued next in this
-    same pass.
+    `firmware/soil-sensor/` done second: TemperatureMeasurement via a
+    separately wired DS18B20 probe — see its own repository-layout entry
+    above for the complete detail. Coexists cleanly with this device
+    type's own pre-existing `numberFields` (the dry/wet calibration
+    millivolt fields), confirming that mechanism and `clusterOptions`
+    don't conflict on the same device type. No process issues this time —
+    the fixes from the pump pass (commit before Docker verification,
+    isolated copies inside the repo tree, explicit `cd` in the container)
+    held up cleanly on a second use.
+
+    Room Air Conditioner (Temperature + Relative Humidity Measurement) is
+    still queued next in this same pass.
 
 ## Note on hardware/USB
 
