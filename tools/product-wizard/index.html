@@ -410,6 +410,31 @@
     color: var(--text-muted);
   }
 
+  /* A real, previously-latent sizing bug, only found once a non-square
+     viewBox icon existed (Icons/*.svg, see DEVICE_TYPE_ICONS' own
+     Lighting-category entries): the inlined <svg> markup carries no
+     width/height attribute of its own, only viewBox — with no CSS rule
+     targeting the svg element directly, a replaced element in this
+     shape gets its WIDTH forced to fill the parent's available inline
+     width (34px), but its HEIGHT derived independently from the
+     viewBox's own aspect ratio, not clamped to the parent's 34px height
+     at all. This was invisible for every hand-drawn icon before the
+     Lighting swap (all share one square 48x48 viewBox, so width-driven
+     auto-height always happened to equal 34px too, purely by
+     coincidence) but a genuinely non-square viewBox (e.g. Off Light.svg,
+     39x107) rendered 92px tall inside a 34px box, confirmed by measuring
+     the actual rendered bounding boxes in a real browser, not guessed.
+     Forcing both dimensions to 100% here makes the SVG's own
+     preserveAspectRatio (defaults to "xMidYMid meet") do the letterboxing
+     instead — scaled to fit within the 34x34 box on whichever axis has
+     slack, centered, never stretched/distorted — the same behavior every
+     square-viewBox icon already had, now guaranteed for any viewBox. */
+  .option-card .device-icon svg {
+    display: block;
+    width: 100%;
+    height: 100%;
+  }
+
   .option-card.selected .device-icon {
     color: var(--blue);
   }

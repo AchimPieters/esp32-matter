@@ -12243,28 +12243,68 @@ SECURITY.md               flash encryption / secure boot / signed OTA guidance
     Soil Sensor, Room Air Conditioner), this specific pass is complete.
 
 16. **Wizard: real vector icons rolled out for the Lighting category (7),
-    the rest still to come.** The user is producing a proper hand-drawn
-    icon set outside this session (`Icons/*.svg`, Adobe-Illustrator-
-    exported solid-fill shapes) to eventually replace every one of
-    `DEVICE_TYPE_ICONS`' own stroke-based line art, one category at a
-    time. The first 7 — `light`, `dimmable-light`, `color-light`,
-    `addressable-light`, `color-temperature-light`,
-    `mounted-onoff-control`, `mounted-dimmable-load-control`, exactly the
-    "Lighting" category from item 11's own categorization work — are
-    wired in now. Each source file's own real viewBox is kept as-is
-    (not renormalized to the 48x48 grid the hand-drawn icons share) —
-    `preserveAspectRatio`'s own default (`xMidYMid meet`) already centers
-    each inside `.device-icon`'s fixed 34x34 box with no distortion,
-    confirmed by an actual headless-Chromium screenshot of the rendered
-    "Choose your device" grid, not just read from source. Each file's own
-    implicit black fill is replaced with `fill="currentColor"` so the
-    icon still tints via `.device-icon`'s own `color` token the same way
-    every hand-drawn icon already does (selected-card blue, otherwise
-    muted grey) — confirmed live in the same screenshot. The remaining 58
-    device types keep their existing hand-drawn line art until matching
-    source art exists for them too; `Icons/` (committed, tracked as real
-    design source, not build output) is where the user will keep adding
-    more as they're produced. Verified with the same Node.js sandboxed
+    the rest still to come — plus a real sizing bug this pass's own
+    first-attempt "verification" missed, caught by the user instead.**
+    The user is producing a proper hand-drawn icon set outside this
+    session (`Icons/*.svg`, Adobe-Illustrator-exported solid-fill shapes)
+    to eventually replace every one of `DEVICE_TYPE_ICONS`' own stroke-
+    based line art, one category at a time. The first 7 — `light`,
+    `dimmable-light`, `color-light`, `addressable-light`,
+    `color-temperature-light`, `mounted-onoff-control`,
+    `mounted-dimmable-load-control`, exactly the "Lighting" category from
+    item 11's own categorization work — are wired in now, each source
+    file's own real viewBox kept as-is (not renormalized to the 48x48
+    grid the hand-drawn icons share) rather than forcing them into a
+    shape they weren't drawn for, and each file's own implicit black
+    fill replaced with `fill="currentColor"` so the icon still tints via
+    `.device-icon`'s own `color` token the same way every hand-drawn icon
+    already does (selected-card blue, otherwise muted grey).
+
+    A first version of this same entry claimed a headless-Chromium
+    screenshot had already confirmed every icon rendered undistorted at
+    a consistent size inside `.device-icon`'s fixed 34x34 box — true for
+    "undistorted," false for "consistent size," and the screenshot taken
+    at the time genuinely wasn't looked at closely enough to catch it:
+    the "On/Off Light" icon (viewBox 39x107, a much taller/narrower
+    aspect ratio than any hand-drawn icon this repo had used before)
+    rendered roughly 2.7x the height of every other icon on the same
+    "Choose your device" grid, plainly visible in a follow-up screenshot
+    once the user pointed it out directly. Root-caused by actually
+    measuring rendered bounding boxes in a real browser rather than
+    reasoning about CSS replaced-element sizing from memory: the inlined
+    `<svg>` markup (both the new icons and, latently, every one of the
+    58 old hand-drawn ones) carries no `width`/`height` attribute of its
+    own, only `viewBox`, and no CSS rule targeted the `svg` element
+    itself — only its `.device-icon` parent div. A replaced element in
+    that exact shape gets its WIDTH forced to fill the parent's
+    available inline width (34px) but its HEIGHT derived independently
+    from the viewBox's own aspect ratio, never clamped to the parent's
+    own 34px height at all. This was completely invisible for every
+    hand-drawn icon before this pass — they all share one square 48x48
+    viewBox, so width-driven auto-height always happened to equal 34px
+    too, by coincidence, not by any real containment rule — and only a
+    genuinely non-square viewBox (impossible until real vector art with
+    its own natural proportions arrived) could have ever exposed it.
+    Fixed generically, not per-icon: a new `.option-card .device-icon
+    svg { width: 100%; height: 100%; }` rule forces both dimensions to
+    match the parent box directly, letting the SVG's own
+    `preserveAspectRatio` default (`xMidYMid meet`) do real letterboxing
+    within that fixed square — confirmed by re-measuring every icon's
+    real rendered bounding box in the same browser afterward (now
+    exactly 34x34 for all 8 sampled, square and non-square viewBoxes
+    alike) and by a corrected screenshot showing all 7 Lighting icons at
+    a visually consistent scale. Worth remembering as a general lesson
+    for any future wizard visual-verification pass in this repo: a
+    screenshot alone isn't verification — read what it actually shows
+    (or measure it programmatically) before calling something confirmed,
+    especially for a claim ("consistent size") a screenshot can only
+    support if actually compared pixel-for-pixel across the row, not
+    skimmed for "looks fine." The remaining 58 device types keep their
+    existing hand-drawn line art (now also benefiting from the same fix,
+    even though it was a no-op for them before) until matching source
+    art exists for them too; `Icons/` (committed, tracked as real design
+    source, not build output) is where the user will keep adding more as
+    they're produced. Verified with the same Node.js sandboxed
     regression check this wizard's own history already establishes (all
     65 device types re-swept, zero exceptions, plus a targeted check that
     all 7 new icons carry `fill="currentColor"` and every device-type
