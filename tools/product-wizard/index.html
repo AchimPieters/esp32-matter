@@ -1009,6 +1009,25 @@ const COMPONENT_LIBRARY = {
   // Pressure Sensor's own sensor picker — one entry today (BMP280), same
   // "scaffold ready to grow" shape as AQ_CCS811 above.
   PRESSURE_BMP280: { name: "BMP280", category: "pressure", bus: "I2C", pin1Label: "SDA", pin2Label: "SCL", usesPin2: true, verified: false, defineValue: "PRESSURE_SENSOR_BMP280", note: "Real barometric pressure sensor (300-1100 hPa). Register map and Bosch's own 64-bit fixed-point compensation formula confirmed directly against Bosch's official BMP280 datasheet — see firmware/pressure-sensor/main/app_main.cpp's header comment for the full detail." },
+  // firmware/cooktop/'s own Cook Surface TemperatureMeasurement chip
+  // choice (see its DEVICE_TYPES entry's `clusterOptions`/
+  // `chipChoiceGroups`) — this repo's first `clusterOptions` rollout
+  // beyond air-quality-sensor/smoke-co-alarm. Both chips share the exact
+  // same 3-wire CS/SCK/SO interface (confirmed by reading both chips' own
+  // real reference libraries directly — neither drives a data-out/MOSI
+  // pin at all), so both entries list the SAME three pin defineNames —
+  // switching the chip choice never changes which GPIOs are wired up,
+  // only how the bits on those same three pins are interpreted.
+  COOKTOP_MAX6675: { name: "MAX6675", category: "cooktop-temp", bus: "3-wire (bit-banged)", verified: false, defineValue: "COOKTOP_TEMP_SENSOR_CHIP_MAX6675", enableDefineName: "COOKTOP_HAS_TEMPERATURE_MEASUREMENT", note: "Cheaper of the two — 12-bit, 0-1024 degC only (no negative temperatures, no fault detection beyond a plain open-thermocouple flag). Sourcing note: this session had no direct network access to pdftotext the real datasheet PDF — verified instead via WebSearch cross-referencing Analog Devices' own indexed datasheet content and Adafruit's real, open-source MAX6675 library. See firmware/cooktop/main/app_main.cpp's header comment for the full detail.", pins: [
+    { label: "CS", defineName: "COOKTOP_TEMP_SENSOR_CS_GPIO", defaultsByModule: { esp32: 5, esp32c2: 5, esp32c3: 5, esp32c5: 5, esp32c6: 5, esp32c61: 5, esp32s3: 5, esp32h2: 5 } },
+    { label: "SCK", defineName: "COOKTOP_TEMP_SENSOR_SCK_GPIO", defaultsByModule: { esp32: 18, esp32c2: 18, esp32c3: 18, esp32c5: 18, esp32c6: 18, esp32c61: 18, esp32s3: 18, esp32h2: 18 } },
+    { label: "SO", defineName: "COOKTOP_TEMP_SENSOR_SO_GPIO", defaultsByModule: { esp32: 19, esp32c2: 19, esp32c3: 19, esp32c5: 19, esp32c6: 19, esp32c61: 19, esp32s3: 19, esp32h2: 19 } },
+  ] },
+  COOKTOP_MAX31855: { name: "MAX31855", category: "cooktop-temp", bus: "3-wire (bit-banged)", verified: false, defineValue: "COOKTOP_TEMP_SENSOR_CHIP_MAX31855", enableDefineName: "COOKTOP_HAS_TEMPERATURE_MEASUREMENT", note: "More capable — wider range including negative temperatures, plus real SCV/SCG/OC short/open fault detection (a detected fault reports a null reading, never a fabricated number). Same sourcing note as MAX6675 above.", pins: [
+    { label: "CS", defineName: "COOKTOP_TEMP_SENSOR_CS_GPIO", defaultsByModule: { esp32: 5, esp32c2: 5, esp32c3: 5, esp32c5: 5, esp32c6: 5, esp32c61: 5, esp32s3: 5, esp32h2: 5 } },
+    { label: "SCK", defineName: "COOKTOP_TEMP_SENSOR_SCK_GPIO", defaultsByModule: { esp32: 18, esp32c2: 18, esp32c3: 18, esp32c5: 18, esp32c6: 18, esp32c61: 18, esp32s3: 18, esp32h2: 18 } },
+    { label: "SO", defineName: "COOKTOP_TEMP_SENSOR_SO_GPIO", defaultsByModule: { esp32: 19, esp32c2: 19, esp32c3: 19, esp32c5: 19, esp32c6: 19, esp32c61: 19, esp32s3: 19, esp32h2: 19 } },
+  ] },
   REED_SWITCH: { name: "Reed Switch (magnetic)", category: "contact", bus: "GPIO", pin1Label: "Contact", pin2Label: null, usesPin2: false, verified: true },
   HALL_SENSOR: { name: "Hall-Effect Sensor (e.g. A3144, US5881)", category: "contact", bus: "GPIO", pin1Label: "Contact", pin2Label: null, usesPin2: false, verified: false },
   MICROSWITCH: { name: "Microswitch / mechanical contact", category: "contact", bus: "GPIO", pin1Label: "Contact", pin2Label: null, usesPin2: false, verified: false },
@@ -4148,8 +4167,19 @@ const DEVICE_TYPES = [
     // input (always required, not optional-checkbox-gated, since it's the
     // ONLY way to turn this device on at all — remote On is blocked by the
     // OnOff cluster's own OffOnly feature). No componentOptions/
-    // extraPickers on this entry — a single fixed 3-level power scale, no
-    // chip/output choice to make.
+    // extraPickers on this entry — the fixed 3-level power scale has no
+    // chip/output choice to make. The optional TemperatureMeasurement
+    // cluster below DOES need one though (which thermocouple amplifier) —
+    // this repo's first clusterOptions/chipChoiceGroups rollout beyond
+    // air-quality-sensor/smoke-co-alarm, confirming the mechanism is
+    // genuinely reusable for a single-cluster case too, not just the
+    // multi-cluster ones it was first built for.
+    clusterOptions: [
+      { id: "TemperatureMeasurement", label: "Cook Surface Temperature (thermocouple)", group: "cooktopTempChip" },
+    ],
+    chipChoiceGroups: [
+      { key: "cooktopTempChip", label: "Thermocouple amplifier chip", chips: ["COOKTOP_MAX6675", "COOKTOP_MAX31855"], defineName: "COOKTOP_TEMP_SENSOR_CHIP" },
+    ],
     binName: "matter_cooktop.bin",
     driver: {
       summary: "GPIO (relay/SSR, active-LOW)",
@@ -6282,9 +6312,24 @@ function renderConfigureDevice(p) {
   // changes whether secondaryGpioPin itself gets defaulted/validated.
   const secondaryFieldNeeded = !!secondary && !(selectedComponent && !selectedComponent.usesPin2);
 
+  // A real, previously-latent gap caught while adding cooktop's own
+  // clusterOptions entry (this repo's first clusterOptions device with
+  // NEITHER componentOptions NOR extraPickers NOR hasVariableButtonCount
+  // already triggering the left sidebar — air-quality-sensor and
+  // smoke-co-alarm both happen to have one of those too, which is why
+  // this was never hit before): the whole left-sidebar wrapper below was
+  // gated on componentOptions/hasVariableButtonCount/extraPickers alone,
+  // silently never rendering the clusterOptions/chipChoiceGroups section
+  // at all for a device type relying on clusterOptions by itself. Folded
+  // clusterOptions into the same wrapper condition, the same "restructure
+  // the gate, don't special-case" fix firmware/thermostat/'s own
+  // sidebar-coexistence bug already established for componentOptions/
+  // extraPickers.
+  const hasLeftSidebar = componentOptions || hasVariableButtonCount || (extraPickers && extraPickers.length) || (clusterOptions && clusterOptions.length);
+
   return `
-    <div class="configure-grid ${componentOptions || hasVariableButtonCount || (extraPickers && extraPickers.length) ? "has-left-sidebar" : ""}">
-      ${(componentOptions || hasVariableButtonCount || (extraPickers && extraPickers.length)) ? `
+    <div class="configure-grid ${hasLeftSidebar ? "has-left-sidebar" : ""}">
+      ${hasLeftSidebar ? `
         <div class="config-sidebar">
           ${componentOptions ? `
             <h3>Sensor model</h3>
@@ -6361,7 +6406,7 @@ function renderConfigureDevice(p) {
           ${clusterOptions && clusterOptions.length ? `
             ${(componentOptions || hasVariableButtonCount || (extraPickers && extraPickers.length)) ? '<hr style="margin:20px 0;border:none;border-top:1px solid var(--border);">' : ""}
             <h3>Other clusters</h3>
-            <p class="field-label">Check off any of these you have a real sensor for — this device type's other optional AirQualitySensor.xml clusters.</p>
+            <p class="field-label">Check off any of these you have a real sensor for — this device type's other optional clusters.</p>
             <div class="component-list" role="group" aria-label="Other clusters">
               ${clusterOptions.map((cluster) => {
                 const checked = !!p.enabledClusters[cluster.id];
@@ -6378,10 +6423,12 @@ function renderConfigureDevice(p) {
                 `;
               }).join("")}
             </div>
+            ${deviceType.id === "air-quality-sensor" ? `
             <p class="field-note">
               A gas/particulate cluster with no realistic hobbyist sensor — Radon — isn't offered here at all; see
               firmware/air-quality-sensor/main/app_main.cpp's header comment for why.
             </p>
+            ` : ""}
             ${(deviceType.chipChoiceGroups || []).map((group) => {
               const groupInUse = clusterOptions.some((c) => c.group === group.key && p.enabledClusters[c.id]);
               if (!groupInUse) return "";
@@ -6777,7 +6824,37 @@ function renderConfigureDevice(p) {
           <code>${escapeHtml(toggle.defineName)}</code>`).join("") : ""}${rotaryEncoderOn ? rotaryEncoder.pins.map((pin) => `,
           <code>${escapeHtml(pin.defineName)}</code>`).join("") : ""}${identifyOn ? `,
           <code>${escapeHtml(identify ? identify.defineName : "IDENTIFY_LED_GPIO")}</code>` : ""}${activePickerPins.map(({ pin }) => `,
-          <code>${escapeHtml(pin.defineName)}</code>`).join("")}) happens
+          <code>${escapeHtml(pin.defineName)}</code>`).join("")}${(() => {
+            // clusterOptions/chipChoiceGroups' own defines — a real,
+            // previously-latent gap this preview list never listed at all
+            // (found while adding cooktop's own clusterOptions entry, but
+            // pre-existing for air-quality-sensor/smoke-co-alarm too):
+            // every referenced chip's enableDefineName (always rewritten,
+            // same "0 or 1 either way" reasoning buildSedCommands() itself
+            // already documents), the enabled chip's own pins, and each
+            // in-use chipChoiceGroups' own chip-choice defineName.
+            if (!clusterOptions) return "";
+            const chipIds = new Set();
+            clusterOptions.forEach((cluster) => {
+              const chip = clusterBackingChip(deviceType, p, cluster);
+              if (chip) chipIds.add(chip.id);
+            });
+            const parts = [];
+            chipIds.forEach((chipId) => {
+              const chip = findComponent(chipId);
+              if (!chip || !chip.enableDefineName) return;
+              parts.push(chip.enableDefineName);
+              if (chipIsEnabledForClusters(deviceType, p, chipId) && Array.isArray(chip.pins)) {
+                chip.pins.forEach((pin) => parts.push(pin.defineName));
+              }
+            });
+            (deviceType.chipChoiceGroups || []).forEach((group) => {
+              const groupInUse = clusterOptions.some((c) => c.group === group.key && p.enabledClusters && p.enabledClusters[c.id]);
+              if (groupInUse) parts.push(group.defineName);
+            });
+            return parts.map((name) => `,
+          <code>${escapeHtml(name)}</code>`).join("");
+          })()}) happens
           in the Generate Firmware step.
         </p>
 

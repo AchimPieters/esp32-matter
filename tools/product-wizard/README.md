@@ -1192,6 +1192,19 @@ stripped by the new field's own broad-match sed command) and the new
 `float: true` support this mechanism needed for `firmware/flow-sensor/`'s
 own real K-factor constant.
 
+`firmware/cooktop/` gained a real, checkable optional cluster —
+TemperatureMeasurement (a K-type thermocouple, MAX6675 or MAX31855) —
+via the `clusterOptions`/`chipChoiceGroups` mechanism, this repo's first
+use of it beyond `firmware/air-quality-sensor/`/`firmware/smoke-co-alarm/`.
+Confirms the mechanism generalizes to a single-cluster/single-chip-group
+case with zero new code, only new data — but building it did catch two
+real, previously-latent bugs in the shared mechanism itself (a left-
+sidebar render gate that never accounted for a device using
+`clusterOptions` alone, with none of `componentOptions`/`extraPickers`/a
+variable button count also present; and a hardcoded "AirQualitySensor.xml"
+Radon footnote that had been silently wrong on smoke-co-alarm's own page
+too). See CLAUDE.md's own "Open next steps" for the complete detail.
+
 ## Known limitations
 
 - `firmware/camera/` (Matter Camera, this repo's twelfth device type)

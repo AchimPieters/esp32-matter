@@ -195,6 +195,79 @@
  * Standard quick-power-cycle factory reset. Build-verified in Docker; not
  * hardware-tested (no relay/SSR hardware for this device type physically
  * available when written).
+ *
+ * --- Later extended: TemperatureMeasurement, on request (rolling out this
+ * repo's own `clusterOptions` wizard mechanism beyond air-quality-sensor/
+ * smoke-co-alarm) ----------------------------------------------------------
+ * `COOKTOP_HAS_TEMPERATURE_MEASUREMENT` (default off, unchanged default
+ * build) closes the exact gap this file's own header comment above already
+ * named: a real cook-surface temperature reading needs a sensor rated for
+ * genuinely hot surface temperatures, and this repo's only high-temperature-
+ * capable driver category — K-type thermocouple amplifiers — had never
+ * actually been implemented/verified for any device type. Two real chip
+ * choices (`COOKTOP_TEMP_SENSOR_CHIP`): MAX6675 (cheaper, 12-bit, 0-1024
+ * degC, no fault detection) and MAX31855 (more capable — wider range
+ * including negative temperatures, plus real SCV/SCG/OC fault-bit
+ * detection) — added onto the SAME Cook Surface child endpoint that already
+ * carries TemperatureControl[TL], satisfying CookSurface.xml's own "at
+ * least one of TemperatureControl/TemperatureMeasurement" choice group
+ * with BOTH now, not just one.
+ *
+ * A genuinely different sourcing situation from every other chip verified
+ * in this repo, worth documenting honestly rather than glossing over: this
+ * session had no direct network access to download either chip's real PDF
+ * datasheet and run it through `pdftotext` (this repo's own established
+ * practice for primary-source hardware protocol detail, used for every
+ * other chip in this repo) — the sandboxed environment this session ran in
+ * had no outbound network access from the shell at all, only through the
+ * WebFetch/WebSearch tools. Verified instead via WebSearch cross-
+ * referencing multiple independent sources: Analog Devices' own official
+ * datasheet content (indexed by the search engine, since the raw PDF fetch
+ * itself timed out repeatedly), Adafruit's own real, widely-used, open-
+ * source Arduino libraries for both chips (fetched directly from GitHub —
+ * `adafruit/MAX6675-library` and `adafruit/Adafruit-MAX31855-library`,
+ * both real, working, hardware-tested reference implementations), and
+ * public technical documentation. Flagged here, in the wizard, and in
+ * CLAUDE.md as sourced this way rather than the usual direct-pdftotext
+ * method — the same "best available, cross-checked" sourcing standard
+ * already used in this repo for CSE7759/ADE7953/SM2335EGH/MiCS-4514, just
+ * for a genuinely different reason (a tooling constraint this session,
+ * not an unavailable/undocumented chip).
+ *
+ * Both chips share the exact same 3-wire, read-only interface (CS + SCK +
+ * SO — no MOSI/data-in at all, confirmed by both real reference libraries
+ * never driving a data-out pin), so both chip choices reuse the same three
+ * GPIO defines. Deliberately bit-banged via plain GPIO (matching this
+ * repo's own DHT/DS18B20/WS2812B precedent) rather than driven through
+ * ESP-IDF's real SPI peripheral (the way firmware/addressable-light/'s own
+ * APA102 driver is) — secondary sources genuinely disagreed on whether
+ * these chips need SPI Mode 0 or Mode 1 (CPOL/CPHA), a real, unresolved
+ * ambiguity without the primary datasheet in hand to settle it; bit-
+ * banging the exact edge sequence Adafruit's own real MAX6675 library
+ * uses (CS low, then for each bit: SCK low + a settle delay, sample SO,
+ * SCK high + a settle delay) sidesteps that ambiguity entirely, the same
+ * "port a real reference rather than guess" precedent this repo already
+ * applies elsewhere. MAX6675's own 16-bit word layout (ported from that
+ * same reference, cross-checked against the indexed datasheet content):
+ * D15 dummy sign bit (always 0), D14-D3 the 12-bit temperature (0.25 degC/
+ * LSB, 0-1024 degC only — no negative-temperature support at all, a real,
+ * documented chip limitation, not a driver bug), D2 open-thermocouple
+ * fault flag, D1/D0 device-ID/state bits (ignored here). MAX31855's own
+ * 32-bit word layout (ported from Adafruit's own real MAX31855 library,
+ * cross-checked the same way): D31 sign + D30-D18 magnitude (14-bit
+ * thermocouple temperature, 0.25 degC/LSB, sign-extended when negative),
+ * D17 reserved, D16 fault flag, D15 sign + D14-D4 magnitude (12-bit cold-
+ * junction/internal temperature, 0.0625 degC/LSB — read but unused here,
+ * the chip's own cold-junction compensation already folds it into the
+ * thermocouple reading), D3 reserved, D2/D1/D0 = SCV/SCG/OC individual
+ * fault bits (a real, controller-visible fault clears the reading to
+ * TemperatureMeasurement's own null "no valid reading" state rather than
+ * reporting a fabricated number). MeasuredValue's own 0-40000 (0-400.00
+ * degC) Min/Max range is a plain, honest bound for a real cook-surface/pan
+ * probe reading, well inside both chips' own real measurement range.
+ * Build-verified in Docker for both chip choices; not hardware-tested (no
+ * MAX6675/MAX31855 module or K-type thermocouple probe physically
+ * available when written).
  */
 
 #include <esp_err.h>
@@ -202,6 +275,7 @@
 #include <nvs_flash.h>
 #include <driver/gpio.h>
 #include <esp_timer.h>
+#include <esp_rom_sys.h> /* esp_rom_delay_us() — optional thermocouple bit-bang */
 #include <cstring>
 
 #include <esp_matter.h>
@@ -209,6 +283,7 @@
 #include <app-common/zap-generated/cluster-objects.h>
 #include <app/clusters/temperature-control-server/TemperatureControlCluster.h>
 #include <app/clusters/temperature-control-server/supported-temperature-levels-manager.h>
+#include <app/clusters/temperature-measurement-server/TemperatureMeasurementCluster.h>
 #include <data_model_provider/esp_matter_data_model_provider.h>
 
 static const char *TAG = "matter_cooktop";
@@ -235,6 +310,25 @@ static const char *TAG = "matter_cooktop";
 #define COOKTOP_NUM_LEVELS 3
 static const uint8_t kLevelDutyPercent[COOKTOP_NUM_LEVELS] = {33, 66, 100}; /* Low, Medium, High */
 static const char *const kLevelNames[COOKTOP_NUM_LEVELS] = {"Low", "Medium", "High"};
+
+/* --- Optional TemperatureMeasurement (K-type thermocouple) — see the
+ * header comment above ("Later extended") for the full sourcing and
+ * design detail. Off by default (unchanged default build). */
+#define COOKTOP_HAS_TEMPERATURE_MEASUREMENT 0
+
+#define COOKTOP_TEMP_SENSOR_CHIP_MAX6675 1
+#define COOKTOP_TEMP_SENSOR_CHIP_MAX31855 2
+#define COOKTOP_TEMP_SENSOR_CHIP COOKTOP_TEMP_SENSOR_CHIP_MAX6675
+
+#if COOKTOP_HAS_TEMPERATURE_MEASUREMENT
+/* Both chips share the exact same 3-wire, read-only bit-banged interface
+ * (no MOSI/data-in pin exists on either chip) — one shared GPIO pin set. */
+#define COOKTOP_TEMP_SENSOR_CS_GPIO GPIO_NUM_5
+#define COOKTOP_TEMP_SENSOR_SCK_GPIO GPIO_NUM_18
+#define COOKTOP_TEMP_SENSOR_SO_GPIO GPIO_NUM_19
+
+#define COOKTOP_TEMP_SENSOR_POLL_INTERVAL_MS 2000
+#endif
 
 using namespace esp_matter;
 using namespace esp_matter::endpoint;
@@ -290,6 +384,108 @@ static TemperatureControlCluster *get_temperature_control_cluster(uint16_t endpo
     }
     return static_cast<TemperatureControlCluster *>(iface);
 }
+
+#if COOKTOP_HAS_TEMPERATURE_MEASUREMENT
+/* --- K-type thermocouple driver (MAX6675/MAX31855) -------------------------
+ * See the header comment above ("Later extended") for the full sourcing —
+ * a bit-banged 3-wire read, deliberately not ESP-IDF's real SPI peripheral,
+ * to sidestep a genuine SPI-mode ambiguity in the available sources. Exact
+ * edge sequence ported from Adafruit's own real MAX6675 library: CS low,
+ * then per bit — SCK low + settle, sample SO, SCK high + settle — CS high
+ * once all bits are shifted in. */
+#define COOKTOP_TEMP_SENSOR_BIT_DELAY_US 10
+
+static uint32_t cooktop_temp_sensor_read_raw(uint8_t num_bits)
+{
+    uint32_t value = 0;
+
+    gpio_set_level(COOKTOP_TEMP_SENSOR_CS_GPIO, 0);
+    esp_rom_delay_us(COOKTOP_TEMP_SENSOR_BIT_DELAY_US);
+
+    for (uint8_t i = 0; i < num_bits; i++) {
+        gpio_set_level(COOKTOP_TEMP_SENSOR_SCK_GPIO, 0);
+        esp_rom_delay_us(COOKTOP_TEMP_SENSOR_BIT_DELAY_US);
+        value <<= 1;
+        if (gpio_get_level(COOKTOP_TEMP_SENSOR_SO_GPIO)) {
+            value |= 1;
+        }
+        gpio_set_level(COOKTOP_TEMP_SENSOR_SCK_GPIO, 1);
+        esp_rom_delay_us(COOKTOP_TEMP_SENSOR_BIT_DELAY_US);
+    }
+
+    gpio_set_level(COOKTOP_TEMP_SENSOR_CS_GPIO, 1);
+    return value;
+}
+
+/* Returns the temperature in centidegrees C via `*out_centidegrees`, or
+ * false on a detected fault (open thermocouple, or — MAX31855 only — a
+ * short to VCC/GND) — the caller reports a null MeasuredValue in that
+ * case, never a fabricated number. */
+static bool cooktop_temp_sensor_read(int32_t *out_centidegrees)
+{
+#if COOKTOP_TEMP_SENSOR_CHIP == COOKTOP_TEMP_SENSOR_CHIP_MAX6675
+    /* 16-bit word: D15 dummy sign (0), D14-D3 = 12-bit temperature
+     * (0.25 degC/LSB, 0-1024 degC only), D2 = open-thermocouple fault,
+     * D1/D0 = device ID/state (ignored). */
+    uint32_t raw = cooktop_temp_sensor_read_raw(16);
+    if (raw & 0x4) {
+        return false; /* open thermocouple */
+    }
+    uint32_t temp_12bit = (raw >> 3) & 0xFFF;
+    *out_centidegrees = (int32_t)(temp_12bit * 25); /* x0.25 degC, in centidegrees */
+    return true;
+#elif COOKTOP_TEMP_SENSOR_CHIP == COOKTOP_TEMP_SENSOR_CHIP_MAX31855
+    /* 32-bit word: D31 sign + D30-D18 = 14-bit thermocouple temperature
+     * (0.25 degC/LSB), D17 reserved, D16 = fault flag, D15-D4 = 12-bit
+     * cold-junction temperature (read but unused — the chip's own cold-
+     * junction compensation already folds it into the thermocouple
+     * reading above), D3 reserved, D2/D1/D0 = SCV/SCG/OC fault bits. */
+    uint32_t raw = cooktop_temp_sensor_read_raw(32);
+    if (raw & 0x7) {
+        return false; /* SCV, SCG, or OC fault */
+    }
+    int32_t temp_14bit;
+    if (raw & 0x80000000) {
+        /* Negative — sign-extend the 14-bit field into a 32-bit value. */
+        temp_14bit = (int32_t)(0xFFFFC000u | ((raw >> 18) & 0x3FFFu));
+    } else {
+        temp_14bit = (int32_t)(raw >> 18);
+    }
+    *out_centidegrees = temp_14bit * 25; /* x0.25 degC, in centidegrees */
+    return true;
+#else
+#error "Unknown COOKTOP_TEMP_SENSOR_CHIP"
+#endif
+}
+
+/* Code-driven cluster setter — same registry-lookup-and-cast pattern
+ * firmware/smoke-co-alarm/'s own update_temperature() already establishes. */
+static void cooktop_update_zone_temperature(chip::app::DataModel::Nullable<int16_t> value)
+{
+    lock::ScopedChipStackLock stack_lock(portMAX_DELAY);
+    chip::app::ConcreteClusterPath path(zone_endpoint_id, TemperatureMeasurement::Id);
+    chip::app::ServerClusterInterface *iface = esp_matter::data_model::provider::get_instance().registry().Get(path);
+    if (!iface) {
+        ESP_LOGE(TAG, "TemperatureMeasurement cluster not found on endpoint %u", zone_endpoint_id);
+        return;
+    }
+    static_cast<chip::app::Clusters::TemperatureMeasurementCluster *>(iface)->SetMeasuredValue(value);
+}
+
+static void cooktop_temp_sensor_task(void *arg)
+{
+    while (true) {
+        int32_t centidegrees = 0;
+        if (cooktop_temp_sensor_read(&centidegrees)) {
+            cooktop_update_zone_temperature(chip::app::DataModel::Nullable<int16_t>((int16_t)centidegrees));
+        } else {
+            ESP_LOGW(TAG, "Thermocouple fault detected — reporting null MeasuredValue");
+            cooktop_update_zone_temperature(chip::app::DataModel::Nullable<int16_t>());
+        }
+        vTaskDelay(pdMS_TO_TICKS(COOKTOP_TEMP_SENSOR_POLL_INTERVAL_MS));
+    }
+}
+#endif /* COOKTOP_HAS_TEMPERATURE_MEASUREMENT */
 
 /* --- Duty-cycle output task -------------------------------------------------
  * See the header comment above for the full sourcing on this time-
@@ -518,6 +714,28 @@ extern "C" void app_main(void)
     };
     esp_timer_create(&identify_timer_args, &identify_led_timer);
 
+#if COOKTOP_HAS_TEMPERATURE_MEASUREMENT
+    /* 2d. Configure the thermocouple amplifier's 3-wire read-only
+     * interface — CS/SO as plain GPIO, SCK output starts high (idle),
+     * matching the bit-bang sequence in cooktop_temp_sensor_read_raw(). */
+    gpio_config_t temp_cs_conf = {};
+    temp_cs_conf.pin_bit_mask = (1ULL << COOKTOP_TEMP_SENSOR_CS_GPIO);
+    temp_cs_conf.mode = GPIO_MODE_OUTPUT;
+    gpio_config(&temp_cs_conf);
+    gpio_set_level(COOKTOP_TEMP_SENSOR_CS_GPIO, 1);
+
+    gpio_config_t temp_sck_conf = {};
+    temp_sck_conf.pin_bit_mask = (1ULL << COOKTOP_TEMP_SENSOR_SCK_GPIO);
+    temp_sck_conf.mode = GPIO_MODE_OUTPUT;
+    gpio_config(&temp_sck_conf);
+    gpio_set_level(COOKTOP_TEMP_SENSOR_SCK_GPIO, 1);
+
+    gpio_config_t temp_so_conf = {};
+    temp_so_conf.pin_bit_mask = (1ULL << COOKTOP_TEMP_SENSOR_SO_GPIO);
+    temp_so_conf.mode = GPIO_MODE_INPUT;
+    gpio_config(&temp_so_conf);
+#endif
+
     /* 3. Register the SupportedTemperatureLevels delegate — a `static`
      * class method with no ordering dependency on endpoint/cluster
      * construction (see the header comment above), so this can safely run
@@ -572,6 +790,21 @@ extern "C" void app_main(void)
         return;
     }
 
+#if COOKTOP_HAS_TEMPERATURE_MEASUREMENT
+    /* 4c. TemperatureMeasurement onto the SAME Cook Surface endpoint — see
+     * the header comment above ("Later extended") for the full detail.
+     * Code-driven (registry-lookup + SetMeasuredValue()), same check every
+     * other code-driven cluster in this repo uses (a real
+     * temperature_measurement/ folder exists under
+     * data_model_provider/clusters/). Starts at null (no reading yet) until
+     * the first poll. */
+    cluster::temperature_measurement::config_t cook_temp_config;
+    cook_temp_config.measured_value = nullable<int16_t>();
+    cook_temp_config.min_measured_value = nullable<int16_t>(0);
+    cook_temp_config.max_measured_value = nullable<int16_t>(40000);
+    cluster::temperature_measurement::create(zone_endpoint, &cook_temp_config, CLUSTER_FLAG_SERVER);
+#endif
+
     /* 5. Start Matter — begins BLE advertising so a controller can commission it. */
     err = esp_matter::start(app_event_cb);
     if (err != ESP_OK) {
@@ -591,6 +824,9 @@ extern "C" void app_main(void)
      * and the zone's duty-cycle output. */
     xTaskCreate(power_button_task, "power_button_task", 3072, NULL, 5, NULL);
     xTaskCreate(zone_duty_task, "zone_duty_task", 3072, NULL, 5, NULL);
+#if COOKTOP_HAS_TEMPERATURE_MEASUREMENT
+    xTaskCreate(cooktop_temp_sensor_task, "cooktop_temp_sensor_task", 3072, NULL, 5, NULL);
+#endif
 
     ESP_LOGI(TAG, "Matter cooktop started. Scan the QR code to commission.");
 }

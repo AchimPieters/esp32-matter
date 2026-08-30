@@ -6296,6 +6296,135 @@ firmware/cooktop/         Cooktop — forty-ninth device type, and this repo's
                            than discovered by a failed build); not
                            hardware-tested (no relay/SSR hardware for this
                            device type physically available when written).
+
+                           Later extended (rolling out this repo's own
+                           `clusterOptions`/`chipChoiceGroups` wizard
+                           mechanism beyond air-quality-sensor/
+                           smoke-co-alarm, on request): `COOKTOP_HAS_
+                           TEMPERATURE_MEASUREMENT` (default off, unchanged
+                           default build) closes the exact gap this file's
+                           own header comment already named — a real cook-
+                           surface temperature reading needs a sensor rated
+                           for genuinely hot surface temperatures, and this
+                           repo's only high-temperature-capable driver
+                           category (K-type thermocouple amplifiers) had
+                           never actually been implemented. Two real chip
+                           choices (`COOKTOP_TEMP_SENSOR_CHIP`): MAX6675
+                           (cheaper, 12-bit, 0-1024 degC only, no fault
+                           detection beyond a plain open-thermocouple flag)
+                           and MAX31855 (wider range including negative
+                           temperatures, plus real SCV/SCG/OC short/open
+                           fault detection — a detected fault reports a
+                           null MeasuredValue, never a fabricated number).
+                           Added onto the SAME Cook Surface child endpoint
+                           that already carries TemperatureControl[TL],
+                           satisfying CookSurface.xml's own "at least one
+                           of TemperatureControl/TemperatureMeasurement"
+                           choice group with BOTH now, not just one.
+
+                           A genuinely different sourcing situation from
+                           every other chip in this repo, documented
+                           honestly rather than glossed over: this session
+                           had no outbound network access from the shell at
+                           all (confirmed directly — `curl` timed out with
+                           no connection, both on the host and inside the
+                           pinned Docker container), so this repo's own
+                           established "fetch the real PDF, run it through
+                           `pdftotext`" discipline wasn't possible this
+                           time. Verified instead via WebSearch/WebFetch
+                           cross-referencing multiple independent sources:
+                           Analog Devices' own official datasheet content
+                           (indexed by the search engine, since the raw PDF
+                           fetch itself timed out repeatedly — attempted
+                           three times before switching approach), and
+                           Adafruit's own real, widely-used, open-source
+                           Arduino libraries for both chips (fetched
+                           directly from GitHub — confirmed real function
+                           bodies, not summaries, for the exact bit-shift/
+                           sign-extension/fault-check logic both drivers
+                           needed). Both chips' own real 3-wire read-only
+                           interface (CS + SCK + SO, no MOSI at all,
+                           confirmed by both real reference libraries never
+                           driving a data-out pin) is deliberately bit-
+                           banged via plain GPIO — matching this repo's own
+                           DHT/DS18B20/WS2812B precedent — rather than
+                           driven through ESP-IDF's real SPI peripheral:
+                           secondary sources genuinely disagreed on whether
+                           these chips need SPI Mode 0 or Mode 1, a real
+                           ambiguity impossible to settle without the
+                           primary datasheet in hand, sidestepped entirely
+                           by porting Adafruit's own exact bit-bang edge
+                           sequence instead of guessing at a peripheral
+                           mode. MAX6675's 16-bit word (D15 dummy sign, D14-
+                           D3 = 12-bit temperature at 0.25 degC/LSB, D2 =
+                           open-thermocouple flag) and MAX31855's 32-bit
+                           word (D31 sign + D30-D18 = 14-bit thermocouple
+                           temperature at 0.25 degC/LSB sign-extended when
+                           negative, D16 = fault flag, D15-D4 = 12-bit cold-
+                           junction temperature read but unused, D2/D1/D0 =
+                           SCV/SCG/OC fault bits) were both cross-checked
+                           against Adafruit's own real `readCelsius()`/
+                           `spiread32()` implementations directly, not
+                           assumed from memory.
+
+                           Wiring this up caught two real, previously-
+                           latent wizard bugs, not assumed safe: (1) the
+                           left-sidebar wrapper in `renderConfigureDevice`
+                           was gated on `componentOptions || hasVariable
+                           ButtonCount || extraPickers` alone — cooktop is
+                           the first `clusterOptions` device with NONE of
+                           those three already triggering the sidebar
+                           (air-quality-sensor and smoke-co-alarm each
+                           happen to have one too), so the whole
+                           clusterOptions/chipChoiceGroups section silently
+                           never rendered at all until `clusterOptions` was
+                           folded into that same gate — the same
+                           "restructure the gate, don't special-case" fix
+                           firmware/thermostat/'s own sidebar-coexistence
+                           bug already established; (2) the clusterOptions
+                           section's own field-note hardcoded "this device
+                           type's other optional AirQualitySensor.xml
+                           clusters" and a Radon-specific footnote,
+                           unconditionally, on every device using the
+                           mechanism — already wrong for smoke-co-alarm
+                           before this pass, now fixed generically (the
+                           Radon footnote gated to air-quality-sensor
+                           specifically) rather than left to compound as
+                           more devices adopt clusterOptions. A third, non-
+                           bug gap was also closed: the Configure Device
+                           step's own "Applying them (replacing ...)"
+                           define-preview list never mentioned any
+                           clusterOptions-backed define at all (a
+                           completeness gap, not a functional one —
+                           `buildSedCommands()` itself already generated
+                           the real commands correctly) — fixed to list
+                           every referenced chip's `enableDefineName`, its
+                           pins when enabled, and each in-use
+                           `chipChoiceGroups`' own chip-choice `defineName`,
+                           matching `buildSedCommands()`'s own logic
+                           exactly.
+
+                           Verified: a Node.js sandboxed regression check
+                           (156/156 checks total, including a dedicated
+                           block for cooktop's own clusterOptions rollout —
+                           unchecked-by-default completeness, the checkbox
+                           auto-revealing the chip-choice radios once
+                           ticked, sed commands for both the enable-define
+                           and the chip-choice define, and the preview-list
+                           fix); a real GNU-sed dry-run against a Docker
+                           copy of the actual `app_main.cpp`, matching
+                           `buildSedCommands()`'s own output exactly for
+                           the checked+MAX31855 state; a real headless-
+                           Chromium screenshot of the Configure Device step
+                           both before and after checking the cluster,
+                           confirming the sidebar fix and the corrected
+                           field-note text visually, not just structurally.
+                           Build-verified in Docker for the unchanged
+                           default (off) config and both chip choices
+                           (MAX6675, MAX31855) with the cluster enabled;
+                           not hardware-tested — no MAX6675/MAX31855 module
+                           or K-type thermocouple probe was physically
+                           available when written.
   partitions.csv           same OTA + fctry layout as firmware/light/
   sdkconfig.defaults        same as firmware/light/
 firmware/on-off-sensor/   On/Off Sensor — fiftieth device type: a wireless
@@ -11760,6 +11889,50 @@ SECURITY.md               flash encryption / secure boot / signed OTA guidance
     firmware files were not rebuilt in Docker for this pass, since none
     of their own `app_main.cpp` files were touched at all — only their
     wizard-facing metadata in `index.html` changed.
+14. **`clusterOptions`/`chipChoiceGroups` rolled out beyond air-quality-
+    sensor/smoke-co-alarm, on request.** Before writing any code, swept
+    every "no sensor, no fabricated data" skip documented anywhere in this
+    file (grepped systematically, not from memory) to find genuine,
+    still-open candidates rather than assume none remained — almost
+    everything found was already resolved by the earlier "hobbyist
+    cluster expansion" pilot (items 8/9) or a genuine hard blocker (Radon,
+    tariff data, provisional clusters). Exactly one real, concrete,
+    previously-unaddressed candidate turned up: `firmware/cooktop/`'s own
+    CookSurface TemperatureMeasurement, explicitly documented as skipped
+    only because K-type thermocouple amplifiers (MAX6675/MAX31855) had
+    never actually been sourced/implemented for any device type in this
+    repo — a real, affordable, hobbyist-sourceable part category, not a
+    structural blocker.
+
+    See `firmware/cooktop/`'s own repository-layout entry above for the
+    complete technical detail: the two real chip choices and their exact
+    bit-layout sourcing, the genuinely different sourcing method this
+    session had to use (no outbound network access at all this session,
+    unlike prior sessions — `curl` timed out on both host and Docker
+    container, so this repo's own usual "download the PDF, run
+    `pdftotext`" discipline wasn't available; verified instead via
+    WebSearch/WebFetch cross-referencing Analog Devices' own indexed
+    datasheet content and Adafruit's own real, open-source reference
+    libraries for both chips, fetched directly from GitHub), and two real,
+    previously-latent wizard bugs this rollout caught and fixed (a left-
+    sidebar rendering gate that never accounted for `clusterOptions`
+    existing without `componentOptions`/`extraPickers` also present —
+    cooktop is the first device to hit that combination; and a hardcoded
+    "AirQualitySensor.xml"/Radon field-note that was already wrong for
+    smoke-co-alarm before this pass, now fixed generically) plus one
+    completeness gap closed (the Configure Device step's own define-
+    preview list never mentioned any clusterOptions-backed define at all).
+
+    This also confirms the mechanism itself is genuinely reusable for a
+    single-cluster, single-chip-choice-group case — every prior use
+    (air-quality-sensor's 9 clusters/1 chip-group, smoke-co-alarm's 2
+    clusters/1 chip-group) had more than one `clusterOptions` entry;
+    cooktop has exactly one, and needed zero new mechanism code, only new
+    data plus the two bug fixes above (both real gaps in the shared
+    mechanism, not cooktop-specific workarounds). Build-verified in Docker
+    for the unchanged default config and both chip choices; not hardware-
+    tested (no MAX6675/MAX31855 module or thermocouple probe physically
+    available when written).
 
 ## Note on hardware/USB
 
