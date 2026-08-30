@@ -1058,6 +1058,36 @@ const COMPONENT_LIBRARY = {
   SOIL_DS18B20: { name: "DS18B20", category: "soil-temp", bus: "1-Wire", verified: false, enableDefineName: "SOIL_SENSOR_HAS_TEMPERATURE_MEASUREMENT", note: "Waterproof-probe temperature sensor, separately wired from the capacitive moisture probe (which has no temperature element of its own). Same driver already used in firmware/thermostat/, firmware/water-heater/, and firmware/pump/.", pins: [
     { label: "DATA", defineName: "SOIL_SENSOR_TEMP_SENSOR_GPIO", defaultsByModule: { esp32: 4, esp32c2: 4, esp32c3: 4, esp32c5: 4, esp32c6: 4, esp32c61: 4, esp32s3: 4, esp32h2: 4 } },
   ] },
+  // firmware/room-air-conditioner/'s own optional TemperatureMeasurement +
+  // RelativeHumidityMeasurement clusters (see its DEVICE_TYPES entry's
+  // `clusterOptions`/`chipChoiceGroups`). TemperatureMeasurement is
+  // genuinely free — it reuses the device's own EXISTING DS18B20 reading
+  // (already wired for its Thermostat control loop), not a new sensor —
+  // so this is a "virtual chip": an empty `pins: []` array, purely to
+  // carry `enableDefineName` the way the shared clusterOptions mechanism
+  // requires (confirmed by reading the render code directly that an
+  // empty pins array already renders no pin-input block at all, so this
+  // needed zero new mechanism code). RelativeHumidityMeasurement, by
+  // contrast, needs a real new chip — the same 4-way SHT3x/SHT4x/AHT20/
+  // BME280 choice already established for air-quality-sensor/
+  // smoke-co-alarm, ported the same way for a dedicated new I2C bus.
+  ROOM_AC_EXISTING_DS18B20: { name: "Existing DS18B20 probe (already wired)", category: "room-ac-temp", bus: "reuses the existing ROOM_AC_SENSOR_GPIO — no new wiring", verified: false, enableDefineName: "ROOM_AC_HAS_TEMPERATURE_MEASUREMENT", note: "Reuses the same DS18B20 reading this device's own Thermostat control loop already takes every cycle — no new sensor or GPIO needed, this only adds a second, standalone TemperatureMeasurement cluster reporting the identical value.", pins: [] },
+  RAC_HUM_SHT3X: { name: "SHT3x", category: "room-ac-humidity", bus: "I2C", verified: true, defineValue: "ROOM_AC_HUMIDITY_CHIP_SHT3X", enableDefineName: "ROOM_AC_HAS_RELATIVE_HUMIDITY_MEASUREMENT", note: "Same driver already verified on real hardware in firmware/temperature-sensor/. Its own temperature reading is taken but not exposed via Matter here — TemperatureMeasurement already comes from the existing DS18B20 probe above.", pins: [
+    { label: "SDA", defineName: "ROOM_AC_HUMIDITY_SDA_GPIO", defaultsByModule: { esp32: 32, esp32c2: 32, esp32c3: 32, esp32c5: 32, esp32c6: 32, esp32c61: 32, esp32s3: 32, esp32h2: 32 } },
+    { label: "SCL", defineName: "ROOM_AC_HUMIDITY_SCL_GPIO", defaultsByModule: { esp32: 33, esp32c2: 33, esp32c3: 33, esp32c5: 33, esp32c6: 33, esp32c61: 33, esp32s3: 33, esp32h2: 33 } },
+  ] },
+  RAC_HUM_SHT4X: { name: "SHT4x", category: "room-ac-humidity", bus: "I2C", verified: false, defineValue: "ROOM_AC_HUMIDITY_CHIP_SHT4X", enableDefineName: "ROOM_AC_HAS_RELATIVE_HUMIDITY_MEASUREMENT", note: "Same driver already used in firmware/temperature-sensor/. Its own temperature reading is taken but not exposed via Matter here.", pins: [
+    { label: "SDA", defineName: "ROOM_AC_HUMIDITY_SDA_GPIO", defaultsByModule: { esp32: 32, esp32c2: 32, esp32c3: 32, esp32c5: 32, esp32c6: 32, esp32c61: 32, esp32s3: 32, esp32h2: 32 } },
+    { label: "SCL", defineName: "ROOM_AC_HUMIDITY_SCL_GPIO", defaultsByModule: { esp32: 33, esp32c2: 33, esp32c3: 33, esp32c5: 33, esp32c6: 33, esp32c61: 33, esp32s3: 33, esp32h2: 33 } },
+  ] },
+  RAC_HUM_AHT20: { name: "AHT20", category: "room-ac-humidity", bus: "I2C", verified: false, defineValue: "ROOM_AC_HUMIDITY_CHIP_AHT20", enableDefineName: "ROOM_AC_HAS_RELATIVE_HUMIDITY_MEASUREMENT", note: "Same driver already used in firmware/temperature-sensor/. Its own temperature reading is taken but not exposed via Matter here.", pins: [
+    { label: "SDA", defineName: "ROOM_AC_HUMIDITY_SDA_GPIO", defaultsByModule: { esp32: 32, esp32c2: 32, esp32c3: 32, esp32c5: 32, esp32c6: 32, esp32c61: 32, esp32s3: 32, esp32h2: 32 } },
+    { label: "SCL", defineName: "ROOM_AC_HUMIDITY_SCL_GPIO", defaultsByModule: { esp32: 33, esp32c2: 33, esp32c3: 33, esp32c5: 33, esp32c6: 33, esp32c61: 33, esp32s3: 33, esp32h2: 33 } },
+  ] },
+  RAC_HUM_BME280: { name: "BME280", category: "room-ac-humidity", bus: "I2C", verified: false, defineValue: "ROOM_AC_HUMIDITY_CHIP_BME280", enableDefineName: "ROOM_AC_HAS_RELATIVE_HUMIDITY_MEASUREMENT", note: "Same driver already used in firmware/temperature-sensor/. Its own temperature reading is taken but not exposed via Matter here.", pins: [
+    { label: "SDA", defineName: "ROOM_AC_HUMIDITY_SDA_GPIO", defaultsByModule: { esp32: 32, esp32c2: 32, esp32c3: 32, esp32c5: 32, esp32c6: 32, esp32c61: 32, esp32s3: 32, esp32h2: 32 } },
+    { label: "SCL", defineName: "ROOM_AC_HUMIDITY_SCL_GPIO", defaultsByModule: { esp32: 33, esp32c2: 33, esp32c3: 33, esp32c5: 33, esp32c6: 33, esp32c61: 33, esp32s3: 33, esp32h2: 33 } },
+  ] },
   REED_SWITCH: { name: "Reed Switch (magnetic)", category: "contact", bus: "GPIO", pin1Label: "Contact", pin2Label: null, usesPin2: false, verified: true },
   HALL_SENSOR: { name: "Hall-Effect Sensor (e.g. A3144, US5881)", category: "contact", bus: "GPIO", pin1Label: "Contact", pin2Label: null, usesPin2: false, verified: false },
   MICROSWITCH: { name: "Microswitch / mechanical contact", category: "contact", bus: "GPIO", pin1Label: "Contact", pin2Label: null, usesPin2: false, verified: false },
@@ -3360,13 +3390,27 @@ const DEVICE_TYPES = [
     id: "room-air-conditioner",
     category: "climate-hvac",
     name: "Room Air Conditioner",
-    desc: "Matter Room Air Conditioner: Thermostat (Cooling only) drives a real compressor relay through a hysteresis loop against a DS18B20 room-air reading, while FanControl drives a separate PWM fan-speed output — independently, so a controller can run the fan alone. The mandatory On/Off cluster (DeadFrontOnOff feature — a cosmetic \"is the unit's display lit\" flag, not a real power switch) has no GPIO of its own. Reference device in firmware/room-air-conditioner/.",
+    desc: "Matter Room Air Conditioner: Thermostat (Cooling only) drives a real compressor relay through a hysteresis loop against a DS18B20 room-air reading, while FanControl drives a separate PWM fan-speed output — independently, so a controller can run the fan alone. The mandatory On/Off cluster (DeadFrontOnOff feature — a cosmetic \"is the unit's display lit\" flag, not a real power switch) has no GPIO of its own. Optionally also expose that same DS18B20 reading as a standalone TemperatureMeasurement cluster (no new hardware needed), and/or add real RelativeHumidityMeasurement via a separately wired I2C sensor. Reference device in firmware/room-air-conditioner/.",
     shortDesc: "Compressor relay + fan PWM, Cool-only thermostat.",
     // Matches project(matter_room_air_conditioner) in
     // firmware/room-air-conditioner/CMakeLists.txt. Three fixed GPIO
     // fields (driver + 2 extraButtons) — same "fixed set, not a variable
     // count" shape firmware/laundry-dryer/'s own entry already
     // established.
+    // clusterOptions: TemperatureMeasurement (backed by a "virtual chip"
+    // with an empty pins array — reuses the existing DS18B20 above, no
+    // new wiring, see ROOM_AC_EXISTING_DS18B20's own comment) +
+    // RelativeHumidityMeasurement (a real 4-chip choice group, its own
+    // new I2C bus). Third and final candidate from the same XML-parse
+    // sweep that found firmware/pump/'s and firmware/soil-sensor/'s own
+    // gaps — see CLAUDE.md's own "Open next steps".
+    clusterOptions: [
+      { id: "TemperatureMeasurement", label: "Standalone Room Air Temperature (reuses the existing DS18B20 above)", chip: "ROOM_AC_EXISTING_DS18B20" },
+      { id: "RelativeHumidityMeasurement", label: "Relative Humidity", group: "roomAcHumidityChip" },
+    ],
+    chipChoiceGroups: [
+      { key: "roomAcHumidityChip", label: "Humidity sensor chip", chips: ["RAC_HUM_SHT3X", "RAC_HUM_SHT4X", "RAC_HUM_AHT20", "RAC_HUM_BME280"], defineName: "ROOM_AC_HUMIDITY_CHIP" },
+    ],
     binName: "matter_room_air_conditioner.bin",
     driverLabel: "Compressor Relay",
     driver: {

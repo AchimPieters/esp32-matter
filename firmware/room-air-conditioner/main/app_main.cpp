@@ -120,6 +120,66 @@
  * Standard quick-power-cycle factory reset. Build-verified in Docker; not
  * hardware-tested (no relay/DS18B20/fan-driver hardware for this device
  * type physically available when written).
+ *
+ * --- Later extended: TemperatureMeasurement + RelativeHumidityMeasurement,
+ * on request (continuing the `clusterOptions` rollout firmware/cooktop/,
+ * firmware/pump/, and firmware/soil-sensor/ started) --------------------
+ * Both are `<optionalConform/>` on RoomAirConditioner.xml (see above),
+ * originally skipped for the usual "smallest reasonable next step"
+ * reasoning, now independently checkable — `ROOM_AC_HAS_TEMPERATURE_
+ * MEASUREMENT`/`ROOM_AC_HAS_RELATIVE_HUMIDITY_MEASUREMENT`, both default
+ * off, unchanged default build. The two are genuinely different kinds of
+ * addition, not a matched pair:
+ *
+ * TemperatureMeasurement needs NO new sensor at all — this endpoint
+ * already reads a real DS18B20 ambient reading every
+ * `ROOM_AC_CONTROL_INTERVAL_MS` cycle for Thermostat's own LocalTemperature
+ * (see above); enabling this cluster just reports that SAME value a
+ * second time, via a standalone, code-driven TemperatureMeasurement
+ * cluster (confirmed the usual registry-lookup-and-cast `SetMeasuredValue()`
+ * pattern, no special init-order requirement) — genuinely free to add.
+ * MinMeasuredValue/MaxMeasuredValue use the DS18B20's own real rated
+ * range (-55.00 to 125.00 degC), the physical sensor's own limits.
+ *
+ * RelativeHumidityMeasurement, by contrast, needs a genuinely NEW sensor
+ * — this device's own existing DS18B20 probe has no humidity output at
+ * all. `ROOM_AC_HUMIDITY_CHIP` offers the same 4-chip I2C library
+ * (SHT3x/SHT4x/AHT20/BME280) firmware/temperature-sensor/'s own driver
+ * already established and firmware/air-quality-sensor/'s and firmware/
+ * smoke-co-alarm/'s own clusterOptions rollouts already reused, ported
+ * byte-for-byte from firmware/smoke-co-alarm/'s own copy. Each chip's own
+ * driver reads BOTH temperature and humidity in one I2C transaction (all
+ * four are combined temp/humidity sensors) — only the humidity half is
+ * exposed via Matter here, since TemperatureMeasurement already comes
+ * from the DS18B20 above; the chip's own temperature reading is taken but
+ * discarded, the same "read but unused" precedent firmware/humidity-
+ * sensor/'s own header comment already documents for its own reused
+ * chips. Needs a genuinely new, dedicated I2C bus (`ROOM_AC_HUMIDITY_SDA_
+ * GPIO`/`_SCL_GPIO`, default 32/33) since this device has no existing I2C
+ * bus at all — GPIOs chosen to avoid the compressor relay (16)/fan PWM
+ * (17)/DS18B20 (21)/identify LED (2) already in use.
+ *
+ * Both clusters are added onto the SAME Room Air Conditioner endpoint via
+ * the usual "add extra clusters onto an already-correct endpoint"
+ * pattern. The existing `control_task`'s own 5s loop reports
+ * TemperatureMeasurement and (if enabled) polls + reports the humidity
+ * chip alongside its existing DS18B20 read and control-loop re-evaluation
+ * — no second task needed, since a room's humidity changes on a similar
+ * timescale to its temperature. Wizard integration needed one small,
+ * genuinely new addition to the shared `clusterOptions` mechanism: a
+ * clusterOptions entry with neither `chip` nor `group` (TemperatureMeasurement
+ * here) simply has no chip-choice/pin UI to render — but `buildSedCommands()`
+ * only ever emits a cluster's own enable-define through a backing CHIP's
+ * `enableDefineName`, so this needed a trivial "virtual chip" COMPONENT_LIBRARY
+ * entry with an empty `pins: []` array purely to carry `enableDefineName` —
+ * confirmed by reading the render code directly that an empty `pins` array
+ * already renders no pin-input block at all (the existing `!chip.pins.length`
+ * guard), so this needed zero new mechanism code, only a new kind of
+ * COMPONENT_LIBRARY entry. Build-verified in Docker for the unchanged
+ * default (both off) config, each toggle individually, and both together
+ * (with all 4 humidity chip choices); not hardware-tested (no DS18B20/
+ * SHT3x-class hardware for this specific addition physically available
+ * when written).
  */
 
 #include <esp_err.h>
@@ -127,6 +187,7 @@
 #include <nvs_flash.h>
 #include <driver/gpio.h>
 #include <driver/ledc.h>
+#include <driver/i2c_master.h>
 #include <esp_timer.h>
 
 #include <esp_matter.h>
@@ -134,6 +195,8 @@
 #include <app-common/zap-generated/cluster-objects.h>
 #include <app/clusters/fan-control-server/CodegenIntegration.h>
 #include <app/clusters/resource-monitoring-server/ResourceMonitoringCluster.h>
+#include <app/clusters/temperature-measurement-server/TemperatureMeasurementCluster.h>
+#include <app/clusters/relative-humidity-measurement-server/RelativeHumidityMeasurementCluster.h>
 #include <data_model_provider/clusters/resource_monitor/integration.h>
 #include <data_model_provider/esp_matter_data_model_provider.h>
 
@@ -172,6 +235,37 @@ static const char *TAG = "matter_room_air_conditioner";
  * compressor hysteresis. */
 #define ROOM_AC_CONTROL_INTERVAL_MS 5000
 
+/* --- Optional TemperatureMeasurement + RelativeHumidityMeasurement — see
+ * the header comment above for the full sourcing/reuse detail. Both
+ * default off, unchanged default build.
+ *
+ * ROOM_AC_HAS_TEMPERATURE_MEASUREMENT reuses the existing DS18B20 above —
+ * no new sensor needed. Deliberately no inline comment on its own #define
+ * line below (unlike most of this file's other constants) — the product
+ * wizard's own generated sed command for it rewrites the WHOLE line (a
+ * broad `.*` match, since this is a real two-state 0/1 toggle rather than
+ * a fixed sentinel), which would silently strip a trailing inline comment
+ * the first time a product actually enables it — the same real,
+ * previously-caught bug class firmware/soil-sensor/'s own header comment
+ * already documents in full for its own two calibration #defines. */
+#define ROOM_AC_HAS_TEMPERATURE_MEASUREMENT 0
+#define ROOM_AC_TEMP_MIN_CENTIDEGREES (-5500)  /* -55.00 degC — DS18B20's own rated range */
+#define ROOM_AC_TEMP_MAX_CENTIDEGREES 12500    /* 125.00 degC — DS18B20's own rated range */
+
+#define ROOM_AC_HAS_RELATIVE_HUMIDITY_MEASUREMENT 0
+#define ROOM_AC_HUMIDITY_CHIP_SHT3X 1
+#define ROOM_AC_HUMIDITY_CHIP_SHT4X 2
+#define ROOM_AC_HUMIDITY_CHIP_AHT20 3
+#define ROOM_AC_HUMIDITY_CHIP_BME280 4
+#define ROOM_AC_HUMIDITY_CHIP ROOM_AC_HUMIDITY_CHIP_SHT3X
+
+/* A dedicated I2C bus — this device has no existing one (the DS18B20 is
+ * 1-Wire, not I2C). Defaults avoid the compressor relay (16)/fan PWM
+ * (17)/DS18B20 (21)/identify LED (2) already in use. */
+#define ROOM_AC_HUMIDITY_SDA_GPIO GPIO_NUM_32
+#define ROOM_AC_HUMIDITY_SCL_GPIO GPIO_NUM_33
+#define ROOM_AC_HUMIDITY_I2C_FREQ_HZ 100000
+
 /* --- Filter monitoring (Matter Device Types Reference audit) ------------
  * HEPA + Activated Carbon Filter Monitoring, both optionalConform on this
  * device type's own XML (confirmed directly against the CSA's own
@@ -204,6 +298,9 @@ static uint16_t room_ac_endpoint_id = 0;
 static uint32_t filter_total_run_seconds = 0;
 static uint8_t g_fan_percent_setting = 0;
 static esp_timer_handle_t identify_led_timer = NULL;
+#if ROOM_AC_HAS_RELATIVE_HUMIDITY_MEASUREMENT
+static bool room_ac_humidity_ok = false;
+#endif
 
 /* --- DS18B20 driver ---------------------------------------------------
  * Reused verbatim from firmware/laundry-dryer/'s (itself from firmware/
@@ -355,6 +452,359 @@ static void update_local_temperature(nullable<int16_t> value)
     attribute::update(room_ac_endpoint_id, Thermostat::Id, Thermostat::Attributes::LocalTemperature::Id, &val);
 }
 
+/* Same registry-lookup-and-cast pattern as every other TemperatureMeasurement
+ * instance in this repo — plain code-driven cluster, no special init-order
+ * requirement. Reuses the SAME sensor_read() value control_task() already
+ * computes each cycle for LocalTemperature above — see the header comment
+ * for why this is genuinely free to add. */
+static void update_temperature_measurement(chip::app::DataModel::Nullable<int16_t> value)
+{
+    chip::app::ConcreteClusterPath path(room_ac_endpoint_id, TemperatureMeasurement::Id);
+    chip::app::ServerClusterInterface *iface = esp_matter::data_model::provider::get_instance().registry().Get(path);
+    if (!iface) {
+        ESP_LOGE(TAG, "TemperatureMeasurement cluster not found on endpoint %u", room_ac_endpoint_id);
+        return;
+    }
+    static_cast<chip::app::Clusters::TemperatureMeasurementCluster *>(iface)->SetMeasuredValue(value);
+}
+
+#if ROOM_AC_HAS_RELATIVE_HUMIDITY_MEASUREMENT
+/* ======================================================================
+ * Humidity driver — the same 4 I2C chip options firmware/temperature-
+ * sensor/'s own driver established, ported byte-for-byte from firmware/
+ * smoke-co-alarm/'s own copy (itself already reused in firmware/
+ * air-quality-sensor/) — see the header comment above for the full
+ * sourcing. Each chip's own driver reads BOTH temperature and humidity in
+ * one transaction; only the humidity half is exposed here (Temperature
+ * already comes from the DS18B20 above), the temperature reading is taken
+ * but discarded.
+ * ====================================================================== */
+static i2c_master_dev_handle_t room_ac_humidity_i2c_dev = NULL;
+
+static bool room_ac_humidity_i2c_bus_setup(uint16_t device_address)
+{
+    i2c_master_bus_config_t bus_config = {};
+    bus_config.i2c_port = I2C_NUM_0;
+    bus_config.sda_io_num = ROOM_AC_HUMIDITY_SDA_GPIO;
+    bus_config.scl_io_num = ROOM_AC_HUMIDITY_SCL_GPIO;
+    bus_config.clk_source = I2C_CLK_SRC_DEFAULT;
+    bus_config.glitch_ignore_cnt = 7;
+    bus_config.flags.enable_internal_pullup = true;
+
+    i2c_master_bus_handle_t bus = NULL;
+    esp_err_t err = i2c_new_master_bus(&bus_config, &bus);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "i2c_new_master_bus failed: %s", esp_err_to_name(err));
+        return false;
+    }
+
+    i2c_device_config_t dev_config = {};
+    dev_config.dev_addr_length = I2C_ADDR_BIT_LEN_7;
+    dev_config.device_address = device_address;
+    dev_config.scl_speed_hz = ROOM_AC_HUMIDITY_I2C_FREQ_HZ;
+
+    err = i2c_master_bus_add_device(bus, &dev_config, &room_ac_humidity_i2c_dev);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "i2c_master_bus_add_device failed: %s", esp_err_to_name(err));
+        return false;
+    }
+    return true;
+}
+
+/* Sensirion CRC-8 (polynomial 0x31, init 0xFF) — used by SHT3x/SHT4x. */
+static uint8_t room_ac_sensirion_crc8(const uint8_t *data, size_t len)
+{
+    uint8_t crc = 0xFF;
+    for (size_t i = 0; i < len; i++) {
+        crc ^= data[i];
+        for (int bit = 0; bit < 8; bit++) {
+            crc = (crc & 0x80) ? (uint8_t)((crc << 1) ^ 0x31) : (uint8_t)(crc << 1);
+        }
+    }
+    return crc;
+}
+
+#if ROOM_AC_HUMIDITY_CHIP == ROOM_AC_HUMIDITY_CHIP_SHT3X
+
+#define ROOM_AC_HUMIDITY_SHT3X_I2C_ADDR 0x44 /* 0x45 if ADDR is tied to VDD */
+
+static bool room_ac_humidity_setup(void)
+{
+    return room_ac_humidity_i2c_bus_setup(ROOM_AC_HUMIDITY_SHT3X_I2C_ADDR);
+}
+
+static bool room_ac_humidity_read(float *temperature_c, float *humidity_pct)
+{
+    const uint8_t cmd[2] = {0x24, 0x00}; /* single shot, high repeatability */
+    if (i2c_master_transmit(room_ac_humidity_i2c_dev, cmd, sizeof(cmd), 1000) != ESP_OK) {
+        return false;
+    }
+    vTaskDelay(pdMS_TO_TICKS(20));
+
+    uint8_t data[6];
+    if (i2c_master_receive(room_ac_humidity_i2c_dev, data, sizeof(data), 1000) != ESP_OK) {
+        return false;
+    }
+    if (room_ac_sensirion_crc8(data, 2) != data[2] || room_ac_sensirion_crc8(data + 3, 2) != data[5]) {
+        ESP_LOGW(TAG, "SHT3x CRC mismatch — discarding reading");
+        return false;
+    }
+
+    uint16_t temp_ticks = ((uint16_t)data[0] << 8) | data[1];
+    uint16_t hum_ticks = ((uint16_t)data[3] << 8) | data[4];
+    *temperature_c = -45.0f + 175.0f * ((float)temp_ticks / 65535.0f);
+    *humidity_pct = 100.0f * ((float)hum_ticks / 65535.0f);
+    return true;
+}
+
+#elif ROOM_AC_HUMIDITY_CHIP == ROOM_AC_HUMIDITY_CHIP_SHT4X
+
+#define ROOM_AC_HUMIDITY_SHT4X_I2C_ADDR 0x44
+
+static bool room_ac_humidity_setup(void)
+{
+    return room_ac_humidity_i2c_bus_setup(ROOM_AC_HUMIDITY_SHT4X_I2C_ADDR);
+}
+
+static bool room_ac_humidity_read(float *temperature_c, float *humidity_pct)
+{
+    const uint8_t cmd[1] = {0xFD}; /* measure T & RH, high precision */
+    if (i2c_master_transmit(room_ac_humidity_i2c_dev, cmd, sizeof(cmd), 1000) != ESP_OK) {
+        return false;
+    }
+    vTaskDelay(pdMS_TO_TICKS(15));
+
+    uint8_t data[6];
+    if (i2c_master_receive(room_ac_humidity_i2c_dev, data, sizeof(data), 1000) != ESP_OK) {
+        return false;
+    }
+    if (room_ac_sensirion_crc8(data, 2) != data[2] || room_ac_sensirion_crc8(data + 3, 2) != data[5]) {
+        ESP_LOGW(TAG, "SHT4x CRC mismatch — discarding reading");
+        return false;
+    }
+
+    uint16_t temp_ticks = ((uint16_t)data[0] << 8) | data[1];
+    uint16_t hum_ticks = ((uint16_t)data[3] << 8) | data[4];
+    *temperature_c = -45.0f + 175.0f * ((float)temp_ticks / 65535.0f);
+    *humidity_pct = -6.0f + 125.0f * ((float)hum_ticks / 65535.0f);
+    if (*humidity_pct < 0.0f) {
+        *humidity_pct = 0.0f;
+    } else if (*humidity_pct > 100.0f) {
+        *humidity_pct = 100.0f;
+    }
+    return true;
+}
+
+#elif ROOM_AC_HUMIDITY_CHIP == ROOM_AC_HUMIDITY_CHIP_AHT20
+
+#define ROOM_AC_HUMIDITY_AHT20_I2C_ADDR 0x38
+
+static bool room_ac_humidity_setup(void)
+{
+    if (!room_ac_humidity_i2c_bus_setup(ROOM_AC_HUMIDITY_AHT20_I2C_ADDR)) {
+        return false;
+    }
+    const uint8_t init_cmd[3] = {0xBE, 0x08, 0x00};
+    if (i2c_master_transmit(room_ac_humidity_i2c_dev, init_cmd, sizeof(init_cmd), 1000) != ESP_OK) {
+        ESP_LOGE(TAG, "AHT20 init command failed");
+        return false;
+    }
+    vTaskDelay(pdMS_TO_TICKS(40));
+    return true;
+}
+
+static bool room_ac_humidity_read(float *temperature_c, float *humidity_pct)
+{
+    const uint8_t trigger_cmd[3] = {0xAC, 0x33, 0x00};
+    if (i2c_master_transmit(room_ac_humidity_i2c_dev, trigger_cmd, sizeof(trigger_cmd), 1000) != ESP_OK) {
+        return false;
+    }
+    vTaskDelay(pdMS_TO_TICKS(85));
+
+    uint8_t data[6];
+    if (i2c_master_receive(room_ac_humidity_i2c_dev, data, sizeof(data), 1000) != ESP_OK) {
+        return false;
+    }
+    if (data[0] & 0x80) {
+        ESP_LOGW(TAG, "AHT20 still busy — discarding reading");
+        return false;
+    }
+
+    uint32_t raw_humidity = ((uint32_t)data[1] << 12) | ((uint32_t)data[2] << 4) | (data[3] >> 4);
+    uint32_t raw_temperature = (((uint32_t)data[3] & 0x0F) << 16) | ((uint32_t)data[4] << 8) | data[5];
+
+    *humidity_pct = (float)raw_humidity * 100.0f / 1048576.0f;
+    *temperature_c = (float)raw_temperature * 200.0f / 1048576.0f - 50.0f;
+    return true;
+}
+
+#elif ROOM_AC_HUMIDITY_CHIP == ROOM_AC_HUMIDITY_CHIP_BME280
+
+#define ROOM_AC_HUMIDITY_BME280_I2C_ADDR 0x76 /* 0x77 if SDO is tied to VDD */
+#define ROOM_AC_HUMIDITY_BME280_REG_CHIP_ID 0xD0
+#define ROOM_AC_HUMIDITY_BME280_REG_CALIB_T 0x88
+#define ROOM_AC_HUMIDITY_BME280_REG_CALIB_H1 0xA1
+#define ROOM_AC_HUMIDITY_BME280_REG_CALIB_H2 0xE1
+#define ROOM_AC_HUMIDITY_BME280_REG_CTRL_HUM 0xF2
+#define ROOM_AC_HUMIDITY_BME280_REG_CTRL_MEAS 0xF4
+#define ROOM_AC_HUMIDITY_BME280_REG_DATA 0xFA
+#define ROOM_AC_HUMIDITY_BME280_CHIP_ID_EXPECTED 0x60
+
+struct room_ac_bme280_calib_data {
+    uint16_t dig_t1;
+    int16_t dig_t2;
+    int16_t dig_t3;
+    uint8_t dig_h1;
+    int16_t dig_h2;
+    uint8_t dig_h3;
+    int16_t dig_h4;
+    int16_t dig_h5;
+    int8_t dig_h6;
+};
+
+static struct room_ac_bme280_calib_data room_ac_bme280_calib;
+
+static bool room_ac_bme280_write_reg(uint8_t reg, uint8_t value)
+{
+    uint8_t buf[2] = {reg, value};
+    return i2c_master_transmit(room_ac_humidity_i2c_dev, buf, sizeof(buf), 1000) == ESP_OK;
+}
+
+static bool room_ac_bme280_read_regs(uint8_t reg, uint8_t *out, size_t len)
+{
+    return i2c_master_transmit_receive(room_ac_humidity_i2c_dev, &reg, 1, out, len, 1000) == ESP_OK;
+}
+
+static int16_t room_ac_sign_extend_12bit(uint16_t value)
+{
+    return (int16_t)((value & 0x0800) ? (value | 0xF000) : value);
+}
+
+static bool room_ac_humidity_setup(void)
+{
+    if (!room_ac_humidity_i2c_bus_setup(ROOM_AC_HUMIDITY_BME280_I2C_ADDR)) {
+        return false;
+    }
+
+    uint8_t chip_id = 0;
+    if (!room_ac_bme280_read_regs(ROOM_AC_HUMIDITY_BME280_REG_CHIP_ID, &chip_id, 1) || chip_id != ROOM_AC_HUMIDITY_BME280_CHIP_ID_EXPECTED) {
+        ESP_LOGE(TAG, "BME280 chip ID mismatch (got 0x%02X, expected 0x%02X)", chip_id, ROOM_AC_HUMIDITY_BME280_CHIP_ID_EXPECTED);
+        return false;
+    }
+
+    uint8_t calib_t[6];
+    if (!room_ac_bme280_read_regs(ROOM_AC_HUMIDITY_BME280_REG_CALIB_T, calib_t, sizeof(calib_t))) {
+        return false;
+    }
+    room_ac_bme280_calib.dig_t1 = (uint16_t)(calib_t[0] | (calib_t[1] << 8));
+    room_ac_bme280_calib.dig_t2 = (int16_t)(calib_t[2] | (calib_t[3] << 8));
+    room_ac_bme280_calib.dig_t3 = (int16_t)(calib_t[4] | (calib_t[5] << 8));
+
+    uint8_t dig_h1 = 0;
+    if (!room_ac_bme280_read_regs(ROOM_AC_HUMIDITY_BME280_REG_CALIB_H1, &dig_h1, 1)) {
+        return false;
+    }
+    room_ac_bme280_calib.dig_h1 = dig_h1;
+
+    uint8_t calib_h[7];
+    if (!room_ac_bme280_read_regs(ROOM_AC_HUMIDITY_BME280_REG_CALIB_H2, calib_h, sizeof(calib_h))) {
+        return false;
+    }
+    room_ac_bme280_calib.dig_h2 = (int16_t)(calib_h[0] | (calib_h[1] << 8));
+    room_ac_bme280_calib.dig_h3 = calib_h[2];
+    room_ac_bme280_calib.dig_h4 = room_ac_sign_extend_12bit((uint16_t)((calib_h[3] << 4) | (calib_h[4] & 0x0F)));
+    room_ac_bme280_calib.dig_h5 = room_ac_sign_extend_12bit((uint16_t)((calib_h[5] << 4) | (calib_h[4] >> 4)));
+    room_ac_bme280_calib.dig_h6 = (int8_t)calib_h[6];
+
+    if (!room_ac_bme280_write_reg(ROOM_AC_HUMIDITY_BME280_REG_CTRL_HUM, 0x01)) {
+        return false;
+    }
+    return true;
+}
+
+static int32_t room_ac_bme280_compensate_temperature(int32_t adc_t, int32_t *t_fine)
+{
+    int32_t var1 = ((adc_t / 8) - ((int32_t)room_ac_bme280_calib.dig_t1 * 2)) * ((int32_t)room_ac_bme280_calib.dig_t2) / 2048;
+    int32_t var2_pre = (adc_t / 16) - ((int32_t)room_ac_bme280_calib.dig_t1);
+    int32_t var2 = (((var2_pre * var2_pre) / 4096) * ((int32_t)room_ac_bme280_calib.dig_t3)) / 16384;
+    *t_fine = var1 + var2;
+    int32_t temperature = (*t_fine * 5 + 128) / 256;
+    if (temperature < -4000) {
+        temperature = -4000;
+    } else if (temperature > 8500) {
+        temperature = 8500;
+    }
+    return temperature;
+}
+
+static uint32_t room_ac_bme280_compensate_humidity(int32_t adc_h, int32_t t_fine)
+{
+    int32_t var1 = t_fine - 76800;
+    int32_t var2 = adc_h * 16384;
+    int32_t var3 = ((int32_t)room_ac_bme280_calib.dig_h4) * 1048576;
+    int32_t var4 = ((int32_t)room_ac_bme280_calib.dig_h5) * var1;
+    int32_t var5 = (((var2 - var3) - var4) + 16384) / 32768;
+    var2 = (var1 * ((int32_t)room_ac_bme280_calib.dig_h6)) / 1024;
+    var3 = (var1 * ((int32_t)room_ac_bme280_calib.dig_h3)) / 2048;
+    var4 = ((var2 * (var3 + 32768)) / 1024) + 2097152;
+    var2 = ((var4 * ((int32_t)room_ac_bme280_calib.dig_h2)) + 8192) / 16384;
+    var3 = var5 * var2;
+    int32_t var4b = ((var3 / 32768) * (var3 / 32768)) / 128;
+    int32_t var5b = var3 - ((var4b * ((int32_t)room_ac_bme280_calib.dig_h1)) / 16);
+    if (var5b < 0) {
+        var5b = 0;
+    } else if (var5b > 419430400) {
+        var5b = 419430400;
+    }
+    uint32_t humidity = (uint32_t)(var5b / 4096);
+    if (humidity > 102400) {
+        humidity = 102400;
+    }
+    return humidity;
+}
+
+static bool room_ac_humidity_read(float *temperature_c, float *humidity_pct)
+{
+    if (!room_ac_bme280_write_reg(ROOM_AC_HUMIDITY_BME280_REG_CTRL_MEAS, 0x25)) { /* osrs_t=x1, osrs_p=x1, forced mode */
+        return false;
+    }
+    vTaskDelay(pdMS_TO_TICKS(50));
+
+    uint8_t data[5];
+    if (!room_ac_bme280_read_regs(ROOM_AC_HUMIDITY_BME280_REG_DATA, data, sizeof(data))) {
+        return false;
+    }
+
+    int32_t adc_t = (int32_t)(((uint32_t)data[0] << 12) | ((uint32_t)data[1] << 4) | (data[2] >> 4));
+    int32_t adc_h = (int32_t)(((uint32_t)data[3] << 8) | data[4]);
+
+    int32_t t_fine = 0;
+    int32_t temp_centidegrees = room_ac_bme280_compensate_temperature(adc_t, &t_fine);
+    uint32_t hum_q22_10 = room_ac_bme280_compensate_humidity(adc_h, t_fine);
+
+    *temperature_c = temp_centidegrees / 100.0f;
+    *humidity_pct = hum_q22_10 / 1024.0f;
+    return true;
+}
+
+#else
+#error "Unknown ROOM_AC_HUMIDITY_CHIP"
+#endif
+
+/* Same registry-lookup-and-cast pattern as update_temperature_measurement()
+ * above — RelativeHumidityMeasurement is also a code-driven cluster. */
+static void update_room_ac_humidity(chip::app::DataModel::Nullable<uint16_t> value)
+{
+    chip::app::ConcreteClusterPath path(room_ac_endpoint_id, RelativeHumidityMeasurement::Id);
+    chip::app::ServerClusterInterface *iface = esp_matter::data_model::provider::get_instance().registry().Get(path);
+    if (!iface) {
+        ESP_LOGE(TAG, "RelativeHumidityMeasurement cluster not found on endpoint %u", room_ac_endpoint_id);
+        return;
+    }
+    static_cast<chip::app::Clusters::RelativeHumidityMeasurementCluster *>(iface)->SetMeasuredValue(value);
+}
+#endif /* ROOM_AC_HAS_RELATIVE_HUMIDITY_MEASUREMENT */
+
 static void set_compressor(bool on)
 {
     room_ac_cool_demand = on;
@@ -413,10 +863,29 @@ static void control_task(void *arg)
             room_ac_local_temperature_valid = true;
             room_ac_local_temperature_centidegrees = temp_centidegrees;
             update_local_temperature(nullable<int16_t>(temp_centidegrees));
+#if ROOM_AC_HAS_TEMPERATURE_MEASUREMENT
+            update_temperature_measurement(chip::app::DataModel::Nullable<int16_t>(temp_centidegrees));
+#endif
         } else {
             room_ac_local_temperature_valid = false;
             update_local_temperature(nullable<int16_t>());
+#if ROOM_AC_HAS_TEMPERATURE_MEASUREMENT
+            update_temperature_measurement(chip::app::DataModel::Nullable<int16_t>());
+#endif
         }
+
+#if ROOM_AC_HAS_RELATIVE_HUMIDITY_MEASUREMENT
+        if (room_ac_humidity_ok) {
+            float humidity_temp_c = 0.0f, humidity_pct = 0.0f;
+            if (room_ac_humidity_read(&humidity_temp_c, &humidity_pct)) {
+                uint16_t hum_centipercent = (uint16_t)(humidity_pct * 100.0f);
+                update_room_ac_humidity(chip::app::DataModel::Nullable<uint16_t>(hum_centipercent));
+                ESP_LOGI(TAG, "Room humidity: %.2f %%RH", humidity_pct);
+            } else {
+                update_room_ac_humidity(chip::app::DataModel::Nullable<uint16_t>());
+            }
+        }
+#endif
 
         run_control_loop();
         vTaskDelay(pdMS_TO_TICKS(ROOM_AC_CONTROL_INTERVAL_MS));
@@ -752,6 +1221,17 @@ extern "C" void app_main(void)
     /* 2c. Configure the DS18B20 sensor pin. */
     sensor_setup();
 
+#if ROOM_AC_HAS_RELATIVE_HUMIDITY_MEASUREMENT
+    /* 2c-2. Set up the optional humidity chip — non-fatal if it fails,
+     * same per-chip graceful-degradation precedent firmware/smoke-co-
+     * alarm/'s and firmware/air-quality-sensor/'s own multi-sensor setups
+     * already establish. */
+    room_ac_humidity_ok = room_ac_humidity_setup();
+    if (!room_ac_humidity_ok) {
+        ESP_LOGE(TAG, "Humidity sensor init failed — no humidity readings will be reported");
+    }
+#endif
+
     /* 2d. Configure the identify LED + its blink timer. */
     gpio_config_t identify_io_conf = {};
     identify_io_conf.pin_bit_mask = (1ULL << IDENTIFY_LED_GPIO);
@@ -826,6 +1306,24 @@ extern "C" void app_main(void)
     carbon_condition_config.degradation_direction =
         chip::to_underlying(ResourceMonitoring::DegradationDirectionEnum::kDown);
     cluster::resource_monitoring::feature::condition::add(carbon_cluster, &carbon_condition_config);
+
+#if ROOM_AC_HAS_TEMPERATURE_MEASUREMENT
+    /* 3c. TemperatureMeasurement — optionalConform, reuses the existing
+     * DS18B20 reading, see the header comment above for the full detail. */
+    cluster::temperature_measurement::config_t temp_meas_config;
+    temp_meas_config.min_measured_value = nullable<int16_t>((int16_t)ROOM_AC_TEMP_MIN_CENTIDEGREES);
+    temp_meas_config.max_measured_value = nullable<int16_t>((int16_t)ROOM_AC_TEMP_MAX_CENTIDEGREES);
+    cluster::temperature_measurement::create(endpoint, &temp_meas_config, CLUSTER_FLAG_SERVER);
+#endif
+
+#if ROOM_AC_HAS_RELATIVE_HUMIDITY_MEASUREMENT
+    /* 3d. RelativeHumidityMeasurement — optionalConform, see the header
+     * comment above for the full sourcing/reuse detail. */
+    cluster::relative_humidity_measurement::config_t hum_meas_config;
+    hum_meas_config.min_measured_value = nullable<uint16_t>(0);
+    hum_meas_config.max_measured_value = nullable<uint16_t>(10000);
+    cluster::relative_humidity_measurement::create(endpoint, &hum_meas_config, CLUSTER_FLAG_SERVER);
+#endif
 
     /* 4. Start Matter — begins BLE advertising so a controller can commission it. */
     err = esp_matter::start(app_event_cb);

@@ -1224,6 +1224,18 @@ cleanly alongside this device type's own pre-existing `numberFields`
 (the dry/wet calibration millivolt fields). See CLAUDE.md's own "Open
 next steps" for the complete detail.
 
+`firmware/room-air-conditioner/` gained two more real, independently
+checkable optional clusters: TemperatureMeasurement — genuinely free,
+reusing this device's own existing DS18B20 reading with no new sensor,
+via a "virtual chip" `COMPONENT_LIBRARY` entry (empty `pins: []`, only an
+`enableDefineName`) — and RelativeHumidityMeasurement, a real new 4-chip
+I2C sensor choice (SHT3x/SHT4x/AHT20/BME280) on a dedicated new I2C bus.
+The virtual-chip case confirms the `clusterOptions` mechanism already
+handles a cluster with nothing to wire up at all, with zero new code.
+See CLAUDE.md's own "Open next steps" for the complete detail — including
+a fresh instance of an inline-comment-vs-broad-sed bug this pass caught
+before shipping.
+
 ## Known limitations
 
 - `firmware/camera/` (Matter Camera, this repo's twelfth device type)

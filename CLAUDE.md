@@ -4656,6 +4656,98 @@ firmware/room-air-conditioner/  Room Air Conditioner — thirty-second device
                            attempt); not hardware-tested (no PWM fan/
                            MOSFET driver board for this device type
                            physically available when written).
+
+                           Later extended (continuing the `clusterOptions`
+                           rollout firmware/cooktop/, firmware/pump/, and
+                           firmware/soil-sensor/ started — the third and
+                           final candidate from the same XML-parse sweep):
+                           TemperatureMeasurement + RelativeHumidityMeasurement,
+                           both `<optionalConform/>` on RoomAirConditioner.xml,
+                           now independently checkable via
+                           `ROOM_AC_HAS_TEMPERATURE_MEASUREMENT`/
+                           `ROOM_AC_HAS_RELATIVE_HUMIDITY_MEASUREMENT` (both
+                           default off, unchanged default build) — a
+                           genuinely different PAIR of additions, not a
+                           matched set. TemperatureMeasurement needs no
+                           new sensor at all: this endpoint already reads
+                           a real DS18B20 ambient reading every control
+                           cycle for Thermostat's own LocalTemperature;
+                           enabling this cluster just reports that SAME
+                           value a second time via a standalone, code-
+                           driven TemperatureMeasurement cluster —
+                           genuinely free to add, using the DS18B20's own
+                           real rated range (-55.00 to 125.00 degC) for
+                           Min/MaxMeasuredValue. RelativeHumidityMeasurement,
+                           by contrast, needs a genuinely NEW sensor — the
+                           existing DS18B20 has no humidity output — so it
+                           offers the same 4-chip I2C library (SHT3x/
+                           SHT4x/AHT20/BME280) firmware/temperature-
+                           sensor/'s own driver already established and
+                           firmware/air-quality-sensor/'s/firmware/
+                           smoke-co-alarm/'s own clusterOptions rollouts
+                           already reused, ported byte-for-byte from
+                           firmware/smoke-co-alarm/'s own copy — each
+                           chip's own driver reads BOTH temperature and
+                           humidity in one transaction, only the humidity
+                           half is exposed here (Temperature already comes
+                           from the DS18B20), the temperature reading is
+                           taken but discarded, same "read but unused"
+                           precedent firmware/humidity-sensor/'s own
+                           header comment already documents. Needs a
+                           genuinely new, dedicated I2C bus (GPIO 32/33)
+                           since this device has no existing I2C bus at
+                           all (the DS18B20 is 1-Wire). Both clusters
+                           added onto the same endpoint via the usual
+                           "add extra clusters onto an already-correct
+                           endpoint" pattern; the existing `control_task`'s
+                           own 5s loop reports both alongside its existing
+                           DS18B20 read and control-loop re-evaluation —
+                           no second task needed.
+
+                           Wizard integration needed one small, genuinely
+                           new addition to the shared `clusterOptions`
+                           mechanism: a clusterOptions entry with neither
+                           `chip` nor `group` (TemperatureMeasurement here,
+                           since it reuses existing hardware with nothing
+                           to pick) has no chip-choice/pin UI to render at
+                           all — but `buildSedCommands()` only ever emits
+                           a cluster's own enable-define through a backing
+                           CHIP's `enableDefineName`, so this needed a
+                           trivial "virtual chip" `COMPONENT_LIBRARY` entry
+                           (`ROOM_AC_EXISTING_DS18B20`) with an empty
+                           `pins: []` array purely to carry
+                           `enableDefineName` — confirmed by reading the
+                           render code directly that an empty `pins` array
+                           already renders no pin-input block at all (the
+                           existing `!chip.pins.length` guard), so this
+                           needed zero new mechanism CODE, only a new
+                           *kind* of `COMPONENT_LIBRARY` entry, reusable by
+                           any future device type with the same "expose an
+                           existing reading as a second cluster" shape. A
+                           real, previously-caught bug class from
+                           firmware/soil-sensor/'s own header comment
+                           recurred and was caught before shipping, not
+                           after: `ROOM_AC_HAS_TEMPERATURE_MEASUREMENT`'s
+                           own first draft had an inline comment on its
+                           `#define` line, which the wizard's broad `.*`
+                           toggle-sed would have silently stripped the
+                           first time a product enabled it — moved to a
+                           standalone comment above the line before this
+                           was ever committed, confirmed via the same real
+                           sed dry-run this repo's own verification
+                           discipline already requires. Verified with the
+                           established Node.js sandboxed regression check
+                           (all 65 device types re-swept, zero exceptions,
+                           plus targeted checks confirming the virtual
+                           chip renders no pin fields and the real
+                           4-chip group does). Build-verified in Docker
+                           for the unchanged default (both off) config,
+                           TemperatureMeasurement alone, and
+                           RelativeHumidityMeasurement combined with
+                           TemperatureMeasurement across all 4 humidity
+                           chip choices; not hardware-tested (no DS18B20/
+                           SHT3x-class hardware for this specific addition
+                           physically available when written).
   partitions.csv           same OTA + fctry layout as firmware/light/
   sdkconfig.defaults        same as firmware/light/
 firmware/heat-pump/       Heat Pump — thirty-third device type, and this
@@ -12129,8 +12221,26 @@ SECURITY.md               flash encryption / secure boot / signed OTA guidance
     isolated copies inside the repo tree, explicit `cd` in the container)
     held up cleanly on a second use.
 
-    Room Air Conditioner (Temperature + Relative Humidity Measurement) is
-    still queued next in this same pass.
+    `firmware/room-air-conditioner/` done third and last: TemperatureMeasurement
+    (genuinely free — reuses the device's own existing DS18B20 reading, no
+    new sensor) + RelativeHumidityMeasurement (a real new 4-chip I2C
+    sensor, same library reused for a third time now) — see its own
+    repository-layout entry above for the complete detail. This pass
+    surfaced one genuinely new, small addition to the shared
+    `clusterOptions` mechanism itself: a "virtual chip" `COMPONENT_LIBRARY`
+    entry (empty `pins: []`, only an `enableDefineName`) for a cluster that
+    reuses already-existing hardware and needs no chip choice or pins at
+    all — confirmed to need zero new mechanism code, since the existing
+    render guard already treats an empty `pins` array as "nothing to
+    render." Also caught, before shipping rather than after, a fresh
+    instance of the exact inline-comment-vs-broad-sed bug class firmware/
+    soil-sensor/'s own header comment already documents — this file's
+    first draft had the same mistake on its own new toggle define, found
+    and fixed by the same real sed dry-run this repo's own verification
+    discipline already requires every time.
+
+    With all three candidates from the XML-parse sweep now done (Pump,
+    Soil Sensor, Room Air Conditioner), this specific pass is complete.
 
 ## Note on hardware/USB
 
