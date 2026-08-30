@@ -12242,6 +12242,34 @@ SECURITY.md               flash encryption / secure boot / signed OTA guidance
     With all three candidates from the XML-parse sweep now done (Pump,
     Soil Sensor, Room Air Conditioner), this specific pass is complete.
 
+16. **Wizard: real vector icons rolled out for the Lighting category (7),
+    the rest still to come.** The user is producing a proper hand-drawn
+    icon set outside this session (`Icons/*.svg`, Adobe-Illustrator-
+    exported solid-fill shapes) to eventually replace every one of
+    `DEVICE_TYPE_ICONS`' own stroke-based line art, one category at a
+    time. The first 7 — `light`, `dimmable-light`, `color-light`,
+    `addressable-light`, `color-temperature-light`,
+    `mounted-onoff-control`, `mounted-dimmable-load-control`, exactly the
+    "Lighting" category from item 11's own categorization work — are
+    wired in now. Each source file's own real viewBox is kept as-is
+    (not renormalized to the 48x48 grid the hand-drawn icons share) —
+    `preserveAspectRatio`'s own default (`xMidYMid meet`) already centers
+    each inside `.device-icon`'s fixed 34x34 box with no distortion,
+    confirmed by an actual headless-Chromium screenshot of the rendered
+    "Choose your device" grid, not just read from source. Each file's own
+    implicit black fill is replaced with `fill="currentColor"` so the
+    icon still tints via `.device-icon`'s own `color` token the same way
+    every hand-drawn icon already does (selected-card blue, otherwise
+    muted grey) — confirmed live in the same screenshot. The remaining 58
+    device types keep their existing hand-drawn line art until matching
+    source art exists for them too; `Icons/` (committed, tracked as real
+    design source, not build output) is where the user will keep adding
+    more as they're produced. Verified with the same Node.js sandboxed
+    regression check this wizard's own history already establishes (all
+    65 device types re-swept, zero exceptions, plus a targeted check that
+    all 7 new icons carry `fill="currentColor"` and every device-type
+    card still renders).
+
 ## Note on hardware/USB
 
 Building happens in Docker; flashing happens on the host with `esptool`. On Linux
