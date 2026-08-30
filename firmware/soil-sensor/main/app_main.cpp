@@ -143,9 +143,19 @@ static const char *TAG = "matter_soil_sensor";
 
 /* Two-point calibration — see the header comment above for why this
  * sensor class needs one, and why these particular numbers are only
- * representative placeholders, not a measured calibration. */
-#define SOIL_SENSOR_DRY_MV 2800 /* probe in dry air */
-#define SOIL_SENSOR_WET_MV 1200 /* probe fully submerged in water */
+ * representative placeholders, not a measured calibration.
+ * SOIL_SENSOR_DRY_MV is the reading with the probe in dry air;
+ * SOIL_SENSOR_WET_MV is the reading with the probe fully submerged in
+ * water. Deliberately NOT inline-commented on their own #define lines
+ * (unlike most of this file's other constants) — the product wizard's
+ * own generated sed command for each rewrites the WHOLE line (a broad
+ * `.*` match, since these carry a real calibrated millivolt value rather
+ * than a fixed sentinel), which would silently strip a trailing inline
+ * comment the first time a product actually changes either value — the
+ * same real, previously-caught bug firmware/rf-ir-bridge/'s own header
+ * comment documents in full for its own two GPIO defines. */
+#define SOIL_SENSOR_DRY_MV 2800
+#define SOIL_SENSOR_WET_MV 1200
 
 /* LED for the Matter "Identify" cluster — blinks so you can physically find
  * this device when a controller asks it to identify itself. GPIO 2 is

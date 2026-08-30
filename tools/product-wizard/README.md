@@ -1177,6 +1177,21 @@ render, the exact generated sed commands for both `#define`s — then those
 exact commands run for real against a copy of the actual `app_main.cpp`
 and diffed against the original, a byte-for-byte match. All checks passed.
 
+On request, seven device types (`firmware/air-purifier/`, `firmware/
+extractor-hood/`, `firmware/generic-switch/`, `firmware/flow-sensor/`,
+`firmware/water-freeze-detector/`, `firmware/soil-sensor/`, `firmware/
+microwave-oven/`) gained real, non-GPIO firmware settings as Configure
+Device fields — filter life, calibration values, cook-cycle timing —
+via a new `numberFields` mechanism (an array-based sibling to the
+existing singular `numberField`, since several of these devices needed
+more than one plain-numeric field at once). See CLAUDE.md's own "Open
+next steps" for the full detail, including a real, previously-latent bug
+this pass caught and fixed (an inline comment on two of
+`firmware/soil-sensor/`'s own `#define`s that would have been silently
+stripped by the new field's own broad-match sed command) and the new
+`float: true` support this mechanism needed for `firmware/flow-sensor/`'s
+own real K-factor constant.
+
 ## Known limitations
 
 - `firmware/camera/` (Matter Camera, this repo's twelfth device type)

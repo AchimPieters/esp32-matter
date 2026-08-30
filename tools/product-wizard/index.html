@@ -2518,6 +2518,39 @@ const DEVICE_TYPES = [
       currentGpio: 4,
       defaultsByModule: { esp32: 4, esp32c2: 4, esp32c3: 4, esp32c5: 4, esp32c6: 4, esp32c61: 4, esp32s3: 4, esp32h2: 4 },
     },
+    // Filter-life estimates — real per-product numbers, not GPIOs, so
+    // these use the new `numberFields` mechanism (see its own comment
+    // above numberFieldsIsFilled() for why this needed a new, ARRAY-based
+    // sibling to the existing singular `numberField` — this device needs
+    // two independent plain-integer fields, that mechanism only ever
+    // supported one). Both default to this file's own shipped values;
+    // adjust to your actual filters' rated life.
+    numberFields: [
+      {
+        key: "hepaLifeHours",
+        label: "HEPA Filter Life",
+        fieldLabel: "Rated HEPA filter life (hours)",
+        blockTitle: "HEPA filter life · hours",
+        filePath: "firmware/air-purifier/main/app_main.cpp",
+        defineName: "AIR_PURIFIER_HEPA_LIFE_HOURS",
+        defaultValue: 2000,
+        min: 100,
+        max: 20000,
+        helpText: "How many hours of fan runtime before the HEPA filter is considered fully spent. Check your actual filter's own datasheet/packaging.",
+      },
+      {
+        key: "carbonLifeHours",
+        label: "Carbon Filter Life",
+        fieldLabel: "Rated activated carbon filter life (hours)",
+        blockTitle: "Carbon filter life · hours",
+        filePath: "firmware/air-purifier/main/app_main.cpp",
+        defineName: "AIR_PURIFIER_CARBON_LIFE_HOURS",
+        defaultValue: 1000,
+        min: 100,
+        max: 20000,
+        helpText: "Same idea as the HEPA figure above, for the activated carbon filter — commonly rated shorter, since carbon media saturates faster.",
+      },
+    ],
   },
   {
     id: "valve",
@@ -2731,6 +2764,37 @@ const DEVICE_TYPES = [
       currentGpio: 4,
       defaultsByModule: { esp32: 4, esp32c2: 4, esp32c3: 4, esp32c5: 4, esp32c6: 4, esp32c61: 4, esp32s3: 4, esp32h2: 4 },
     },
+    // Same `numberFields` mechanism as firmware/air-purifier/'s own
+    // identical addition — see its own comment for the full reasoning.
+    // Life-hour defaults here match this device type's own real, shorter
+    // kitchen-grease/kitchen-carbon figures, not air-purifier's room-air
+    // ones.
+    numberFields: [
+      {
+        key: "greaseLifeHours",
+        label: "Grease Filter Life",
+        fieldLabel: "Rated grease filter life (hours)",
+        blockTitle: "Grease filter life · hours",
+        filePath: "firmware/extractor-hood/main/app_main.cpp",
+        defineName: "EXTRACTOR_HOOD_GREASE_FILTER_LIFE_HOURS",
+        defaultValue: 100,
+        min: 10,
+        max: 5000,
+        helpText: "How many hours of fan runtime before the grease filter (metal mesh/baffle) is considered due for cleaning. Kitchen grease filters saturate much faster than a room air filter.",
+      },
+      {
+        key: "carbonLifeHours",
+        label: "Carbon Filter Life",
+        fieldLabel: "Rated activated carbon filter life (hours)",
+        blockTitle: "Carbon filter life · hours",
+        filePath: "firmware/extractor-hood/main/app_main.cpp",
+        defineName: "EXTRACTOR_HOOD_CARBON_FILTER_LIFE_HOURS",
+        defaultValue: 200,
+        min: 10,
+        max: 5000,
+        helpText: "Same idea as the grease figure above, for the activated carbon (odor) filter.",
+      },
+    ],
   },
   {
     id: "water-heater",
@@ -2863,8 +2927,10 @@ const DEVICE_TYPES = [
     // firmware/generic-switch/CMakeLists.txt. Same single-GPIO-plus-
     // identify shape as firmware/fan/'s own entry — the press-timing
     // state machine (debounce/long-press/multi-press) is all in-firmware
-    // logic with no GPIOs of its own, so no extra fields are needed
-    // beyond the button + identify pins.
+    // logic with no GPIOs of its own. Its own two real UX timing
+    // constants (how long counts as a long press, how wide the multi-
+    // click window is) ARE genuinely worth exposing though — see
+    // `numberFields` below.
     binName: "matter_generic_switch.bin",
     driver: {
       summary: "GPIO (digital input, active-low)",
@@ -2884,6 +2950,32 @@ const DEVICE_TYPES = [
       currentGpio: 2,
       defaultsByModule: { esp32: 2, esp32c2: 2, esp32c3: 2, esp32c5: 2, esp32c6: 2, esp32c61: 2, esp32s3: 2, esp32h2: 2 },
     },
+    numberFields: [
+      {
+        key: "longPressMs",
+        label: "Long Press Threshold",
+        fieldLabel: "Long press threshold (ms)",
+        blockTitle: "Long press threshold · milliseconds",
+        filePath: "firmware/generic-switch/main/app_main.cpp",
+        defineName: "GENERIC_SWITCH_LONG_PRESS_MS",
+        defaultValue: 1000,
+        min: 300,
+        max: 5000,
+        helpText: "How long the button has to stay held before it counts as a LongPress instead of building toward a multi-click. 1000ms (1s) is the common consumer-smart-button convention this firmware ships with.",
+      },
+      {
+        key: "multiPressWindowMs",
+        label: "Multi-Press Window",
+        fieldLabel: "Multi-press window (ms)",
+        blockTitle: "Multi-press window · milliseconds",
+        filePath: "firmware/generic-switch/main/app_main.cpp",
+        defineName: "GENERIC_SWITCH_MULTI_PRESS_WINDOW_MS",
+        defaultValue: 400,
+        min: 100,
+        max: 2000,
+        helpText: "How long after a release this firmware keeps waiting for another press before deciding the click sequence is complete — the common double-click timing window. Shorter feels snappier; longer is more forgiving for a slow double-click.",
+      },
+    ],
   },
   {
     id: "refrigerator",
@@ -3358,6 +3450,22 @@ const DEVICE_TYPES = [
       currentGpio: 2,
       defaultsByModule: { esp32: 2, esp32c2: 2, esp32c3: 2, esp32c5: 2, esp32c6: 2, esp32c61: 2, esp32s3: 2, esp32h2: 2 },
     },
+    numberFields: [
+      {
+        key: "pulsesPerHzPerLpm",
+        label: "Flow Sensor K-Factor",
+        fieldLabel: "Pulses per Hz per L/min (K-factor)",
+        blockTitle: "Flow sensor K-factor",
+        filePath: "firmware/flow-sensor/main/app_main.cpp",
+        defineName: "FLOW_SENSOR_PULSES_PER_HZ_PER_LPM",
+        defaultValue: 7.5,
+        min: 0.1,
+        max: 100,
+        step: 0.1,
+        float: true,
+        helpText: "The pulse-frequency-to-flow-rate constant printed on (or found in the datasheet of) your specific sensor — 7.5 is this firmware's own default, for a YF-S201-class sensor. A different pulse-output flow sensor model will have a different K-factor.",
+      },
+    ],
   },
   {
     id: "humidity-sensor",
@@ -3437,6 +3545,32 @@ const DEVICE_TYPES = [
       currentGpio: 2,
       defaultsByModule: { esp32: 2, esp32c2: 2, esp32c3: 2, esp32c5: 2, esp32c6: 2, esp32c61: 2, esp32s3: 2, esp32h2: 2 },
     },
+    numberFields: [
+      {
+        key: "freezeThresholdCentidegrees",
+        label: "Freeze Alarm Threshold",
+        fieldLabel: "Freeze alarm threshold (hundredths of a degree C)",
+        blockTitle: "Freeze alarm threshold · centidegrees C",
+        filePath: "firmware/water-freeze-detector/main/app_main.cpp",
+        defineName: "WATER_FREEZE_DETECTOR_THRESHOLD_CENTIDEGREES",
+        defaultValue: 300,
+        min: -500,
+        max: 2000,
+        helpText: "300 = 3.00 degC, this firmware's own default — a few degrees above the actual 0 degC freezing point to leave response time. Adjustable, not a calibrated reading.",
+      },
+      {
+        key: "freezeHysteresisCentidegrees",
+        label: "Hysteresis Band",
+        fieldLabel: "Hysteresis band (hundredths of a degree C)",
+        blockTitle: "Hysteresis band · centidegrees C",
+        filePath: "firmware/water-freeze-detector/main/app_main.cpp",
+        defineName: "WATER_FREEZE_DETECTOR_HYSTERESIS_CENTIDEGREES",
+        defaultValue: 30,
+        min: 0,
+        max: 500,
+        helpText: "30 = 0.3 degC either side of the threshold, this firmware's own default — prevents the alarm flapping right at the threshold.",
+      },
+    ],
   },
   {
     id: "soil-sensor",
@@ -3471,6 +3605,36 @@ const DEVICE_TYPES = [
       currentGpio: 2,
       defaultsByModule: { esp32: 2, esp32c2: 2, esp32c3: 2, esp32c5: 2, esp32c6: 2, esp32c61: 2, esp32s3: 2, esp32h2: 2 },
     },
+    // This device type's own header comment (and its `desc` above) is
+    // explicit that its shipped defaults are placeholders, not a real
+    // calibration — a genuinely strong fit for exposing as wizard fields
+    // rather than a hand-edit-the-source-only step.
+    numberFields: [
+      {
+        key: "dryMv",
+        label: "Dry Calibration (mV)",
+        fieldLabel: "ADC reading with probe in dry air (mV)",
+        blockTitle: "Dry calibration · millivolts",
+        filePath: "firmware/soil-sensor/main/app_main.cpp",
+        defineName: "SOIL_SENSOR_DRY_MV",
+        defaultValue: 2800,
+        min: 0,
+        max: 3300,
+        helpText: "Hold the probe in open air (0% moisture) and note the millivolt reading this firmware logs — enter that here. 2800mV is only a representative placeholder, not a measurement of your specific probe.",
+      },
+      {
+        key: "wetMv",
+        label: "Wet Calibration (mV)",
+        fieldLabel: "ADC reading with probe fully submerged (mV)",
+        blockTitle: "Wet calibration · millivolts",
+        filePath: "firmware/soil-sensor/main/app_main.cpp",
+        defineName: "SOIL_SENSOR_WET_MV",
+        defaultValue: 1200,
+        min: 0,
+        max: 3300,
+        helpText: "Submerge the probe fully in water (100% moisture) and note the reading — enter that here. 1200mV is only a representative placeholder.",
+      },
+    ],
   },
   {
     id: "dimmable-plug",
@@ -3660,6 +3824,56 @@ const DEVICE_TYPES = [
       currentGpio: 2,
       defaultsByModule: { esp32: 2, esp32c2: 2, esp32c3: 2, esp32c5: 2, esp32c6: 2, esp32c61: 2, esp32s3: 2, esp32h2: 2 },
     },
+    numberFields: [
+      {
+        key: "maxCookTimeSec",
+        label: "Max Cook Time",
+        fieldLabel: "Maximum cook time this device accepts (seconds)",
+        blockTitle: "Max cook time · seconds",
+        filePath: "firmware/microwave-oven/main/app_main.cpp",
+        defineName: "MICROWAVE_MAX_COOK_TIME_SEC",
+        defaultValue: 1800,
+        min: 60,
+        max: 3600,
+        helpText: "1800s (30 minutes) is this firmware's own default — a generous real-world ceiling, well inside the cluster's own spec-wide 24h cap.",
+      },
+      {
+        key: "defaultCookTimeSec",
+        label: "Default Cook Time",
+        fieldLabel: "Default cook time when none is specified (seconds)",
+        blockTitle: "Default cook time · seconds",
+        filePath: "firmware/microwave-oven/main/app_main.cpp",
+        defineName: "MICROWAVE_DEFAULT_COOK_TIME_SEC",
+        defaultValue: 30,
+        min: 5,
+        max: 600,
+        helpText: "A plain, common \"quick cook\" starting point.",
+      },
+      {
+        key: "defaultPowerPercent",
+        label: "Default Power Level",
+        fieldLabel: "Default power level (%)",
+        blockTitle: "Default power level · percent",
+        filePath: "firmware/microwave-oven/main/app_main.cpp",
+        defineName: "MICROWAVE_DEFAULT_POWER_NUM",
+        defaultValue: 100,
+        min: 10,
+        max: 100,
+        helpText: "The spec's own documented default for SetCookingParameters' PowerSetting field when a controller omits it — 100% (MaxPower) matches connectedhomeip's own reference example.",
+      },
+      {
+        key: "dutyCycleWindowSec",
+        label: "Duty Cycle Window",
+        fieldLabel: "Power duty-cycle window (seconds)",
+        blockTitle: "Duty cycle window · seconds",
+        filePath: "firmware/microwave-oven/main/app_main.cpp",
+        defineName: "MICROWAVE_DUTY_CYCLE_WINDOW_SEC",
+        defaultValue: 10,
+        min: 1,
+        max: 60,
+        helpText: "How long the repeating on/off window is for simulating a power level below 100% (the relay is energized for whatever fraction of this window matches the requested power) — the same technique real consumer microwaves use.",
+      },
+    ],
   },
   {
     id: "doorbell",
@@ -5835,6 +6049,17 @@ function renderConfigureDevice(p) {
   const extraPickers = deviceType ? deviceType.extraPickers : null;
   const clusterOptions = deviceType ? deviceType.clusterOptions : null;
   let numberField = deviceType ? deviceType.numberField : null;
+  // numberFields (currently air-purifier/extractor-hood/generic-switch/
+  // flow-sensor/water-freeze-detector/soil-sensor/microwave-oven's own
+  // filter-life/timing/calibration constants) — an ARRAY-based sibling to
+  // the singular `numberField` above, needed because those devices each
+  // have more than one independent plain-numeric #define worth exposing
+  // (numberField only ever supported one per device type). Each entry
+  // optionally carries `float: true` + `step` for a non-integer value
+  // (currently just flow-sensor's own K-factor) — the singular
+  // `numberField` mechanism has never needed this, every one of its own
+  // users so far has been a plain integer.
+  const numberFields = deviceType ? deviceType.numberFields : null;
   const defaultGpio = driver ? (driver.defaultsByModule[p.target] != null ? driver.defaultsByModule[p.target] : 2) : 2;
   const defaultSecondaryGpio = secondary ? (secondary.defaultsByModule[p.target] != null ? secondary.defaultsByModule[p.target] : 4) : 4;
   const defaultIdentifyGpio = identify ? (identify.defaultsByModule[p.target] != null ? identify.defaultsByModule[p.target] : 4) : 4;
@@ -6025,7 +6250,19 @@ function renderConfigureDevice(p) {
   if (numberField && p[numberField.key] == null) p[numberField.key] = numberField.defaultValue;
   const numberFieldValid = !numberField ||
     (Number.isInteger(p[numberField.key]) && p[numberField.key] >= numberField.min && p[numberField.key] <= numberField.max);
-  const allValid = gpioValid && secondaryGpioValid && identifyGpioValid && extraButtonsValid && statusLedGpioValid && positionSensorGpioValid && dockSensorGpioValid && plugSensorGpioValid && doorSensorGpioValid && pickerPinsValid && numberFieldValid && rotaryEncoderValid && protocolTogglesGpioValid && protocolTogglesAtLeastOneValid;
+  // numberFields (see its own comment above where the variable is
+  // declared) — same default-fill + range validation as numberField
+  // above, just per-entry over an array, and using Number.isFinite
+  // instead of Number.isInteger for a `float: true` entry (currently
+  // just flow-sensor's own K-factor).
+  if (numberFields) {
+    numberFields.forEach((nf) => {
+      if (p[nf.key] == null) p[nf.key] = nf.defaultValue;
+    });
+  }
+  const numberFieldsValid = !numberFields || numberFields.every((nf) =>
+    (nf.float ? Number.isFinite(p[nf.key]) : Number.isInteger(p[nf.key])) && p[nf.key] >= nf.min && p[nf.key] <= nf.max);
+  const allValid = gpioValid && secondaryGpioValid && identifyGpioValid && extraButtonsValid && statusLedGpioValid && positionSensorGpioValid && dockSensorGpioValid && plugSensorGpioValid && doorSensorGpioValid && pickerPinsValid && numberFieldValid && numberFieldsValid && rotaryEncoderValid && protocolTogglesGpioValid && protocolTogglesAtLeastOneValid;
 
   // Component-aware field labels: falls back to the device type's own
   // static text when there's no componentOptions list (every device type
@@ -6268,6 +6505,19 @@ function renderConfigureDevice(p) {
             <p class="field-note">${escapeHtml(numberField.helpText)}</p>
           </div>
         ` : ""}
+
+        ${numberFields ? numberFields.map((nf) => {
+          const fieldValid = (nf.float ? Number.isFinite(p[nf.key]) : Number.isInteger(p[nf.key])) && p[nf.key] >= nf.min && p[nf.key] <= nf.max;
+          return `
+          <div class="driver-block">
+            <h3>${escapeHtml(nf.blockTitle)}</h3>
+            <label class="field-label" for="number-fields-${escapeHtml(nf.key)}">${escapeHtml(nf.fieldLabel)}</label>
+            <input type="number" id="number-fields-${escapeHtml(nf.key)}" data-number-fields="${escapeHtml(nf.key)}" min="${nf.min}" max="${nf.max}" step="${nf.step || 1}" value="${p[nf.key]}">
+            <div class="field-error">${fieldValid ? "" : `Enter a number between ${nf.min} and ${nf.max}.`}</div>
+            <p class="field-note">${escapeHtml(nf.helpText)}</p>
+          </div>
+          `;
+        }).join("") : ""}
 
         ${statusLed ? `
           <div class="driver-block">
@@ -6517,7 +6767,8 @@ function renderConfigureDevice(p) {
           <code>${escapeHtml(b.defineName)}</code>`).join("")}${hasVariableButtonCount ? `,
           <code>${escapeHtml(deviceType.buttonCountDefineName)}</code>` : ""}${secondary ? `,
           <code>${escapeHtml(secondary.defineName)}</code>${secondaryFieldNeeded ? "" : " (kept at its default — unused by this sensor)"}` : ""}${numberField ? `,
-          <code>${escapeHtml(numberField.defineName)}</code>` : ""}${statusLedOn ? `,
+          <code>${escapeHtml(numberField.defineName)}</code>` : ""}${numberFields ? numberFields.map((nf) => `,
+          <code>${escapeHtml(nf.defineName)}</code>`).join("") : ""}${statusLedOn ? `,
           <code>${escapeHtml(statusLed.defineName)}</code>` : ""}${positionSensorOn ? `,
           <code>${escapeHtml(positionSensor.defineName)}</code>` : ""}${dockSensorOn ? `,
           <code>${escapeHtml(dockSensor.defineName)}</code>` : ""}${plugSensorOn ? `,
@@ -6574,6 +6825,15 @@ function renderConfigureDevice(p) {
             <div class="summary-detail">${numberFieldValid ? p[numberField.key] : "?"}</div>
           </div>
         ` : ""}
+        ${numberFields ? numberFields.map((nf) => {
+          const fieldValid = (nf.float ? Number.isFinite(p[nf.key]) : Number.isInteger(p[nf.key])) && p[nf.key] >= nf.min && p[nf.key] <= nf.max;
+          return `
+          <div class="summary-row">
+            <div class="summary-label">${escapeHtml(nf.label.toUpperCase())}</div>
+            <div class="summary-detail">${fieldValid ? p[nf.key] : "?"}</div>
+          </div>
+          `;
+        }).join("") : ""}
         ${statusLed ? `
           <div class="summary-row">
             <div class="summary-label">STATUS LED</div>
@@ -6819,6 +7079,11 @@ function isProductComplete(p) {
     ? deviceType.numberField : null;
   const numberFieldOk = !numberField ||
     (Number.isInteger(p[numberField.key]) && p[numberField.key] >= numberField.min && p[numberField.key] <= numberField.max);
+  // numberFields (see its own comment in renderConfigureDevice) — same
+  // "compute fresh" reasoning as numberField above, per array entry.
+  const numberFields = deviceType ? deviceType.numberFields : null;
+  const numberFieldsOk = !numberFields || numberFields.every((nf) =>
+    (nf.float ? Number.isFinite(p[nf.key]) : Number.isInteger(p[nf.key])) && p[nf.key] >= nf.min && p[nf.key] <= nf.max);
   // clusterOptions (currently just air-quality's own optional-cluster
   // checkboxes) — same "compute fresh, don't trust p[...] being pre-
   // filled" reasoning as buttonCount/numberField above. Uses the shared
@@ -6852,7 +7117,7 @@ function isProductComplete(p) {
   return !!p.deviceType && !!p.target &&
     Number.isInteger(p.gpioPin) && p.gpioPin >= 0 &&
     secondaryOk && identifyOk && buttonsOk && statusLedOk && positionSensorOk && dockSensorOk && plugSensorOk && doorSensorOk &&
-    rotaryEncoderOk && pickerPinsOk && numberFieldOk && clusterChipPinsOk && chipChoiceGroupsOk && protocolTogglesOk;
+    rotaryEncoderOk && pickerPinsOk && numberFieldOk && numberFieldsOk && clusterChipPinsOk && chipChoiceGroupsOk && protocolTogglesOk;
 }
 
 function buildConfigPreview(p) {
@@ -7025,6 +7290,19 @@ function renderCustomiseReview(p) {
               <button class="link" data-goto-step="2">Edit</button>
             </div>
           `;
+        })()}
+        ${(() => {
+          const dt = findDeviceType(p.deviceType);
+          if (!dt || !dt.numberFields) return "";
+          return dt.numberFields.map((nf) => `
+            <div class="review-row">
+              <div>
+                <div class="summary-label">${escapeHtml(nf.label.toUpperCase())}</div>
+                <div class="summary-value">${p[nf.key] != null ? p[nf.key] : "?"}</div>
+              </div>
+              <button class="link" data-goto-step="2">Edit</button>
+            </div>
+          `).join("");
         })()}
         ${findDeviceType(p.deviceType) && findDeviceType(p.deviceType).statusLed ? `
           <div class="review-row">
@@ -7448,6 +7726,20 @@ function buildSedCommands(p) {
     const value = Number.isInteger(p[nf.key]) ? p[nf.key] : nf.defaultValue;
     cmds.push(`sed -i 's/^#define ${nf.defineName} .*/#define ${nf.defineName} ${value}/' ${filePath}`);
   }
+  if (deviceType && deviceType.numberFields) {
+    // Same broad `.*` pattern as numberField above, one sed line per
+    // array entry. A `float: true` entry (currently just flow-sensor's
+    // own K-factor) appends a trailing `f` to match the C float-literal
+    // convention the firmware itself ships with (e.g. `7.5f`) — plain
+    // `parseFloat`/toString() output alone wouldn't compile as a float
+    // literal without it.
+    deviceType.numberFields.forEach((nf) => {
+      const valid = nf.float ? Number.isFinite(p[nf.key]) : Number.isInteger(p[nf.key]);
+      const raw = valid ? p[nf.key] : nf.defaultValue;
+      const value = nf.float ? `${raw}f` : raw;
+      cmds.push(`sed -i 's/^#define ${nf.defineName} .*/#define ${nf.defineName} ${value}/' ${filePath}`);
+    });
+  }
   if (statusLed && statusLedIsEnabled(p)) {
     // Broad `.*` match, not the narrow GPIO_NUM_[0-9]* pattern below — the
     // firmware ships this one as GPIO_NUM_NC (ESP-IDF's "not connected"
@@ -7799,6 +8091,7 @@ function bindEvents() {
         // extraPickers reset above.
         DEVICE_TYPES.forEach((dt) => {
           if (dt.numberField) state.currentProduct[dt.numberField.key] = null;
+          if (dt.numberFields) dt.numberFields.forEach((nf) => { state.currentProduct[nf.key] = null; });
         });
         // clusterOptions (currently just air-quality's own optional-cluster
         // checkboxes): same stale-value risk as everything above — reset
@@ -8126,6 +8419,24 @@ function bindEvents() {
       const key = el.getAttribute("data-number-field");
       const raw = el.value;
       state.currentProduct[key] = raw === "" ? null : parseInt(raw, 10);
+      saveProducts();
+      render();
+      document.getElementById(el.id).focus();
+    });
+  });
+
+  // numberFields (see its own comment in renderConfigureDevice) — same
+  // delegated shape as data-number-field above, keyed by data-number-fields
+  // instead. Looks up the matching entry on the current product's own
+  // device type to decide parseFloat vs. parseInt (a `float: true` entry,
+  // currently just flow-sensor's own K-factor, needs decimals preserved).
+  document.querySelectorAll('input[data-number-fields]').forEach((el) => {
+    el.addEventListener("input", () => {
+      const key = el.getAttribute("data-number-fields");
+      const dt = findDeviceType(state.currentProduct.deviceType);
+      const nf = dt && dt.numberFields ? dt.numberFields.find((f) => f.key === key) : null;
+      const raw = el.value;
+      state.currentProduct[key] = raw === "" ? null : (nf && nf.float ? parseFloat(raw) : parseInt(raw, 10));
       saveProducts();
       render();
       document.getElementById(el.id).focus();

@@ -11653,6 +11653,113 @@ SECURITY.md               flash encryption / secure boot / signed OTA guidance
     missing audio/video hardware/stacks) — not a "give it a fresh look
     later" situation the way Battery Storage's or Temperature Controlled
     Cabinet's own earlier skips turned out to be.
+13. **Wizard: `numberFields` mechanism + first pass of real firmware
+    settings exposed for 7 device types.** The user pointed out that
+    "Configure Device" only ever shows GPIO pins for most device types,
+    and asked to expose more of the real firmware-level settings that
+    already exist as `#define`s in `app_main.cpp` but were never wired
+    into the wizard at all. Scoped deliberately (via AskUserQuestion)
+    before writing any code: more #define-level settings first (not the
+    separate `clusterOptions` optional-cluster-picker rollout, a
+    different kind of work), and broadly across several devices at once
+    rather than one pilot.
+
+    Surveyed every one of the 65 wizard device types first (a small
+    Node.js sandboxed script enumerating which optional mechanisms —
+    `extraPickers`/`componentOptions`/`clusterOptions`/`protocolToggles`/
+    etc. — each one already has) rather than guessing which needed work:
+    20 device types had literally nothing beyond `driver`+`identify`.
+    Then read each of those 20 firmware files' own `#define` blocks
+    directly and picked out the ones genuinely worth exposing — real
+    calibration values, filter-life estimates, and UX timing a user would
+    plausibly want to tune — while deliberately leaving out internal
+    implementation plumbing (LEDC timer/channel/duty-resolution
+    constants, debounce sample counts, the shared `IDENTIFY_BLINK_
+    INTERVAL_MS`/`FACTORY_RESET_*` constants every device type already
+    carries identically) that isn't a real product decision.
+
+    The existing `numberField` mechanism (singular, addressable-light's
+    own pixel count) only ever supported ONE plain-integer field per
+    device type — several of the newly-chosen candidates genuinely need
+    more than one (e.g. water-freeze-detector's own threshold +
+    hysteresis pair, soil-sensor's own two-point dry/wet calibration).
+    Rather than force multiple unrelated fields through a singular
+    mechanism, added a new sibling, array-based `numberFields` (plural) —
+    the same "genuinely different shape needs its own array-based
+    mechanism" precedent `extraPickers`/`clusterOptions`/`protocolToggles`
+    already established, not a forced generalization of the existing
+    singular one (which stays exactly as it was, still used by
+    addressable-light alone). One genuinely new capability added while
+    building this: an optional `float: true` + `step` flag per field —
+    every prior numeric wizard field (including the singular
+    `numberField`) has been a plain integer; flow-sensor's own real
+    K-factor constant (`FLOW_SENSOR_PULSES_PER_HZ_PER_LPM 7.5f`) is a
+    genuine float, so `buildSedCommands()` appends a trailing `f` to
+    match the C float-literal convention the firmware itself already
+    ships with — confirmed necessary, not just convenient, since plain
+    `parseFloat().toString()` output alone wouldn't compile as a float
+    literal without it.
+
+    Seven device types got real fields added: `firmware/air-purifier/`
+    and `firmware/extractor-hood/` (HEPA/carbon or grease/carbon filter
+    life in hours — both already flagged in their own code comments as
+    "adjustable per your actual filters' rated life," now actually
+    adjustable from the wizard instead of only by hand-editing the
+    source); `firmware/generic-switch/` (long-press threshold, multi-
+    press window — real UX timing, not a calibration); `firmware/
+    flow-sensor/` (the K-factor, for using a non-YF-S201-class sensor);
+    `firmware/water-freeze-detector/` (freeze threshold + hysteresis);
+    `firmware/soil-sensor/` (the two-point dry/wet millivolt calibration
+    — this device type's own header comment and `desc` text already say
+    outright that the shipped defaults are "only representative
+    placeholders, not a measured calibration," making this the single
+    clearest case for exposing a field in this whole pass); and
+    `firmware/microwave-oven/` (max/default cook time, default power
+    level, duty-cycle window — four real, independently adjustable
+    appliance parameters).
+
+    Wiring touched every site the singular `numberField` already
+    established (`renderConfigureDevice`'s driver-block render + its own
+    Configuration-summary sidebar row, `isProductComplete`, the sed-
+    command-preview list, `buildSedCommands`, the Customise & Review
+    step's own summary row, the device-type-switch reset loop, and a new
+    delegated `data-number-fields` input listener parallel to the
+    existing `data-number-field` one) — the same "touch every site a
+    comparable mechanism already touches" discipline this repo has
+    followed for every prior wizard mechanism addition.
+
+    A real, previously-latent bug was caught and fixed while wiring this
+    up, not assumed safe: `firmware/soil-sensor/`'s own `SOIL_SENSOR_
+    DRY_MV`/`SOIL_SENSOR_WET_MV` `#define`s each carried a trailing
+    inline comment (`/* probe in dry air */` etc.). Since a `numberFields`
+    entry's own generated sed command rewrites the WHOLE line (a broad
+    `.*` match — these carry a real calibrated value, not a fixed
+    sentinel, so the narrow `GPIO_NUM_[0-9]*`-only pattern doesn't apply),
+    that inline comment would have been silently stripped the first time
+    a product actually changed either value — the exact same class of bug
+    firmware/rf-ir-bridge/'s own two GPIO defines already hit and fixed
+    earlier this session. Fixed the same way: moved both explanations
+    into the standalone block comment above the two `#define` lines
+    instead, before ever wiring up the wizard fields, not discovered
+    after shipping.
+
+    Verified: a Node.js sandboxed regression check (134/134 checks total,
+    including a dedicated check per device — array length, render output,
+    default-fill, `isProductComplete` both valid and deliberately-out-of-
+    range, sed-command presence, and the float-suffix check for flow-
+    sensor specifically); real GNU-sed dry-runs for all seven devices
+    against Docker copies of their actual `app_main.cpp` files, each
+    byte-for-byte identical to the shipped defaults (confirming a correct
+    no-op, including the float field's own literal `7.5f` matching
+    exactly); a real headless-Chromium screenshot of `firmware/
+    microwave-oven/`'s own Configure Device step (all four new fields,
+    correct labels/help text/summary-sidebar rows); and a real Docker
+    build of `firmware/soil-sensor/` (the only one of the seven with an
+    actual source-code edit, not just a sed-target relocation) confirming
+    the inline-comment fix didn't break compilation. The other six
+    firmware files were not rebuilt in Docker for this pass, since none
+    of their own `app_main.cpp` files were touched at all — only their
+    wizard-facing metadata in `index.html` changed.
 
 ## Note on hardware/USB
 
